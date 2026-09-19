@@ -5,28 +5,38 @@ export class CorrelationError extends Error {
   }
 }
 
+interface ExecutionCorrelationRecord {
+  toolName: string;
+}
+
 export class ExecutionCorrelationStore {
   // Stores string keys: `${sessionId}:${requestId}`
-  private executed = new Set<string>();
+  private records = new Map<string, ExecutionCorrelationRecord>();
 
-  public markExecuted(sessionId: string, requestId: string): void {
-    this.executed.add(`${sessionId}:${requestId}`);
+  public registerExecution(sessionId: string, requestId: string, toolName: string): void {
+    this.records.set(`${sessionId}:${requestId}`, { toolName });
   }
 
-  public validateAndConsume(sessionId: string, requestIdRef: string): void {
+  public validateAndConsume(sessionId: string, requestIdRef: string, resultToolName: string): void {
     const key = `${sessionId}:${requestIdRef}`;
-    if (!this.executed.has(key)) {
+    const record = this.records.get(key);
+
+    if (!record) {
       throw new CorrelationError(`Unknown or already consumed request_id_ref: ${requestIdRef}`);
     }
-    this.executed.delete(key);
+
+    if (record.toolName !== resultToolName) {
+      throw new CorrelationError(`Tool name mismatch. Expected '${record.toolName}', got '${resultToolName}'`);
+    }
+
+    this.records.delete(key);
   }
 
   public clearSession(sessionId: string): void {
-    for (const key of this.executed) {
+    for (const key of this.records.keys()) {
       if (key.startsWith(`${sessionId}:`)) {
-        this.executed.delete(key);
+        this.records.delete(key);
       }
     }
   }
 }
-

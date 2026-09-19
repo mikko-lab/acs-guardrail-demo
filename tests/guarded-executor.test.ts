@@ -278,6 +278,70 @@ describe("M-01/M-02: Final Hardening", () => {
   });
 
 
+
+  describe("M-05: Result Correlation Tool Binding", () => {
+    it("F. GUARDEDEXECUTOR INTEGRATION: normal correlation passes", async () => {
+      const { executor, signatureService } = setup(Date.now());
+      const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
+
+      const processSpy = jest.spyOn(executor as any, "processResultRequest");
+      const result = await executor.process(req);
+
+      expect(result.status).toBe("executed");
+      expect(processSpy).toHaveBeenCalled();
+
+      // Correlation is clean
+      expect(() => (executor as any).correlation.validateAndConsume(sess1, req1, "read_record"))
+        .toThrow(/Unknown or already consumed/);
+    });
+
+    it("G. FORCED RESULT TOOL MISMATCH: fails correlation, leaves record intact", async () => {
+      const { executor, signatureService, audit } = setup(Date.now());
+      const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
+
+      const originalSign = signatureService.signRequest.bind(signatureService);
+      let intercepted = false;
+      jest.spyOn(signatureService, "signRequest").mockImplementation((env: any) => {
+        if (env.method === "steps/toolCallResult" && !intercepted) {
+          env.params.payload.tool.name = "wrong_tool_name";
+          intercepted = true;
+        }
+        return originalSign(env);
+      });
+
+      await expect(executor.process(req)).rejects.toThrow(/Tool name mismatch/);
+
+      // Audit should not have tool_result_delivered
+      const logs = audit.getEvents();
+      expect(logs.some(l => l.event_type === "tool_result_delivered")).toBe(false);
+
+      // Original record remains intact, so we can manually consume it with the correct tool name
+      expect(() => (executor as any).correlation.validateAndConsume(sess1, req1, "read_record")).not.toThrow();
+    });
+
+    it("H. TOOL FAILURE: still correlates to the attempted tool name exactly once", async () => {
+      const { executor, audit } = setup(Date.now());
+      const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
+
+      const gateExecuteSpy = jest.spyOn(require("../src/execution-gate").ExecutionGate.prototype, "execute")
+        .mockRejectedValueOnce(new Error("Simulated tool crash"));
+
+      const result = await executor.process(req);
+
+      expect(result.status).toBe("executed");
+      if (result.status === "executed") {
+        expect(result.result.exit_status).toBe("failure");
+      }
+
+      // Audit should show failure but also successful delivery
+      const logs = audit.getEvents();
+      expect(logs.some(l => l.event_type === "tool_execution_blocked" && l.metadata?.error === "failed")).toBe(true);
+      expect(logs.some(l => l.event_type === "tool_result_delivered" && l.metadata?.tool === "read_record")).toBe(true);
+
+      gateExecuteSpy.mockRestore();
+    });
+  });
+
   describe("M-04: JSON-RPC vs ACS Params Validation", () => {
     it("A. MISSING PARAMS: throws SchemaValidationError, not JsonRpcProtocolError", async () => {
       const { executor, signatureService, guardian } = setup(Date.now());

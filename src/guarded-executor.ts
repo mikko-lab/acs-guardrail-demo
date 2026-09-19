@@ -228,7 +228,7 @@ export class GuardedExecutor {
 
     this.signatureService.verifyRequest(request as any);
     this.replayGuard.check(request as any);
-    this.correlation.validateAndConsume(sessionId, requestIdRef);
+    this.correlation.validateAndConsume(sessionId, requestIdRef, request.params.payload.tool.name);
 
     const rawResponse = this.guardian.evaluateResult(request);
     const response = this.secureOutboundResponse(rawResponse, sessionId);
@@ -264,7 +264,7 @@ export class GuardedExecutor {
     let outputs: any[] = [];
     try {
       this.audit.record(originalRequestId, "tool_execution_started", { tool: toolName });
-      this.correlation.markExecuted(sessionId, originalRequestId);
+      this.correlation.registerExecution(sessionId, originalRequestId, toolName);
 
       const permit = this.#gate.mintPermit(this.#permitAuthority, sessionId, originalRequestId, toolName);
       const result = await this.#gate.execute(request, permit);

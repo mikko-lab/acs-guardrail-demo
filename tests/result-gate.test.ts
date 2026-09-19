@@ -181,16 +181,16 @@ describe("Phase 5: Result Gate Governance", () => {
   });
 
   it("23 & 24. clearSession removes result correlation state", () => {
-    correlation.markExecuted(sessionId, "req-1");
+    correlation.registerExecution(sessionId, "req-1", "read_record");
     executor.clearSession(sessionId);
-    expect(() => correlation.validateAndConsume(sessionId, "req-1")).toThrow(CorrelationError);
+    expect(() => correlation.validateAndConsume(sessionId, "req-1", "read_record")).toThrow(CorrelationError);
 
     // 24. clearing session A does not affect session B
-    correlation.markExecuted("session-A", "req-A");
-    correlation.markExecuted("session-B", "req-B");
+    correlation.registerExecution("session-A", "req-A", "read_record");
+    correlation.registerExecution("session-B", "req-B", "read_record");
     executor.clearSession("session-A");
-    expect(() => correlation.validateAndConsume("session-A", "req-A")).toThrow(CorrelationError);
-    expect(() => correlation.validateAndConsume("session-B", "req-B")).not.toThrow();
+    expect(() => correlation.validateAndConsume("session-A", "req-A", "read_record")).toThrow(CorrelationError);
+    expect(() => correlation.validateAndConsume("session-B", "req-B", "read_record")).not.toThrow();
   });
 });
 
