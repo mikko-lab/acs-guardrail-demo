@@ -1,4 +1,5 @@
 import { SignatureService } from "../src/signature-service";
+import { ExecutionCorrelationStore } from "../src/execution-correlation";
 import { ExecutionGate } from "../src/execution-gate";
 import { Guardian } from "../src/guardian";
 import { AuditCollector } from "../src/audit";

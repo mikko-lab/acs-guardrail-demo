@@ -6,6 +6,7 @@ import { ExecutionGate } from "./execution-gate";
 import { AuditCollector } from "./audit";
 import { GuardedExecutor } from "./guarded-executor";
 import { SignatureService } from "./signature-service";
+import { ExecutionCorrelationStore } from "./execution-correlation";
 
 async function runDemo(): Promise<void> {
   const sessionId = "session-demo-001";
@@ -24,7 +25,8 @@ async function runDemo(): Promise<void> {
     replayGuard,
     guardian,
     gate,
-    audit
+    audit,
+    new ExecutionCorrelationStore()
   );
 
   // --- Construct a request using the ACS params-nested shape ---

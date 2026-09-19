@@ -62,7 +62,7 @@ export class SchemaValidator {
    * Checks JSON-RPC protocol limits, then checks ACS envelope and payload schemas.
    * Throws JsonRpcProtocolError, AddressableSchemaError, or SchemaValidationError.
    */
-  validateRequest(input: unknown): AcsToolCallRequest {
+  validateRequest(input: unknown): import("./acs-types").AcsSupportedRequest {
     // 1. JSON-RPC Protocol validation (-32600 boundary)
     if (!input || typeof input !== "object") {
       throw new JsonRpcProtocolError("Invalid Request: Input is not a non-null object");
@@ -85,11 +85,17 @@ export class SchemaValidator {
     // 2. ACS Schema validation (Fail closed)
     const isEnvelopeValid = this.ajv.validate("request-envelope.json", input);
     
-    const req = input as AcsToolCallRequest;
+    const req = input as import("./acs-types").AcsSupportedRequest;
     let isPayloadValid = true;
     
-    if (isEnvelopeValid && req.method === "steps/toolCallRequest") {
-      isPayloadValid = this.ajv.validate("hooks/tool-call-request.json", req.params.payload);
+    if (isEnvelopeValid) {
+      if (req.method === "steps/toolCallRequest") {
+        isPayloadValid = this.ajv.validate("hooks/tool-call-request.json", req.params.payload);
+      } else if (req.method === "steps/toolCallResult") {
+        isPayloadValid = this.ajv.validate("hooks/tool-call-result.json", req.params.payload);
+      } else {
+        isPayloadValid = false; // Only these two methods are supported in this demo
+      }
     }
 
     if (!isEnvelopeValid || !isPayloadValid) {

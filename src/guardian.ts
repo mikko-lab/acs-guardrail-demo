@@ -15,6 +15,47 @@ import {
  *   - ask_details    (REQUIRED when decision === "ask")
  */
 export class Guardian {
+  evaluateResult(request: import("./acs-types").AcsToolCallResultRequest): AcsResponseEnvelope {
+    const { params } = request;
+    const payload = params.payload;
+
+    let hasRestricted = false;
+    for (const out of payload.outputs) {
+      if (out && typeof out.value === "object" && out.value !== null) {
+        if ((out.value as any).classification === "restricted") {
+          hasRestricted = true;
+        }
+      }
+    }
+
+    let result: GuardianDecision;
+    if (hasRestricted) {
+      result = {
+        type: "final",
+        acs_version: "0.1.0",
+        request_id: params.request_id,
+        decision: "deny",
+        reasoning: "Demo policy: Output contains restricted classification and is withheld from agent.",
+        reason_codes: ["DEMO_RESTRICTED_OUTPUT"]
+      };
+    } else {
+      result = {
+        type: "final",
+        acs_version: "0.1.0",
+        request_id: params.request_id,
+        decision: "allow",
+        reasoning: "Demo policy: Ordinary output is allowed to return to the agent.",
+        reason_codes: ["DEMO_ORDINARY_OUTPUT"]
+      };
+    }
+
+    return {
+      jsonrpc: "2.0",
+      id: request.id,
+      result
+    };
+  }
+
   evaluate(request: AcsToolCallRequest): AcsResponseEnvelope {
     const { params } = request;
     const toolName = params.payload.tool.name;

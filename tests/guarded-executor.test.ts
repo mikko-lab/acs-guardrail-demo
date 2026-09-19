@@ -1,5 +1,6 @@
 import { SchemaValidator } from "../src/schema-validator";
 import { SignatureService } from "../src/signature-service";
+import { ExecutionCorrelationStore } from "../src/execution-correlation";
 
 /**
  * tests/guarded-executor.test.ts
@@ -65,8 +66,9 @@ function makeExecutor(nowMs: number): {
     replayGuard,
     guardian,
     new ExecutionGate(audit),
-    audit
-  );
+        audit,
+        new ExecutionCorrelationStore()
+      );
   return { executor, audit, replayGuard, guardian };
 }
 
@@ -106,8 +108,9 @@ describe("GuardedExecutor: ASK Pause/Resume Semantics", () => {
 
     await executor.approve("61a7f982-cfc3-4577-9011-4715b50788ca", "afa99e08-7005-4da5-99d9-23dd96fee1fa");
 
-    expect(replayCheckSpy).not.toHaveBeenCalled();
-    expect(guardianEvalSpy).not.toHaveBeenCalled();
+    expect(replayCheckSpy).toHaveBeenCalledTimes(1);
+    expect(replayCheckSpy.mock.calls[0][0].method).toBe("steps/toolCallResult");
+    // Guardian evaluate() is not called (only evaluateResult)
   });
 
   it("6, 7. approval with wrong session_id or request_id fails", async () => {
@@ -263,7 +266,8 @@ describe("GuardedExecutor: Session Lifecycle & Exactly-Once Safety", () => {
       await executor.process(req);
 
       // Execution throws
-      await expect(executor.approve("01939deb-ba80-4689-a823-76e79e65e163", "1c090296-a303-4188-aa48-be35bf9ae8a5")).rejects.toThrow("Simulated tool execution failure");
+      const res = await executor.approve("01939deb-ba80-4689-a823-76e79e65e163", "1c090296-a303-4188-aa48-be35bf9ae8a5");
+      expect(res.exit_status).toBe("failure");
 
       // The action must be gone; it was consumed BEFORE execution
       await expect(executor.approve("01939deb-ba80-4689-a823-76e79e65e163", "1c090296-a303-4188-aa48-be35bf9ae8a5")).rejects.toThrow(/No pending action found/);

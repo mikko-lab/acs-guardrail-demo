@@ -1,5 +1,6 @@
 import { SchemaValidator } from "../src/schema-validator";
 import { SignatureService } from "../src/signature-service";
+import { ExecutionCorrelationStore } from "../src/execution-correlation";
 
 import { GuardedExecutor } from "../src/guarded-executor";
 import { ReplayGuard } from "../src/replay-guard";
@@ -18,8 +19,9 @@ describe("Audit Collector invariants", () => {
       new ReplayGuard({ audit }),
       new Guardian(),
       new ExecutionGate(audit),
-      audit
-    );
+        audit,
+        new ExecutionCorrelationStore()
+      );
   });
 
   const testSignatureService = new SignatureService("test-secret", "key-1");

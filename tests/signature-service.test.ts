@@ -1,3 +1,4 @@
+import { ExecutionCorrelationStore } from "../src/execution-correlation";
 import { SignatureService, SignatureInvalidError } from "../src/signature-service";
 import { AcsToolCallRequest, AcsResponseEnvelope } from "../src/acs-types";
 import { GuardedExecutor } from "../src/guarded-executor";
@@ -250,7 +251,8 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
         replayGuard,
         guardian,
         new ExecutionGate(audit),
-        audit
+        audit,
+        new ExecutionCorrelationStore()
       );
     });
 

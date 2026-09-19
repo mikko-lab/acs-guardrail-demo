@@ -1,5 +1,6 @@
 import { SchemaValidator, AddressableSchemaError, SchemaValidationError, JsonRpcProtocolError } from "../src/schema-validator";
 import { SignatureService } from "../src/signature-service";
+import { ExecutionCorrelationStore } from "../src/execution-correlation";
 import { GuardedExecutor } from "../src/guarded-executor";
 import { ReplayGuard } from "../src/replay-guard";
 import { Guardian } from "../src/guardian";
@@ -146,8 +147,9 @@ describe("GuardedExecutor with Security Ordering", () => {
       replayGuard,
       guardian,
       new ExecutionGate(audit),
-      audit
-    );
+        audit,
+        new ExecutionCorrelationStore()
+      );
   });
 
   it("JSON-RPC-invalid input never reaches ReplayGuard", async () => {

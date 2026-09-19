@@ -129,6 +129,10 @@ export interface AcsToolCallResult {
 // ── Audit (internal, not an ACS-Audit claim) ─────────────────────────
 
 export type AuditEventType =
+  | "tool_result_created"
+  | "result_guardian_decision"
+  | "tool_result_delivered"
+  | "tool_result_withheld"
   | "tool_call_requested"
   | "guardian_decision"
   | "human_approval"
@@ -147,3 +151,19 @@ export interface AuditEvent {
   event_type: AuditEventType;
   metadata?: Record<string, unknown>;
 }
+
+export interface AcsToolCallResultRequest {
+  jsonrpc: "2.0";
+  method: "steps/toolCallResult";
+  id: string | number | null;
+  params: {
+    acs_version: string;
+    request_id: string;
+    timestamp: string;
+    metadata: AcsMetadata;
+    payload: AcsToolCallResult;
+    signature?: AcsSignature;
+  };
+}
+
+export type AcsSupportedRequest = AcsToolCallRequest | AcsToolCallResultRequest;

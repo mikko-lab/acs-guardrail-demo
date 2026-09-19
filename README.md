@@ -48,11 +48,20 @@ ReplayGuard (Phase 2)
   — reject timestamp outside ±skewWindowMs
   — reject duplicate request_id within same session
         ↓
-Guardian evaluates deterministic policy
-  — ALLOW / DENY / ASK
+Request Guardian (Phase 1)
+  — ALLOW: execute side effects
+  — DENY: hard block, throw Error
+  — ASK: pause and queue pending action for human approval
         ↓
-SchemaValidator
-  — validate Guardian outbound response-envelope
+ExecutionGate
+  — Tool executes, side effects occur
+        ↓
+Result Gate (Phase 5)
+  — Generated steps/toolCallResult goes through Schema & HMAC validation
+  — Replay & Correlation check (request_id_ref bound to session)
+  — Result Guardian: Evaluates output
+  — ALLOW: delivers output
+  — DENY: withholds output, returns safe blocked payload (side effects NOT undone)
         ↓
 GuardedExecutor branches:
   — DENY blocks unconditionally
@@ -175,3 +184,11 @@ npm run verify
 ```bash
 npx ts-node src/demo.ts
 ```
+
+## Result Gate & Output Delivery (Phase 5)
+
+The execution boundary implements a two-sided security model separating request approval from output delivery:
+- **Request Gate**: Controls whether the tool may run (and whether side effects may occur). A request-gate DENY strictly prevents execution.
+- **Result Gate**: Controls whether the tool's output may reach the agent. A result-gate DENY does NOT undo side effects (which have already happened) but firmly withholds the restricted output.
+- **Strict Output Boundary**: Output is never exposed before Result Guardian approval. If denied, a safe blocked payload is delivered instead of raw output. Sensitive output is carefully scrubbed and never leaked into Audit logs, error messages, or reasoning text.
+- **Correlation Profile (Issue #118)**: ACS \`request_id_ref\` correlation uses a local strict profile because upstream ACS issue #118 leaves unresolved-reference semantics underspecified. This demo requires \`request_id_ref\` to perfectly match the originating request inside the same active session.

@@ -32,6 +32,8 @@ import { ExecutionGate } from "./execution-gate";
 import { AuditCollector } from "./audit";
 import { SchemaValidator, AddressableSchemaError } from "./schema-validator";
 import { SignatureService } from "./signature-service";
+import { ExecutionCorrelationStore } from "./execution-correlation";
+import * as crypto from "crypto";
 
 export type ProcessResult =
   | { status: "executed"; result: AcsToolCallResult }
@@ -49,6 +51,7 @@ export class GuardedExecutor {
   private readonly guardian: Guardian;
   private readonly gate: ExecutionGate;
   private readonly audit: AuditCollector;
+  private readonly correlation: ExecutionCorrelationStore;
 
   // Keyed by: `${session_id}:${request_id}`
   private readonly pendingActions: Map<string, PendingAction> = new Map();
@@ -59,7 +62,8 @@ export class GuardedExecutor {
     replayGuard: ReplayGuard,
     guardian: Guardian,
     gate: ExecutionGate,
-    audit: AuditCollector
+    audit: AuditCollector,
+    correlation: ExecutionCorrelationStore
   ) {
     this.schemaValidator = schemaValidator;
     this.signatureService = signatureService;
@@ -67,6 +71,7 @@ export class GuardedExecutor {
     this.guardian = guardian;
     this.gate = gate;
     this.audit = audit;
+    this.correlation = correlation;
   }
 
   /**
@@ -80,7 +85,11 @@ export class GuardedExecutor {
    */
   async process(input: unknown): Promise<ProcessResult> {
     // Step 0 — Schema validation
-    const request = this.schemaValidator.validateRequest(input);
+    const validated = this.schemaValidator.validateRequest(input);
+    if (validated.method !== "steps/toolCallRequest") {
+      throw new Error("Expected toolCallRequest");
+    }
+    const request = validated as import("./acs-types").AcsToolCallRequest;
     const { params } = request;
 
     // Step 0.5 — Signature verification
@@ -125,8 +134,98 @@ export class GuardedExecutor {
     }
 
     // decision === "allow"
-    const result = await this.gate.execute(request, response);
+    const result = await this.executeAndProcessResult(request, response);
     return { status: "executed", result };
+  }
+
+
+  private async processResultRequest(signedResultRequest: import("./acs-types").AcsToolCallResultRequest): Promise<import("./acs-types").AcsToolCallResult> {
+    const validated = this.schemaValidator.validateRequest(signedResultRequest);
+    if (validated.method !== "steps/toolCallResult") {
+      throw new Error("Unexpected request method in result processing");
+    }
+    const request = validated as import("./acs-types").AcsToolCallResultRequest;
+    const { params } = request;
+    const sessionId = params.metadata.session_id;
+    const requestIdRef = params.payload.request_id_ref;
+
+    this.signatureService.verifyRequest(request as any);
+    this.replayGuard.check(request as any);
+    this.correlation.validateAndConsume(sessionId, requestIdRef);
+
+    const rawResponse = this.guardian.evaluateResult(request);
+    let response = this.schemaValidator.validateResponse(rawResponse);
+
+    response = this.signatureService.signResponse(response, sessionId);
+    this.schemaValidator.validateResponse(response);
+    this.signatureService.verifyResponse(response, sessionId);
+
+    this.audit.record(params.request_id, "result_guardian_decision", {
+      decision: response.result.decision,
+      reason_codes: response.result.reason_codes
+    });
+
+    const payload = params.payload;
+
+    if (response.result.decision === "deny") {
+      this.audit.record(params.request_id, "tool_result_withheld", { tool: payload.tool.name });
+      return {
+        tool: payload.tool,
+        request_id_ref: requestIdRef,
+        exit_status: "blocked",
+        outputs: [{ value: { error: "Output withheld by policy." } }]
+      };
+    }
+
+    this.audit.record(params.request_id, "tool_result_delivered", { tool: payload.tool.name });
+    return payload;
+  }
+
+  private async executeAndProcessResult(request: import("./acs-types").AcsToolCallRequest, response: import("./acs-types").AcsResponseEnvelope): Promise<import("./acs-types").AcsToolCallResult> {
+    const { params } = request;
+    const sessionId = params.metadata.session_id;
+    const toolName = params.payload.tool.name;
+    const originalRequestId = params.request_id;
+
+    let exitStatus: "success" | "failure" | "blocked" | "timeout" = "success";
+    let outputs: any[] = [];
+    try {
+      this.audit.record(originalRequestId, "tool_execution_started", { tool: toolName });
+      this.correlation.markExecuted(sessionId, originalRequestId);
+      const result = await this.gate.execute(request, response);
+      outputs = result.outputs || [{ value: result }];
+      exitStatus = result.exit_status || "success";
+      this.audit.record(originalRequestId, "tool_execution_completed", { tool: toolName });
+    } catch (error: unknown) {
+      exitStatus = "failure";
+      outputs = [{ value: { error: "Tool execution failed", code: "tool_execution_failed" } }];
+      this.audit.record(originalRequestId, "tool_execution_blocked", { error: "failed" });
+    }
+
+    const resultRequest = {
+      jsonrpc: "2.0",
+      method: "steps/toolCallResult",
+      id: crypto.randomUUID(),
+      params: {
+        acs_version: "0.1.0",
+        request_id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        metadata: {
+          agent_id: params.metadata.agent_id,
+          session_id: sessionId
+        },
+        payload: {
+          tool: { name: toolName },
+          request_id_ref: originalRequestId,
+          exit_status: exitStatus,
+          outputs
+        }
+      }
+    };
+
+    this.audit.record(resultRequest.params.request_id, "tool_result_created", { tool: toolName });
+    const signedResultRequest = this.signatureService.signRequest(resultRequest as any);
+    return this.processResultRequest(signedResultRequest as any);
   }
 
   /**
@@ -145,7 +244,7 @@ export class GuardedExecutor {
     this.pendingActions.delete(key);
 
     this.audit.record(requestId, "human_approval");
-    return this.gate.execute(pending.request, pending.response);
+    return this.executeAndProcessResult(pending.request, pending.response);
   }
 
   /**
@@ -172,6 +271,7 @@ export class GuardedExecutor {
    */
   clearSession(sessionId: string): void {
     this.replayGuard.clearSession(sessionId);
+    this.correlation.clearSession(sessionId);
     // Also clean up any abandoned pending actions for this session
     for (const key of this.pendingActions.keys()) {
       if (key.startsWith(`${sessionId}:`)) {
