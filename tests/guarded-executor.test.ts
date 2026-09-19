@@ -648,6 +648,69 @@ describe("M-01/M-02: Final Hardening", () => {
     });
   });
 
+
+  describe("L-05: Local Strict Correlation Profile", () => {
+    it("missing toolCallResult.request_id_ref yields signed schema-deny via M-03 addressability path", async () => {
+      const nowMs = Date.now();
+      const { executor, audit, signatureService } = setup(nowMs);
+      
+      const sess = "87a050ff-27e1-4ec4-9467-e9e1c2525545";
+      executor.clearSession(sess);
+
+      const req = makeRequest({ sessionId: sess, tool: "read_record", timestamp: fresh(nowMs) });
+      const signedReq = testSignatureService.signRequest(req);
+
+      const origSign = signatureService.signRequest.bind(signatureService);
+      const signSpy = jest.spyOn(signatureService, "signRequest").mockImplementation((env: any) => {
+        if (env.method === "steps/toolCallResult") {
+          // Fault injection: remove request_id_ref BEFORE it gets signed
+          delete env.params.payload.request_id_ref;
+        }
+        return origSign(env);
+      });
+
+      const origGuardian = (executor as any).guardian;
+      const guardianSpy = jest.spyOn(origGuardian, "evaluateResult");
+
+      try {
+        let errorThrown: any = null;
+        try {
+          await executor.process(signedReq);
+        } catch (err) {
+          errorThrown = err;
+        }
+        
+        expect(errorThrown).toBeDefined();
+        expect(errorThrown.name).toBe("AddressableSchemaError");
+
+        const response = errorThrown.acsResponse;
+        
+        // 1. Expected behavior: AddressableSchemaError was caught and turned into a DENY
+        expect(response.result.decision).toBe("deny");
+        expect(response.result.reason_codes).toContain("schema_validation_failed");
+        expect(response.result.reasoning).toContain("request_id_ref"); // local strict message
+
+        // 2. Response MUST be signed (M-03 requirement)
+        expect(response.result.signature).toBeDefined();
+        expect(() => signatureService.verifyResponse(response, sess)).not.toThrow();
+
+        // 3. Result Guardian is NEVER reached because schema validation rejected the payload
+        expect(guardianSpy).not.toHaveBeenCalled();
+
+        // 4. Raw tool output is not delivered
+        expect(response.result.outputs).toBeUndefined();
+
+        // 5. Tool executed exactly once
+        const execs = audit.getEvents().filter((e: any) => e.event_type === "tool_execution_started" && e.request_id === req.params.request_id);
+        expect(execs.length).toBe(1);
+
+      } finally {
+        signSpy.mockRestore();
+        guardianSpy.mockRestore();
+      }
+    });
+  });
+
   describe("REGRESSION", () => {
     it("H-01 immutable pending snapshot", async () => {
       const now = Date.now();

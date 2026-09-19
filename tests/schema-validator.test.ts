@@ -29,6 +29,115 @@ const validBaseRequest = testSignatureService.signRequest({
 });
 
 describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
+
+  describe("TypeScript Compile-Time & Local Strict Profile (L-05)", () => {
+    it("request id null is rejected at compile-time", () => {
+      const req: import("../src/acs-types").AcsToolCallRequest = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallRequest",
+        // @ts-expect-error
+        id: null,
+        params: {} as any
+      };
+
+      const res: import("../src/acs-types").AcsResponseEnvelope = {
+        jsonrpc: "2.0",
+        // @ts-expect-error
+        id: null,
+        result: {} as any
+      };
+
+      expect(true).toBe(true);
+    });
+
+    it("missing request_id_ref + valid addressable ids -> AddressableSchemaError", () => {
+      // Upstream schema alone would permit it (Ajv wouldn't fail on missing request_id_ref),
+      // but our local SchemaValidator rejects it and issues a signed addressable response.
+      const resultReq: any = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallResult",
+        id: "call-1",
+        params: {
+          acs_version: "0.1.0",
+          request_id: "7340d64e-3a59-4f17-9096-865ba73666aa",
+          timestamp: new Date().toISOString(),
+          metadata: {
+            agent_id: "test-agent",
+            session_id: "7340d64e-3a59-4f17-9096-865ba73666ab"
+          },
+          payload: {
+            tool: { name: "read_record" },
+            exit_status: "success",
+            outputs: [{ value: "data" }]
+          }
+        }
+      };
+
+      try {
+        new (require("../src/schema-validator").SchemaValidator)().validateRequest(resultReq);
+        throw new Error("Should have thrown");
+      } catch (err: any) {
+        expect(err.name).toBe("AddressableSchemaError");
+        expect(err.message).toContain("request_id_ref");
+      }
+    });
+
+
+    it("missing request_id_ref + non-addressable session id -> SchemaValidationError (not JsonRpcProtocolError)", () => {
+      const resultReq: any = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallResult",
+        id: "call-1",
+        params: {
+          acs_version: "0.1.0",
+          request_id: "7340d64e-3a59-4f17-9096-865ba73666aa",
+          timestamp: new Date().toISOString(),
+          metadata: {
+            agent_id: "test-agent",
+            session_id: "invalid-uuid-format"
+          },
+          payload: {
+            tool: { name: "read_record" },
+            exit_status: "success",
+            outputs: [{ value: "data" }]
+          }
+        }
+      };
+      try {
+        new (require("../src/schema-validator").SchemaValidator)().validateRequest(resultReq);
+        throw new Error("Should have thrown");
+      } catch (err: any) {
+        expect(err.name).toBe("SchemaValidationError");
+        expect(err.message).toContain("session_id");
+      }
+    });
+
+    it("valid toolCallResult with request_id_ref continues to pass", () => {
+      const resultReq: any = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallResult",
+        id: "call-1",
+        params: {
+          acs_version: "0.1.0",
+          request_id: "7340d64e-3a59-4f17-9096-865ba73666aa",
+          timestamp: new Date().toISOString(),
+          metadata: {
+            agent_id: "test-agent",
+            session_id: "7340d64e-3a59-4f17-9096-865ba73666ab"
+          },
+          payload: {
+            tool: { name: "read_record" },
+            request_id_ref: "7340d64e-3a59-4f17-9096-865ba73666aa",
+            exit_status: "success",
+            outputs: [{ value: "data" }]
+          }
+        }
+      };
+
+      expect(() => new (require("../src/schema-validator").SchemaValidator)().validateRequest(resultReq)).not.toThrow();
+    });
+  });
+
   let validator: SchemaValidator;
 
   beforeEach(() => {
@@ -194,7 +303,7 @@ describe("GuardedExecutor with Security Ordering", () => {
     const evalSpy = jest.spyOn(guardian, "evaluate");
 
     await expect(executor.process(req)).rejects.toThrow(AddressableSchemaError);
-    
+
     expect(checkSpy).not.toHaveBeenCalled();
     expect(evalSpy).not.toHaveBeenCalled();
     expect(executionCounters.read_record).toBe(0);

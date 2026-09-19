@@ -44,6 +44,24 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 export class SchemaValidator {
   private ajv: Ajv;
 
+  private extractAddressableIds(params: Record<string, unknown> | undefined): { validRequestId?: string; validSessionId?: string } {
+    let validRequestId: string | undefined;
+    let validSessionId: string | undefined;
+
+    if (params && typeof params === "object" && !Array.isArray(params)) {
+      if (typeof params.request_id === "string" && UUID_REGEX.test(params.request_id)) {
+        validRequestId = params.request_id;
+      }
+
+      const metadata = params.metadata as Record<string, unknown> | undefined;
+      if (metadata && typeof metadata.session_id === "string" && UUID_REGEX.test(metadata.session_id)) {
+        validSessionId = metadata.session_id;
+      }
+    }
+    return { validRequestId, validSessionId };
+  }
+
+
   constructor() {
     this.ajv = new Ajv({ 
       allErrors: true, 
@@ -132,6 +150,20 @@ export class SchemaValidator {
       } else {
         // Unaddressable (e.g. malformed or missing request_id or session_id)
         throw new SchemaValidationError(errors, errorMsg);
+      }
+    }
+
+    // LOCAL STRICT PROFILE (L-05): request_id_ref is mandatory on results
+    if (req.method === "steps/toolCallResult") {
+      const payload = req.params.payload;
+      if (typeof payload.request_id_ref !== "string" || payload.request_id_ref.trim() === "") {
+        const errorMsg = "Local strict profile requires request_id_ref to be a non-empty string on steps/toolCallResult";
+        const { validRequestId, validSessionId } = this.extractAddressableIds(obj.params as Record<string, unknown> | undefined);
+        if (validRequestId && validSessionId) {
+          throw new AddressableSchemaError(validRequestId, validSessionId, obj.id as string | number, errorMsg);
+        } else {
+          throw new SchemaValidationError([], errorMsg);
+        }
       }
     }
 
