@@ -83,7 +83,7 @@ For exact test evidence of these claims, see `docs/invariants-evidence.md`.
 
 This implementation deviates deliberately from upstream baseline leniency in specific documented ways to ensure a high-assurance boundary:
 
-1. **request_id_ref Correlation:** While ACS v0.1.0 vendored schemas do not require `request_id_ref` on `toolCallResult`, this demo strictly requires it to perfectly match the originating request inside the same active session to prevent correlation hijacking (see upstream issue #118).
-2. **Human-Only ASK:** Approvals with `approver.type === "agent"` or `"service"` are explicitly rejected. Browser/IdP-based human identity federation is simulated via static Ed25519 payload signatures.
+1. **request_id_ref Correlation:** While ACS v0.1.0 vendored schemas do not require `request_id_ref` on `toolCallResult`, this demo strictly requires it. The local strict profile requires request_id_ref and binds toolCallResult to the originating session, request_id_ref and executed tool name (see upstream issue #118).
+2. **Human-Only ASK:** Approvals with `approver.type === "agent"` or `"service"` are explicitly rejected. ApprovalGrant uses real Ed25519 signatures verified against the configured approval authority. Browser/IdP-based human identity authentication is not implemented and remains out of band.
 3. **Timeout Disposition:** `timeout_disposition: allow` is deliberately unsupported.
 4. **Classification Withholding:** Uses a simplistic `classification === "restricted"` marker in JSON output to trigger withholding. This is a local demo policy, not a universal sensitive-data detection engine.

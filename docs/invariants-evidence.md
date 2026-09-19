@@ -28,12 +28,12 @@ This document provides the definitive implementation and evidence matrix for the
 | **Sanitized tool failures** | DEMONSTRATED | `src/guarded-executor.ts` | Catch blocks intercept `Error`, safely mapping them to `exit_status: "failure"` and generic objects without leaking internal stacks. | `tests/guarded-executor.test.ts` |
 | **toolCallResult generation** | DEMONSTRATED | `src/guarded-executor.ts` | Automatically generated wrapping the tool output/failure into an `AcsToolCallResultRequest` envelope. | `tests/guarded-executor.test.ts` |
 | **Result-request HMAC verification** | DEMONSTRATED | `src/guarded-executor.ts` | Internally generated result request is routed through `SignatureService.verifyRequest`. | `tests/guarded-executor.test.ts` |
-| **Session/request/tool result correlation** | DEMONSTRATED | `src/execution-correlation.ts` | Requires exact match of `session_id`, `request_id`, and `tool_name` between the original request and the result. | `tests/execution-correlation.test.ts` |
+| **Session/request/tool result correlation** | DEMONSTRATED | `src/execution-correlation.ts` | Requires exact match of session_id + request_id_ref + executed tool name between the original request and the result. | `tests/execution-correlation.test.ts` |
 | **Local strict request_id_ref profile** | DEMONSTRATED | `src/schema-validator.ts` | Post-schema validation enforcing `request_id_ref` existence, triggering addressable-deny on failure. | `tests/schema-validator.test.ts` (L-05 Local Strict Correlation Profile) |
 | **Result Guardian** | DEMONSTRATED | `src/guardian.ts` | Sync/async policy evaluation over `outputs`, classifying results dynamically (e.g. `restricted`). | `tests/guardian.test.ts` |
 | **Restricted-output withholding** | DEMONSTRATED | `src/guarded-executor.ts` | Post-execution DENY decision overrides output, returning a sanitized blocked message instead of raw data. | `tests/guarded-executor.test.ts` |
-| **Session cleanup** | DEMONSTRATED | `src/replay-guard.ts`, `src/execution-correlation.ts` | Explicit `clearSession(sessionId)` flushes in-memory tracking structures. | `tests/replay-guard.test.ts`, `tests/execution-correlation.test.ts` |
-| **In-memory event collection** | DEMONSTRATED | `src/audit.ts` | `AuditCollector` buffers events into memory array; explicitly documented as non-persistent. | `tests/audit.test.ts` |
+| **Session cleanup** | DEMONSTRATED | `src/guarded-executor.ts` | Explicit `GuardedExecutor.clearSession` clears ReplayGuard session state, pending ASK state, and ExecutionCorrelationStore state. | `tests/guarded-executor.test.ts` (session cleanup) |
+| **In-memory event collection** | DEMONSTRATED | `src/audit.ts` | `AuditCollector` is an in-memory runtime demonstration event collector. | `tests/audit.test.ts` |
 | **Runnable approval demo** | DEMONSTRATED | `examples/approval-demo.ts` | End-to-end executable TypeScript demo covering ASK, approval, and execution. | Validated via `npx ts-node examples/approval-demo.ts` |
 
 ## Mutation Evidence
@@ -42,11 +42,11 @@ Verified mutation testing scenarios confirming integration test coverage over se
 
 | Mutation | Component | Unit Caught? | Integration Caught? | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **ExecutionGate permit validation removal** | `GuardedExecutor` (call site) | NO | YES | Bypassing permit creation at the executor call site passes executor units but fails integration flow. |
-| **Result correlation removal** | `ExecutionCorrelationStore` | YES | YES | Bypassing correlation check allowed forged tool names / cross-session results. Caught by both store units and integration flow. |
-| **Result withholding removal** | `GuardedExecutor` | YES | YES | Allowing raw output to pass through a `deny` decision. Caught by `guarded-executor.test.ts` and integration. |
-| **ASK approval boundary removal** | `GuardedExecutor` | YES | YES | Changing `ask` to execute directly bypassed pending snapshots. Caught by `guarded-executor.test.ts`. |
-| **Request HMAC verification removal** | `GuardedExecutor` (call site) | NO | YES | Removing `verifyRequest` from `process()` call site passes `SignatureService` units, but integration tests fail immediately on forged requests. |
+| **ExecutionGate permit validation removal** | `ExecutionGate` | YES | YES | Bypassing internal ExecutionGate permit checks is caught by both unit and integration tests. |
+| **GuardedExecutor correlation call-site removal** | `GuardedExecutor` (call site) | NO (relevant correlation-store unit) | YES | Bypassing correlation check allowed forged tool names / cross-session results. ExecutionCorrelationStore units pass, but integration flow caught it. |
+| **GuardedExecutor result-withholding path** | `GuardedExecutor` | YES | YES | Allowing raw output to pass through a `deny` decision. Caught accurately by `guarded-executor.test.ts` unit tests and integration flow. |
+| **ASK approval boundary** | `GuardedExecutor` | N/A | YES | Changing `ask` to execute directly bypassed pending snapshots. Caught by integration. |
+| **GuardedExecutor request HMAC verify call-site** | `GuardedExecutor` (call site) | NO (SignatureService unit) | YES | Removing `verifyRequest` from `process()` call site passes `SignatureService` units, but integration tests fail immediately on forged requests. |
 
 ## Local Strict Profiles
 
@@ -76,7 +76,7 @@ The following features, requirements, or mechanisms are **NOT IMPLEMENTED** and 
 * Network transport security (TLS / mTLS)
 * Full-process compromise resistance (node environment/memory protection)
 
-Note specifically on Audit: `AuditCollector` is strictly an in-memory test utility. It can be cleared, is not persistent, is not cryptographically chained, and does not constitute a tamper-evident production audit log or an ACS-Audit implementation.
+Note specifically on Audit: `AuditCollector` is an in-memory runtime demonstration event collector. It can be cleared, is non-persistent, is not cryptographically chained, is not ACS-Audit, and is not tamper-evident production storage.
 
 ## Verification Commands
 
