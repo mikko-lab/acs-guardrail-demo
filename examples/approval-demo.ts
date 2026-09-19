@@ -12,7 +12,7 @@ import { TestSigner } from "../tests/test-signer";
 import crypto from "crypto";
 
 async function runDemo(): Promise<void> {
-  const sessionId = "session-demo-001";
+  const sessionId = "123e4567-e89b-12d3-a456-426614174000";
   const audit = new AuditCollector();
   const schemaValidator = new SchemaValidator();
   const signatureService = new SignatureService("demo-root-secret-for-testing", "key-1");
@@ -37,13 +37,13 @@ async function runDemo(): Promise<void> {
   );
 
   // --- Construct a request using the ACS params-nested shape ---
-  const request: AcsToolCallRequest = {
+  const request: AcsToolCallRequest = signatureService.signRequest({
     jsonrpc: "2.0",
     method: "steps/toolCallRequest",
-    id: "call-demo-1",
+    id: "1",
     params: {
       acs_version: "0.1.0",
-      request_id: "req-demo-1",
+      request_id: "123e4567-e89b-12d3-a456-426614174001",
       timestamp: new Date().toISOString(),
       metadata: {
         agent_id: "demo-agent",
@@ -51,13 +51,12 @@ async function runDemo(): Promise<void> {
       },
       payload: {
         tool: { name: "update_record" },
-        // Arguments use the ACS ToolArgumentValue shape: { value: ... }
         arguments: {
           id: { value: "record_42" },
         },
-      } satisfies AcsToolCallRequestPayload,
+      } as AcsToolCallRequestPayload,
     },
-  };
+  });
 
   // --- First attempt: yields a pending status without executing ---
   console.log("Sending request...");
@@ -75,7 +74,7 @@ async function runDemo(): Promise<void> {
     decision: "approve" as const,
     session_id: sessionId,
     request_id: request.params.request_id,
-    approver: { type: "human" as const, id: "demo-user" },
+    approver: { type: "human" as const, id: "demo-operator" },
     issued_at: new Date().toISOString()
   };
   const grant = demoSigner.sign(grantBase);
