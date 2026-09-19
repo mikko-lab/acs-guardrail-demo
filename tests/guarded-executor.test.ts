@@ -64,9 +64,11 @@ function setup(nowMs: number) {
   const replayGuard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock, audit });
   const guardian = new Guardian();
 
+  const schemaValidator = new SchemaValidator();
+  const signatureService = new SignatureService("test-secret", "key-1");
   const executor = new GuardedExecutor(
-    new SchemaValidator(),
-    new SignatureService("test-secret", "key-1"),
+    schemaValidator,
+    signatureService,
     replayGuard,
     guardian,
     audit,
@@ -75,7 +77,7 @@ function setup(nowMs: number) {
     clock
   );
 
-  return { executor, audit, replayGuard, guardian, clock, publicKey };
+  return { executor, audit, replayGuard, guardian, clock, publicKey, signatureService, schemaValidator };
 }
 
 beforeEach(() => {
@@ -95,8 +97,8 @@ function makeGrant(sess: string, req: string, decision: "approve"|"reject" = "ap
   return testSigner.sign(base);
 }
 
-const sess1 = "11111111-1111-1111-1111-111111111111";
-const req1 = "22222222-2222-2222-2222-222222222222";
+const sess1 = "11111111-1111-4111-8111-111111111111";
+const req1 = "22222222-2222-4222-8222-222222222222";
 const sess2 = "33333333-3333-3333-3333-333333333333";
 const req2 = "44444444-4444-4444-4444-444444444444";
 
@@ -180,6 +182,98 @@ describe("M-01/M-02: Final Hardening", () => {
       const grant: any = makeGrant(sess1, req1);
       grant.approver = { type: "agent", id: "1" };
       await expect(executor.resolveApproval(grant)).rejects.toThrow(/approver.type must be 'human'/);
+    });
+  });
+
+
+  describe("M-03: Addressable Schema Deny Integrity", () => {
+    it("addressable schema error uses secureOutboundResponse (signed/verified)", async () => {
+      const { executor, signatureService, schemaValidator } = setup(Date.now());
+      const signSpy = jest.spyOn(signatureService, "signResponse");
+      const valSpy = jest.spyOn(schemaValidator, "validateResponse");
+      const verifySpy = jest.spyOn(signatureService, "verifyResponse");
+
+      const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
+      (req.params as any).timestamp = "invalid"; // triggers addressable error
+
+      let err: any;
+      try {
+        await executor.process(req);
+      } catch (e) {
+        err = e;
+      }
+
+      expect(err).toBeDefined();
+      expect(err.name).toBe("AddressableSchemaError");
+      expect(err.acsResponse).toBeDefined();
+      expect(err.acsResponse.result.decision).toBe("deny");
+      expect(err.acsResponse.result.reason_codes).toContain("schema_validation_failed");
+      expect(err.acsResponse.result.signature).toBeDefined();
+
+      // Called multiple times: validate unsigned -> validate signed
+      expect(valSpy).toHaveBeenCalled();
+      expect(signSpy).toHaveBeenCalled();
+      expect(verifySpy).toHaveBeenCalled();
+    });
+
+    it("missing session ID downgrades to unaddressable (no ACS response generated)", async () => {
+      const { executor, signatureService } = setup(Date.now());
+      const signSpy = jest.spyOn(signatureService, "signResponse");
+
+      const req = makeRequest({ tool: "read_record", requestId: req1 });
+      (req.params as any).timestamp = "invalid";
+      delete (req.params.metadata as any).session_id; // missing session_id -> cannot sign safely
+
+      let err: any;
+      try {
+        await executor.process(req);
+      } catch (e) {
+        err = e;
+      }
+
+      expect(err).toBeDefined();
+      expect(err.name).toBe("SchemaValidationError"); // downgraded
+      expect(err.acsResponse).toBeUndefined();
+      expect(signSpy).not.toHaveBeenCalled();
+    });
+
+    it("unaddressable request ID fails closed", async () => {
+      const { executor, signatureService } = setup(Date.now());
+      const signSpy = jest.spyOn(signatureService, "signResponse");
+
+      const req = makeRequest({ tool: "read_record", sessionId: sess1 });
+      (req.params as any).timestamp = "invalid";
+      (req.params as any).request_id = "not-a-uuid";
+
+      let err: any;
+      try {
+        await executor.process(req);
+      } catch (e) {
+        err = e;
+      }
+
+      expect(err.name).toBe("SchemaValidationError");
+      expect(err.acsResponse).toBeUndefined();
+      expect(signSpy).not.toHaveBeenCalled();
+    });
+
+    it("JSON-RPC invalid throws JsonRpcProtocolError (-32600)", async () => {
+      const { executor, signatureService } = setup(Date.now());
+      const signSpy = jest.spyOn(signatureService, "signResponse");
+
+      const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
+      delete (req as any).jsonrpc; // Invalid JSON-RPC
+
+      let err: any;
+      try {
+        await executor.process(req);
+      } catch (e) {
+        err = e;
+      }
+
+      expect(err.name).toBe("JsonRpcProtocolError");
+      expect(err.acsResponse).toBeUndefined();
+      expect(signSpy).not.toHaveBeenCalled();
     });
   });
 

@@ -94,7 +94,7 @@ The project implements a strict separation of protocol validation and schema val
 - **ACS §10-Oriented HMAC Integrity:** The demo implements envelope-level integrity using HMAC-SHA256. 
 - **JCS Canonicalization:** Signatures bind the complete ACS envelope. The *entire* envelope (request or response), excluding only the nested `signature` field itself, is deep-cloned and canonicalized using exact RFC 8785 JSON Canonicalization Scheme (via the `json-canonicalize` package) before signing. This guarantees that top-level fields like `jsonrpc` and `id` are inextricably bound to the payload MAC.
 - **Verification Ordering:** Request verification occurs *after* schema validation but *before* replay protection and policy evaluation, guaranteeing that invalid signatures cannot poison the replay state.
-- **Outbound Responses Signed & Verified:** The outbound Guardian responses are signed, and the orchestrator explicitly verifies that signature before any downstream execution gate processing.
+- **Outbound Responses Signed & Verified:** All ACS decision responses emitted by GuardedExecutor, including local addressable schema-deny responses, cross the same outbound validate/sign/validate/verify integrity boundary. JSON-RPC protocol errors are not ACS decision envelopes and are not signed through this ACS response path.
 - **Local HKDF Profile (Issue #118):** ACS v0.1.0 requires a per-session HKDF-derived HMAC key, but the exact HKDF interoperability parameters remain underspecified (tracked in upstream issue #118). Therefore, this demo uses an explicitly documented **local derivation profile**:
   - `HKDF-SHA256`
   - Empty salt

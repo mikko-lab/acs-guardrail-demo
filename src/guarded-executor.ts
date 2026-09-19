@@ -100,13 +100,42 @@ export class GuardedExecutor {
    * 2. Guardian policy evaluated (and outbound response schema validated & signed).
    * 3. Branches on decision (throws on deny, pending on ask, executes on allow).
    */
+
+  private secureOutboundResponse(rawResponse: import("./acs-types").AcsResponseEnvelope, sessionId: string): import("./acs-types").AcsResponseEnvelope {
+    let response = this.schemaValidator.validateResponse(rawResponse);
+    response = this.signatureService.signResponse(response, sessionId);
+    this.schemaValidator.validateResponse(response);
+    this.signatureService.verifyResponse(response, sessionId);
+    return response;
+  }
+
   async process(input: unknown): Promise<ProcessResult> {
     // Step 0 — Schema validation
-    const validated = this.schemaValidator.validateRequest(input);
-    if (validated.method !== "steps/toolCallRequest") {
-      throw new Error("Expected toolCallRequest");
+    let request: import("./acs-types").AcsToolCallRequest;
+    try {
+      const validated = this.schemaValidator.validateRequest(input);
+      if (validated.method !== "steps/toolCallRequest") {
+        throw new Error("Expected toolCallRequest");
+      }
+      request = validated as import("./acs-types").AcsToolCallRequest;
+    } catch (error: unknown) {
+      if (error instanceof AddressableSchemaError) {
+        const rawResponse: import("./acs-types").AcsResponseEnvelope = {
+          jsonrpc: "2.0",
+          id: error.rpcId,
+          result: {
+            type: "final",
+            acs_version: "0.1.0",
+            request_id: error.requestId,
+            decision: "deny",
+            reasoning: error.message,
+            reason_codes: ["schema_validation_failed"]
+          }
+        };
+        error.acsResponse = this.secureOutboundResponse(rawResponse, error.sessionId);
+      }
+      throw error;
     }
-    const request = validated as import("./acs-types").AcsToolCallRequest;
     const { params } = request;
 
     // Step 0.5 — Signature verification
@@ -122,14 +151,7 @@ export class GuardedExecutor {
 
     // Step 2 — deterministic Guardian policy (and outbound validation)
     const rawResponse = this.guardian.evaluate(request);
-    let response = this.schemaValidator.validateResponse(rawResponse);
-
-    // Step 2.5 — sign outbound response and immediately verify it
-    response = this.signatureService.signResponse(response, params.metadata.session_id);
-    this.schemaValidator.validateResponse(response); // verify signing didn't break schema
-
-    // Demonstrate response verification (Consumer-side check before executing)
-    this.signatureService.verifyResponse(response, params.metadata.session_id);
+    const response = this.secureOutboundResponse(rawResponse, params.metadata.session_id);
 
     this.audit.record(params.request_id, "guardian_decision", {
       decision: response.result.decision,
@@ -175,11 +197,31 @@ export class GuardedExecutor {
 
 
   private async processResultRequest(signedResultRequest: import("./acs-types").AcsToolCallResultRequest): Promise<import("./acs-types").AcsToolCallResult> {
-    const validated = this.schemaValidator.validateRequest(signedResultRequest);
-    if (validated.method !== "steps/toolCallResult") {
-      throw new Error("Unexpected request method in result processing");
+    let request: import("./acs-types").AcsToolCallResultRequest;
+    try {
+      const validated = this.schemaValidator.validateRequest(signedResultRequest);
+      if (validated.method !== "steps/toolCallResult") {
+        throw new Error("Unexpected request method in result processing");
+      }
+      request = validated as import("./acs-types").AcsToolCallResultRequest;
+    } catch (error: unknown) {
+      if (error instanceof AddressableSchemaError) {
+        const rawResponse: import("./acs-types").AcsResponseEnvelope = {
+          jsonrpc: "2.0",
+          id: error.rpcId,
+          result: {
+            type: "final",
+            acs_version: "0.1.0",
+            request_id: error.requestId,
+            decision: "deny",
+            reasoning: error.message,
+            reason_codes: ["schema_validation_failed"]
+          }
+        };
+        error.acsResponse = this.secureOutboundResponse(rawResponse, error.sessionId);
+      }
+      throw error;
     }
-    const request = validated as import("./acs-types").AcsToolCallResultRequest;
     const { params } = request;
     const sessionId = params.metadata.session_id;
     const requestIdRef = params.payload.request_id_ref;
@@ -189,11 +231,7 @@ export class GuardedExecutor {
     this.correlation.validateAndConsume(sessionId, requestIdRef);
 
     const rawResponse = this.guardian.evaluateResult(request);
-    let response = this.schemaValidator.validateResponse(rawResponse);
-
-    response = this.signatureService.signResponse(response, sessionId);
-    this.schemaValidator.validateResponse(response);
-    this.signatureService.verifyResponse(response, sessionId);
+    const response = this.secureOutboundResponse(rawResponse, sessionId);
 
     this.audit.record(params.request_id, "result_guardian_decision", {
       decision: response.result.decision,

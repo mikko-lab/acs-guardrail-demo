@@ -19,7 +19,13 @@ export class SchemaValidationError extends Error {
 }
 
 export class AddressableSchemaError extends Error {
-  constructor(public acsResponse: AcsResponseEnvelope, message: string) {
+  public acsResponse?: AcsResponseEnvelope;
+  constructor(
+    public requestId: string,
+    public sessionId: string,
+    public rpcId: string | number,
+    message: string
+  ) {
     super(message);
     this.name = "AddressableSchemaError";
   }
@@ -110,27 +116,17 @@ export class SchemaValidator {
         validRequestId = params.request_id;
       }
 
-      if (validRequestId) {
-        // Addressable -> produce explicit DENY response
-        const acsResponse: AcsResponseEnvelope = {
-          jsonrpc: "2.0",
-          id: obj.id as string | number,
-          result: {
-            type: "final",
-            acs_version: "0.1.0",
-            request_id: validRequestId,
-            decision: "deny",
-            reasoning: errorMsg,
-            reason_codes: ["schema_validation_failed"]
-          }
-        };
-        
-        // 4. Validate the generated response
-        this.validateResponse(acsResponse);
-        
-        throw new AddressableSchemaError(acsResponse, errorMsg);
+      const metadata = params.metadata as Record<string, unknown> | undefined;
+      let validSessionId: string | undefined;
+      if (metadata && typeof metadata.session_id === "string" && UUID_REGEX.test(metadata.session_id)) {
+        validSessionId = metadata.session_id;
+      }
+
+      if (validRequestId && validSessionId) {
+        // Addressable -> thrown with metadata to allow GuardedExecutor to securely construct & sign a response
+        throw new AddressableSchemaError(validRequestId, validSessionId, obj.id as string | number, errorMsg);
       } else {
-        // Unaddressable (e.g. malformed or missing request_id)
+        // Unaddressable (e.g. malformed or missing request_id or session_id)
         throw new SchemaValidationError(errors, errorMsg);
       }
     }

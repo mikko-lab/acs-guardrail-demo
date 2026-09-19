@@ -97,7 +97,7 @@ describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
       let err: any;
       try { validate(req); } catch (e) { err = e; }
       expect(err).toBeInstanceOf(AddressableSchemaError);
-      expect(err.acsResponse.result.request_id).toBe("123e4567-e89b-12d3-a456-426614174000");
+      expect(err.requestId).toBe("123e4567-e89b-12d3-a456-426614174000");
     });
 
     it("valid JSON-RPC + malformed request_id fails ACS validation and is unaddressable (no fake deny)", () => {
