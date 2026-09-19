@@ -184,14 +184,17 @@ describe("ReplayGuard: tool never invoked on rejection", () => {
   beforeEach(() => {
     audit = new AuditCollector();
     guardian = new Guardian();
-    gate = new ExecutionGate(audit);
+    gate = new ExecutionGate(audit, Symbol());
     resetCounters();
   });
 
   async function tryExecute(req: AcsToolCallRequest, guard: ReplayGuard): Promise<void> {
     guard.check(req); // throws on violation; gate.execute never reached
     const response = guardian.evaluate(req);
-    await gate.execute(req, response);
+    const auth = Symbol();
+    const testGate = new ExecutionGate(audit, auth);
+    const permit = testGate.mintPermit(auth, req.params.metadata.session_id, req.params.request_id, "read_record");
+    await testGate.execute(req, permit);
   }
 
   it("7. rejected replay never invokes the tool", async () => {

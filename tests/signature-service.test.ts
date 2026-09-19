@@ -250,7 +250,6 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
         service,
         replayGuard,
         guardian,
-        new ExecutionGate(audit),
         audit,
         new ExecutionCorrelationStore()
       );

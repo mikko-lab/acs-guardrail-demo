@@ -146,8 +146,7 @@ describe("GuardedExecutor with Security Ordering", () => {
     executor = new GuardedExecutor(new SchemaValidator(), new SignatureService("test-secret", "key-1"),
       replayGuard,
       guardian,
-      new ExecutionGate(audit),
-        audit,
+      audit,
         new ExecutionCorrelationStore()
       );
   });

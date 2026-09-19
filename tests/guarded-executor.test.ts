@@ -65,8 +65,7 @@ function makeExecutor(nowMs: number): {
   const executor = new GuardedExecutor(new SchemaValidator(), new SignatureService("test-secret", "key-1"),
     replayGuard,
     guardian,
-    new ExecutionGate(audit),
-        audit,
+    audit,
         new ExecutionCorrelationStore()
       );
   return { executor, audit, replayGuard, guardian };
@@ -124,15 +123,16 @@ beforeEach(() => {
       (signedReq.params.payload.arguments.data.value as any).inner = "malicious_value";
 
       // We need to spy on execution gate to check what was passed to it
-      const origExecute = (executor as any).gate.execute.bind((executor as any).gate);
-      const spy = jest.spyOn((executor as any).gate, "execute").mockImplementation(async (r: any, res: any) => {
+      const origExecute = ExecutionGate.prototype.execute;
+      const spy = jest.spyOn(ExecutionGate.prototype, "execute").mockImplementation(async function(this: any, r: any, p: any) {
         expect((r.params.payload.arguments.data.value as any).inner).toBe("original_value");
-        return origExecute(r, res);
+        return origExecute.call(this, r, p);
       });
 
       await executor.approve("00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000004");
       expect(spy).toHaveBeenCalled();
       expect(executionCounters.update_record).toBeGreaterThan(0);
+      spy.mockRestore();
     });
 
     it("tampered stored request fails HMAC verification and remains consumed", async () => {

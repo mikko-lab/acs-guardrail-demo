@@ -1,51 +1,62 @@
-import { AcsToolCallRequest, AcsResponseEnvelope, AcsToolCallResult } from "./acs-types";
-import { AuditCollector } from "./audit";
+import { AcsToolCallRequest, AcsToolCallResult } from "./acs-types";
 import { tools, unknownToolMock } from "./tools";
+import { AuditCollector } from "./audit";
+
+export interface ExecutionPermit {
+  readonly sessionId: string;
+  readonly requestId: string;
+  readonly toolName: string;
+}
 
 /**
  * ExecutionGate — the critical security boundary.
  *
- * Consumes an ACS response envelope from the Guardian and enforces:
- *   allow → execute exactly once
- *   deny  → never execute (approval cannot override a deny)
- *   ask   → only execute after supplyApproval(request_id) is called
- *           for the exact matching request_id
- *
- * Returns an AcsToolCallResult (hooks/tool-call-result.json shape) on
- * successful execution, or throws on block.
+ * Consumes an internal ExecutionPermit to execute tools.
+ * It strictly requires a valid permit to run any tool.
  */
 export class ExecutionGate {
   private audit: AuditCollector;
+  #authority: symbol;
+  #activePermits = new WeakSet<ExecutionPermit>();
 
-  constructor(audit: AuditCollector) {
+  constructor(audit: AuditCollector, authority: symbol) {
     this.audit = audit;
+    this.#authority = authority;
+  }
+
+  mintPermit(authority: symbol, sessionId: string, requestId: string, toolName: string): ExecutionPermit {
+    if (authority !== this.#authority) {
+      throw new Error("Unauthorized permit minting");
+    }
+    const permit = { sessionId, requestId, toolName };
+    this.#activePermits.add(permit);
+    return permit;
   }
 
   async execute(
     request: AcsToolCallRequest,
-    response: AcsResponseEnvelope
+    permit: ExecutionPermit
   ): Promise<AcsToolCallResult> {
     const { params } = request;
-    const { result } = response;
     const toolName = params.payload.tool.name;
 
-    // We do not record tool_call_requested or guardian_decision here anymore,
-    // they are better recorded centrally or assumed already recorded by GuardedExecutor,
-    // but we can leave them if they don't hurt. Wait, GuardedExecutor might record them?
-    // Let's leave them here for now, or move them? The user didn't say to move audit.
-
-    // DENY — hard block.
-    if (result.decision === "deny") {
-      this.audit.record(params.request_id, "tool_execution_blocked", {
-        reason: "denied",
-      });
-      throw new Error(
-        `Execution blocked (deny): ${result.reasoning ?? result.reason_codes?.[0]}`
-      );
+    if (!permit || !this.#activePermits.has(permit)) {
+      throw new Error("Execution blocked: valid execution permit required");
     }
 
-    // If decision === "ask", it reaches here ONLY via the GuardedExecutor.approve() path.
-    // The GuardedExecutor manages the pending-action state.
+    // Permit is consumed IMMEDIATELY before tool invocation
+    this.#activePermits.delete(permit);
+
+    // Validate bindings
+    if (permit.sessionId !== params.metadata.session_id) {
+      throw new Error("Execution blocked: permit session mismatch");
+    }
+    if (permit.requestId !== params.request_id) {
+      throw new Error("Execution blocked: permit request mismatch");
+    }
+    if (permit.toolName !== toolName) {
+      throw new Error("Execution blocked: permit tool mismatch");
+    }
 
     this.audit.record(params.request_id, "tool_execution_started");
 

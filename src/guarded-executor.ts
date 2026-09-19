@@ -28,7 +28,7 @@
 import { AcsToolCallRequest, AcsResponseEnvelope, AcsToolCallResult } from "./acs-types";
 import { ReplayGuard } from "./replay-guard";
 import { Guardian } from "./guardian";
-import { ExecutionGate } from "./execution-gate";
+import { ExecutionGate, ExecutionPermit } from "./execution-gate";
 import { AuditCollector } from "./audit";
 import { SchemaValidator, AddressableSchemaError } from "./schema-validator";
 import { SignatureService } from "./signature-service";
@@ -49,9 +49,10 @@ export class GuardedExecutor {
   private readonly signatureService: SignatureService;
   private readonly replayGuard: ReplayGuard;
   private readonly guardian: Guardian;
-  private readonly gate: ExecutionGate;
   private readonly audit: AuditCollector;
   private readonly correlation: ExecutionCorrelationStore;
+  #permitAuthority = Symbol("ExecutionAuthority");
+  #gate: ExecutionGate;
 
   // Keyed by: `${session_id}:${request_id}`
   private readonly pendingActions: Map<string, PendingAction> = new Map();
@@ -61,7 +62,6 @@ export class GuardedExecutor {
     signatureService: SignatureService,
     replayGuard: ReplayGuard,
     guardian: Guardian,
-    gate: ExecutionGate,
     audit: AuditCollector,
     correlation: ExecutionCorrelationStore
   ) {
@@ -69,9 +69,9 @@ export class GuardedExecutor {
     this.signatureService = signatureService;
     this.replayGuard = replayGuard;
     this.guardian = guardian;
-    this.gate = gate;
     this.audit = audit;
     this.correlation = correlation;
+    this.#gate = new ExecutionGate(audit, this.#permitAuthority);
   }
 
   /**
@@ -121,9 +121,8 @@ export class GuardedExecutor {
 
     // Step 3 — branch on decision
     if (response.result.decision === "deny") {
-      // Gate enforces hard block logic
-      const result = await this.gate.execute(request, response);
-      return { status: "executed", result }; // Unreachable; gate throws
+      this.audit.record(params.request_id, "tool_execution_blocked", { reason: "denied" });
+      throw new Error(`Execution blocked (deny): ${response.result.reasoning ?? response.result.reason_codes?.[0]}`);
     }
 
     if (response.result.decision === "ask") {
@@ -195,7 +194,10 @@ export class GuardedExecutor {
     try {
       this.audit.record(originalRequestId, "tool_execution_started", { tool: toolName });
       this.correlation.markExecuted(sessionId, originalRequestId);
-      const result = await this.gate.execute(request, response);
+
+      const permit = this.#gate.mintPermit(this.#permitAuthority, sessionId, originalRequestId, toolName);
+      const result = await this.#gate.execute(request, permit);
+
       outputs = result.outputs || [{ value: result }];
       exitStatus = result.exit_status || "success";
       this.audit.record(originalRequestId, "tool_execution_completed", { tool: toolName });

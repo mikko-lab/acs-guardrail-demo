@@ -189,6 +189,7 @@ npx ts-node src/demo.ts
 
 The execution boundary implements a two-sided security model separating request approval from output delivery:
 - **Request Gate**: Controls whether the tool may run (and whether side effects may occur). A request-gate DENY strictly prevents execution.
+- **Execution Permit**: ExecutionGate does not trust raw Guardian decision objects. Tool execution requires an internal single-use permit, minted only after verified ALLOW or approved pending ASK.
 - **ASK Action Snapshots**: Pending ASK actions are stored as independent authenticated snapshots. Approval resumes the verified snapshot, not the caller-owned request object.
 - **Result Gate**: Controls whether the tool's output may reach the agent. A result-gate DENY does NOT undo side effects (which have already happened) but firmly withholds the restricted output.
 - **Strict Output Boundary**: Output is never exposed before Result Guardian approval. If denied, a safe blocked payload is delivered instead of raw output. Sensitive output is carefully scrubbed and never leaked into Audit logs, error messages, or reasoning text.

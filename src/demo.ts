@@ -15,16 +15,13 @@ async function runDemo(): Promise<void> {
   const signatureService = new SignatureService("demo-root-secret-for-testing", "key-1");
   const replayGuard = new ReplayGuard({ audit });
   const guardian = new Guardian();
-  const gate = new ExecutionGate(audit);
-
-  // Wire the enforcement stack through GuardedExecutor — the mandatory
+    // Wire the enforcement stack through GuardedExecutor — the mandatory
   // orchestration boundary that prevents replay-guard from being skipped.
   const executor = new GuardedExecutor(
     schemaValidator,
     signatureService,
     replayGuard,
     guardian,
-    gate,
     audit,
     new ExecutionCorrelationStore()
   );

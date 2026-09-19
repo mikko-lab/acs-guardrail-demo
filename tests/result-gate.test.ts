@@ -30,7 +30,6 @@ describe("Phase 5: Result Gate Governance", () => {
       signatureService,
       new ReplayGuard({ audit }),
       guardian,
-      new ExecutionGate(audit),
       audit,
       correlation
     );
@@ -87,8 +86,8 @@ describe("Phase 5: Result Gate Governance", () => {
     const req = createRequest("123e4567-e89b-12d3-a456-426614174012", "read_record");
     
     // Force the execution gate to return restricted data for this test
-    const origExecute = (executor as any).gate.execute.bind((executor as any).gate);
-    jest.spyOn((executor as any).gate, "execute").mockResolvedValueOnce({
+    const origExecute = ExecutionGate.prototype.execute;
+    jest.spyOn(ExecutionGate.prototype, "execute").mockResolvedValueOnce({
       tool: { name: "read_record" },
       request_id_ref: "123e4567-e89b-12d3-a456-426614174012",
       exit_status: "success",
@@ -121,7 +120,7 @@ describe("Phase 5: Result Gate Governance", () => {
 
     // 18. result-gate DENY -> execution counter is 1 but delivery is blocked
     const reqResultDeny = createRequest("123e4567-e89b-12d3-a456-426614174014", "read_record");
-    jest.spyOn((executor as any).gate, "execute").mockResolvedValueOnce({
+    jest.spyOn(ExecutionGate.prototype, "execute").mockResolvedValueOnce({
       tool: { name: "read_record" },
       request_id_ref: "123e4567-e89b-12d3-a456-426614174014",
       exit_status: "success",
@@ -139,7 +138,7 @@ describe("Phase 5: Result Gate Governance", () => {
     const req = createRequest("123e4567-e89b-12d3-a456-426614174015", "read_record");
     
     // Inject throwing tool
-    jest.spyOn((executor as any).gate, "execute").mockRejectedValueOnce(new Error("MySecretStackTrace"));
+    jest.spyOn(ExecutionGate.prototype, "execute").mockRejectedValueOnce(new Error("MySecretStackTrace"));
 
     const result = await executor.process(req);
     expect(executionCounters.read_record).toBe(0); // My mock intercepted before tools.ts incremented it! 
@@ -157,7 +156,7 @@ describe("Phase 5: Result Gate Governance", () => {
     const req = createRequest("123e4567-e89b-12d3-a456-426614174099", "read_record");
     
     // Inject a throwing tool that leaks a fake secret
-    jest.spyOn((executor as any).gate, "execute").mockRejectedValueOnce(new Error("DB password=super-secret-value"));
+    jest.spyOn(ExecutionGate.prototype, "execute").mockRejectedValueOnce(new Error("DB password=super-secret-value"));
 
     const result = await executor.process(req);
     expect(result.status).toBe("executed");

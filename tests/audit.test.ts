@@ -18,8 +18,7 @@ describe("Audit Collector invariants", () => {
     executor = new GuardedExecutor(new SchemaValidator(), new SignatureService("test-secret", "key-1"),
       new ReplayGuard({ audit }),
       new Guardian(),
-      new ExecutionGate(audit),
-        audit,
+      audit,
         new ExecutionCorrelationStore()
       );
   });

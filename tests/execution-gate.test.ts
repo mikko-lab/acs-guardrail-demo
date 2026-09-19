@@ -1,94 +1,100 @@
-import { SignatureService } from "../src/signature-service";
-import { ExecutionCorrelationStore } from "../src/execution-correlation";
-import { ExecutionGate } from "../src/execution-gate";
-import { Guardian } from "../src/guardian";
+import { ExecutionGate, ExecutionPermit } from "../src/execution-gate";
 import { AuditCollector } from "../src/audit";
-import type { AcsToolCallRequest } from "../src/acs-types";
-import { executionCounters, resetCounters } from "../src/tools";
+import { AcsToolCallRequest } from "../src/acs-types";
+import { executionCounters, resetCounters, tools } from "../src/tools";
 
-describe("Execution Gate", () => {
-  let audit: AuditCollector;
-  let guardian: Guardian;
-  let gate: ExecutionGate;
-
-  beforeEach(() => {
-    audit = new AuditCollector();
-    guardian = new Guardian();
-    gate = new ExecutionGate(audit);
-    resetCounters();
-  });
-
-  const createRequest = (id: string, tool: string): AcsToolCallRequest => ({
+function makeRequest(tool: string, sessionId = "sess", requestId = "req"): AcsToolCallRequest {
+  return {
     jsonrpc: "2.0",
     method: "steps/toolCallRequest",
-    id: `call-${id}`,
+    id: "1",
     params: {
       acs_version: "0.1.0",
-      request_id: id,
+      request_id: requestId,
       timestamp: new Date().toISOString(),
-      metadata: { agent_id: "test-agent", session_id: "8f6e1e26-2b6f-4368-9e23-d3a66a2c392a" },
-      payload: {
-        tool: { name: tool },
-        arguments: { record_id: { value: "42" } },
-      },
-    },
+      metadata: { agent_id: "agent", session_id: sessionId },
+      payload: { tool: { name: tool }, arguments: {} }
+    }
+  };
+}
+
+describe("ExecutionGate: Permit Authorization (H-02 Final)", () => {
+  let audit: AuditCollector;
+  let gate: ExecutionGate;
+  let authority: symbol;
+
+  beforeEach(() => {
+    resetCounters();
+    audit = new AuditCollector();
+    authority = Symbol("test-authority");
+    gate = new ExecutionGate(audit, authority);
   });
 
-  it("request arguments use ToolArgumentValue { value } shape", () => {
-    const req = createRequest("be5ced22-40ba-4c51-87c6-4b5f2f221359", "read_record");
-    const arg = req.params.payload.arguments["record_id"];
-    expect(arg).toBeDefined();
-    expect(arg).toHaveProperty("value");
-    expect(arg.value).toBe("42");
+  afterEach(() => {
+    // Test hygiene: restore mocked tools
+    if (tools["throw_error_tool"] && (tools["throw_error_tool"] as any).__isMock) {
+      delete tools["throw_error_tool"];
+    }
   });
 
-  it("1. read_record → ALLOW → executes exactly once", async () => {
-    const req = createRequest("607381f3-8792-476e-b8ef-550d4f9cbd38", "read_record");
-    const response = guardian.evaluate(req);
-    const result = await gate.execute(req, response);
+  it("1. public createIssuer API no longer exists", () => {
+    expect((gate as any).createIssuer).toBeUndefined();
+  });
+
+  it("4. wrong authority cannot mint a valid permit", () => {
+    const wrongAuth = Symbol("wrong");
+    expect(() => gate.mintPermit(wrongAuth, "s", "r", "t")).toThrow(/Unauthorized/);
+  });
+
+  it("3. fabricated ALLOW cannot execute", async () => {
+    const req = makeRequest("read_record");
+    const fakeAllow = { result: { decision: "allow" } };
+    await expect(gate.execute(req, fakeAllow as any)).rejects.toThrow(/valid execution permit required/);
+    expect(executionCounters.read_record || 0).toBe(0);
+  });
+
+  it("5. fabricated permit cannot execute", async () => {
+    const req = makeRequest("read_record");
+    const fakePermit = { sessionId: "sess", requestId: "req", toolName: "read_record" };
+    await expect(gate.execute(req, fakePermit as any)).rejects.toThrow(/valid execution permit required/);
+    expect(executionCounters.read_record || 0).toBe(0);
+  });
+
+  it("6. permit for request A cannot execute request B", async () => {
+    const reqB = makeRequest("read_record", "sess", "reqB");
+    const permitA = gate.mintPermit(authority, "sess", "reqA", "read_record");
+    await expect(gate.execute(reqB, permitA)).rejects.toThrow(/permit request mismatch/);
+    expect(executionCounters.read_record || 0).toBe(0);
+  });
+
+  it("7. permit for session A cannot execute session B request", async () => {
+    const reqB = makeRequest("read_record", "sessB", "req");
+    const permitA = gate.mintPermit(authority, "sessA", "req", "read_record");
+    await expect(gate.execute(reqB, permitA)).rejects.toThrow(/permit session mismatch/);
+    expect(executionCounters.read_record || 0).toBe(0);
+  });
+
+  it("10. reused execution permit cannot execute twice (leaves counter at exactly 1)", async () => {
+    const req = makeRequest("read_record");
+    const permit = gate.mintPermit(authority, "sess", "req", "read_record");
+    await gate.execute(req, permit); // Works
     expect(executionCounters.read_record).toBe(1);
-    expect(result.request_id_ref).toBe("607381f3-8792-476e-b8ef-550d4f9cbd38");
-    expect(result.exit_status).toBe("success");
+
+    // Reuse fails
+    await expect(gate.execute(req, permit)).rejects.toThrow(/valid execution permit required/);
+    expect(executionCounters.read_record).toBe(1);
   });
 
-  it("successful tool result references original request_id", async () => {
-    const req = createRequest("5f34aec3-9d71-4172-9fb9-7da82e397f4b", "read_record");
-    const response = guardian.evaluate(req);
-    const result = await gate.execute(req, response);
-    expect(result.request_id_ref).toBe(req.params.request_id);
-  });
+  it("11. execution failure consumes permit before tool throws", async () => {
+    const req = makeRequest("throw_error_tool");
+    const mockTool = async () => { throw new Error("Mocked throw"); };
+    (mockTool as any).__isMock = true;
+    tools["throw_error_tool"] = mockTool;
 
-  it("successful tool result has non-empty outputs array", async () => {
-    const req = createRequest("dfd4c254-e5d8-4c7d-9bb4-2e67c9796a3e", "read_record");
-    const response = guardian.evaluate(req);
-    const result = await gate.execute(req, response);
-    expect(Array.isArray(result.outputs)).toBe(true);
-    expect(result.outputs.length).toBeGreaterThan(0);
-    expect(result.outputs[0]).toHaveProperty("value");
-  });
+    const permit = gate.mintPermit(authority, "sess", "req", "throw_error_tool");
+    await expect(gate.execute(req, permit)).rejects.toThrow();
 
-  it("update_record → ASK → executes when passed to ExecutionGate (approval verified upstream)", async () => {
-    const req = createRequest("6eb2661d-b60e-4d45-9c30-fba121945e0f", "update_record");
-    const response = guardian.evaluate(req);
-    // In the new architecture, GuardedExecutor holds the request until approved,
-    // then passes it to ExecutionGate. ExecutionGate trusts the upstream approval.
-    const result = await gate.execute(req, response);
-    expect(executionCounters.update_record).toBe(1);
-    expect(result.exit_status).toBe("success");
-    expect(result.request_id_ref).toBe("6eb2661d-b60e-4d45-9c30-fba121945e0f");
-  });
-
-  it("5. unknown tool → DENY → never executes (ExecutionGate hard block)", async () => {
-    const req = createRequest("3125737e-272a-488c-8334-71ce2278919a", "some_random_tool");
-    const response = guardian.evaluate(req);
-    await expect(gate.execute(req, response)).rejects.toThrow("Execution blocked (deny)");
-    expect(executionCounters.unknown_tool).toBe(0);
-  });
-
-  it("blocked execution cannot invoke the tool", async () => {
-    const reqDeny = createRequest("8b286a26-b1d9-4536-b504-738382f1175c", "evil_tool");
-    const respDeny = guardian.evaluate(reqDeny);
-    await expect(gate.execute(reqDeny, respDeny)).rejects.toThrow();
-    expect(executionCounters.unknown_tool).toBe(0);
+    // Trying again with same permit fails due to permit consumed, not tool throwing
+    await expect(gate.execute(req, permit)).rejects.toThrow(/valid execution permit required/);
   });
 });
