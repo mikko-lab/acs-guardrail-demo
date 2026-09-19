@@ -76,7 +76,92 @@ beforeEach(() => {
   resetCounters();
 });
 
-describe("GuardedExecutor: ASK Pause/Resume Semantics", () => {
+
+  describe("H-01: Immutable Authenticated Snapshot & Internal Integrity", () => {
+    it("caller mutation of outer object cannot alter approved action", async () => {
+      const { executor } = makeExecutor(Date.now());
+      // 1. Create a valid signed update_record request
+      const req = makeRequest({ tool: "update_record", sessionId: "00000000-0000-0000-0000-000000000001", requestId: "00000000-0000-0000-0000-000000000002" });
+
+      // 2. Call process() and confirm status === "pending"
+      const result = await executor.process(req);
+      expect(result.status).toBe("pending");
+
+      // 3. Mutate the ORIGINAL caller object after process()
+      req.params.payload.tool.name = "read_record"; // changed from update to read
+      req.params.metadata.session_id = "00000000-0000-0000-0000-000000000005";
+      req.params.request_id = "00000000-0000-0000-0000-000000000006";
+
+      // 4. Approve using the original session_id + request_id
+      const finalResult = await executor.approve("00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002");
+
+      // Verification:
+      // changing original tool.name to read_record does NOT execute read_record
+      expect(executionCounters.read_record || 0).toBe(0);
+
+      // original update_record executes exactly once after approval
+      expect(executionCounters.update_record).toBe(1);
+
+      if (finalResult.exit_status !== "failure" && finalResult.exit_status !== "blocked") {
+        expect(finalResult.tool.name).toBe("update_record");
+      }
+    });
+
+    it("nested caller mutation cannot alter approved action (proves deep clone)", async () => {
+      const { executor } = makeExecutor(Date.now());
+      // Create request with nested arguments
+      const req = makeRequest({ tool: "update_record", sessionId: "00000000-0000-0000-0000-000000000003", requestId: "00000000-0000-0000-0000-000000000004" });
+      req.params.payload.arguments = { data: { value: { inner: "original_value" } } };
+
+      // Re-sign because we modified payload before process
+      const service = new SignatureService("test-secret", "key-1");
+      const signedReq = service.signRequest(req);
+
+      const result = await executor.process(signedReq);
+      expect(result.status).toBe("pending");
+
+      // Mutate nested argument
+      (signedReq.params.payload.arguments.data.value as any).inner = "malicious_value";
+
+      // We need to spy on execution gate to check what was passed to it
+      const origExecute = (executor as any).gate.execute.bind((executor as any).gate);
+      const spy = jest.spyOn((executor as any).gate, "execute").mockImplementation(async (r: any, res: any) => {
+        expect((r.params.payload.arguments.data.value as any).inner).toBe("original_value");
+        return origExecute(r, res);
+      });
+
+      await executor.approve("00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000004");
+      expect(spy).toHaveBeenCalled();
+      expect(executionCounters.update_record).toBeGreaterThan(0);
+    });
+
+    it("tampered stored request fails HMAC verification and remains consumed", async () => {
+      const { executor } = makeExecutor(Date.now());
+      const req = makeRequest({ tool: "update_record", sessionId: "00000000-0000-0000-0000-000000000007", requestId: "00000000-0000-0000-0000-000000000008" });
+      const result = await executor.process(req);
+      expect(result.status).toBe("pending");
+
+      // Tamper internally (test-only access)
+      const pendingMap = (executor as any).pendingActions;
+      const pending = pendingMap.get("00000000-0000-0000-0000-000000000007:00000000-0000-0000-0000-000000000008");
+      expect(pending).toBeDefined();
+
+      // Alter the payload after it was recorded
+      pending.request.params.payload.tool.name = "read_record";
+
+      // Approve should fail closed (SignatureInvalidError thrown by verifyRequest)
+      await expect(executor.approve("00000000-0000-0000-0000-000000000007", "00000000-0000-0000-0000-000000000008")).rejects.toThrow();
+
+      // Tool execution count stays 0
+      expect(executionCounters.read_record || 0).toBe(0);
+      // Wait, update_record count might be >0 from previous tests, let's just make sure it didn't execute
+
+      // Pending action is consumed and cannot be approved again
+      await expect(executor.approve("00000000-0000-0000-0000-000000000007", "00000000-0000-0000-0000-000000000008")).rejects.toThrow(/No pending action found/);
+    });
+  });
+
+  describe("GuardedExecutor: ASK Pause/Resume Semantics", () => {
   it("1, 2. ASK stores the original request as pending and does not execute the tool", async () => {
     const { executor } = makeExecutor(Date.now());
     const req = makeRequest({ tool: "update_record", requestId: "38a6cdcc-5661-48d9-8ef2-614cc9d71af8" });

@@ -128,7 +128,10 @@ export class GuardedExecutor {
 
     if (response.result.decision === "ask") {
       const key = `${params.metadata.session_id}:${params.request_id}`;
-      this.pendingActions.set(key, { request, response });
+      // Deep clone to prevent caller mutations
+      const snapshotRequest = JSON.parse(JSON.stringify(request));
+      const snapshotResponse = JSON.parse(JSON.stringify(response));
+      this.pendingActions.set(key, { request: snapshotRequest, response: snapshotResponse });
       this.audit.record(params.request_id, "approval_requested");
       return { status: "pending" };
     }
@@ -232,6 +235,7 @@ export class GuardedExecutor {
    * Approve a pending action and execute it exactly once.
    * Resumes the SAME action without re-evaluating ReplayGuard or Guardian.
    */
+
   async approve(sessionId: string, requestId: string): Promise<AcsToolCallResult> {
     const key = `${sessionId}:${requestId}`;
     const pending = this.pendingActions.get(key);
@@ -240,11 +244,18 @@ export class GuardedExecutor {
       throw new Error(`No pending action found for session ${sessionId}, request ${requestId}`);
     }
 
-    // Consume the pending action (exactly-once execution)
+    // Consume the pending action (exactly-once execution) BEFORE execution/validation
     this.pendingActions.delete(key);
 
+    // Re-verify the stored snapshot to ensure integrity
+    const validated = this.schemaValidator.validateRequest(pending.request);
+    if (validated.method !== "steps/toolCallRequest") {
+      throw new Error("Invalid request method in pending action");
+    }
+    this.signatureService.verifyRequest(pending.request as any);
+
     this.audit.record(requestId, "human_approval");
-    return this.executeAndProcessResult(pending.request, pending.response);
+    return this.executeAndProcessResult(pending.request as any, pending.response);
   }
 
   /**
