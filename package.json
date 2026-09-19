@@ -22,5 +22,13 @@
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "json-canonicalize": "^3.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikko-lab/acs-guardrail-demo.git"
+  },
+  "homepage": "https://github.com/mikko-lab/acs-guardrail-demo#readme",
+  "bugs": {
+    "url": "https://github.com/mikko-lab/acs-guardrail-demo/issues"
   }
 }

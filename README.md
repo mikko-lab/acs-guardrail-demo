@@ -1,5 +1,7 @@
 # ACS Guardrail Demo — Phase 1 + Phase 2
 
+**Repository:** https://github.com/mikko-lab/acs-guardrail-demo
+
 **This project demonstrates selected ACS v0.1.0 control patterns. It does not claim ACS-Core conformance.**
 
 This is a standalone, public demo of a deterministic Agent Control Standard (ACS) control flow. It proves how an external, deterministic guardian policy can mediate AI agent tool calls before they execute, blocking replays and stale requests, gating side-effects behind explicit human approval, and collecting lifecycle events in memory for demonstration purposes.
