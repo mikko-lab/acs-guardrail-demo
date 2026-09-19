@@ -138,6 +138,7 @@ export type AuditEventType =
   | "human_approval"
   | "human_rejection"
   | "approval_requested"
+  | "approval_expired"
   | "tool_execution_started"
   | "tool_execution_completed"
   | "tool_execution_blocked"

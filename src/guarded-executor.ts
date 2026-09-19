@@ -40,9 +40,14 @@ export type ProcessResult =
   | { status: "pending" };
 
 interface PendingAction {
+  createdAtMs: number;
+  expiresAtMs: number;
   request: AcsToolCallRequest;
   response: AcsResponseEnvelope;
 }
+
+import { ApprovalGrantVerifier, ApprovalGrantV1 } from "./approval-verifier";
+import { Clock } from "./replay-guard";
 
 export class GuardedExecutor {
   private readonly schemaValidator: SchemaValidator;
@@ -51,6 +56,9 @@ export class GuardedExecutor {
   private readonly guardian: Guardian;
   private readonly audit: AuditCollector;
   private readonly correlation: ExecutionCorrelationStore;
+  private readonly approvalVerifier: ApprovalGrantVerifier;
+  private readonly clock: Clock;
+  private readonly approvalFutureSkewMs: number;
   #permitAuthority = Symbol("ExecutionAuthority");
   #gate: ExecutionGate;
 
@@ -63,7 +71,10 @@ export class GuardedExecutor {
     replayGuard: ReplayGuard,
     guardian: Guardian,
     audit: AuditCollector,
-    correlation: ExecutionCorrelationStore
+    correlation: ExecutionCorrelationStore,
+    approvalVerifier: ApprovalGrantVerifier,
+    clock: Clock = { nowMs: () => Date.now() },
+    approvalFutureSkewMs: number = 30000
   ) {
     this.schemaValidator = schemaValidator;
     this.signatureService = signatureService;
@@ -71,6 +82,12 @@ export class GuardedExecutor {
     this.guardian = guardian;
     this.audit = audit;
     this.correlation = correlation;
+    this.approvalVerifier = approvalVerifier;
+    this.clock = clock;
+    if (typeof approvalFutureSkewMs !== 'number' || !Number.isFinite(approvalFutureSkewMs) || approvalFutureSkewMs < 0) {
+      throw new Error("approvalFutureSkewMs must be a non-negative finite number");
+    }
+    this.approvalFutureSkewMs = approvalFutureSkewMs;
     this.#gate = new ExecutionGate(audit, this.#permitAuthority);
   }
 
@@ -126,11 +143,27 @@ export class GuardedExecutor {
     }
 
     if (response.result.decision === "ask") {
+      const askDetails = response.result.ask_details;
+      if (!askDetails) throw new Error("Missing ask_details for ASK decision");
+
+      if (askDetails.approver.type !== "human") {
+        this.audit.record(params.request_id, "tool_execution_blocked", { reason: "unsupported_approver_type" });
+        throw new Error("Local profile requires human approval only; agent/service is unsupported.");
+      }
+
+      if (askDetails.timeout_disposition === "allow") {
+        this.audit.record(params.request_id, "tool_execution_blocked", { reason: "timeout_disposition_allow_rejected" });
+        throw new Error("Local profile requires timeout_disposition to be deny or absent; allow is deliberately unsupported.");
+      }
+
+      const nowMs = this.clock.nowMs();
+      const createdAtMs = nowMs;
+      const expiresAtMs = nowMs + (askDetails.timeout_seconds * 1000);
       const key = `${params.metadata.session_id}:${params.request_id}`;
       // Deep clone to prevent caller mutations
       const snapshotRequest = JSON.parse(JSON.stringify(request));
       const snapshotResponse = JSON.parse(JSON.stringify(response));
-      this.pendingActions.set(key, { request: snapshotRequest, response: snapshotResponse });
+      this.pendingActions.set(key, { request: snapshotRequest, response: snapshotResponse, createdAtMs, expiresAtMs });
       this.audit.record(params.request_id, "approval_requested");
       return { status: "pending" };
     }
@@ -234,48 +267,72 @@ export class GuardedExecutor {
   }
 
   /**
-   * Approve a pending action and execute it exactly once.
-   * Resumes the SAME action without re-evaluating ReplayGuard or Guardian.
+   * Resolve an approval grant (approve or reject).
    */
-
-  async approve(sessionId: string, requestId: string): Promise<AcsToolCallResult> {
-    const key = `${sessionId}:${requestId}`;
+  /**
+   * @param skewMs The maximum allowed future skew for issued_at. Default 30000ms (30s).
+   */
+  async resolveApproval(input: unknown): Promise<import("./acs-types").AcsToolCallResult | void> {
+    const grant = this.approvalVerifier.verify(input);
+    const key = `${grant.session_id}:${grant.request_id}`;
     const pending = this.pendingActions.get(key);
 
     if (!pending) {
-      throw new Error(`No pending action found for session ${sessionId}, request ${requestId}`);
+      throw new Error(`No pending action found for session ${grant.session_id}, request ${grant.request_id}`);
     }
 
-    // Consume the pending action (exactly-once execution) BEFORE execution/validation
+
+
+    const askDetails = pending.response.result.ask_details!;
+    if (grant.approver.type !== askDetails.approver.type || grant.approver.id !== askDetails.approver.id) {
+      throw new Error("Approval grant approver does not match pending ask_details approver");
+    }
+
+    // Freshness check (issued_at)
+    const issuedAtMs = Date.parse(grant.issued_at);
+    if (issuedAtMs < pending.createdAtMs) {
+      throw new Error("Approval grant rejected: issued_at is before ASK creation");
+    }
+    if (issuedAtMs > this.clock.nowMs() + this.approvalFutureSkewMs) {
+      throw new Error("Approval grant rejected: issued_at is unreasonably in the future");
+    }
+
+    // Expiry check
+    const elapsedMs = this.clock.nowMs() - pending.createdAtMs;
+    if (elapsedMs > askDetails.timeout_seconds * 1000) {
+      this.pendingActions.delete(key);
+      this.audit.record(grant.request_id, "approval_expired");
+      throw new Error("Approval grant rejected: pending action has expired");
+    }
+
+    // Grant is valid and not expired. Consume pending state.
     this.pendingActions.delete(key);
 
-    // Re-verify the stored snapshot to ensure integrity
+    if (grant.decision === "reject") {
+      this.audit.record(grant.request_id, "human_rejection", {
+        approver_type: grant.approver.type,
+        approver_id: grant.approver.id,
+        session_id: grant.session_id,
+        request_id: grant.request_id
+      });
+      this.audit.record(grant.request_id, "tool_execution_blocked", { reason: "human_rejected" });
+      return;
+    }
+
+    // decision === "approve"
     const validated = this.schemaValidator.validateRequest(pending.request);
     if (validated.method !== "steps/toolCallRequest") {
       throw new Error("Invalid request method in pending action");
     }
     this.signatureService.verifyRequest(pending.request as any);
 
-    this.audit.record(requestId, "human_approval");
+    this.audit.record(grant.request_id, "human_approval", {
+      approver_type: grant.approver.type,
+      approver_id: grant.approver.id,
+      session_id: grant.session_id,
+      request_id: grant.request_id
+    });
     return this.executeAndProcessResult(pending.request as any, pending.response);
-  }
-
-  /**
-   * Reject a pending action without executing it.
-   */
-  reject(sessionId: string, requestId: string): void {
-    const key = `${sessionId}:${requestId}`;
-    const pending = this.pendingActions.get(key);
-
-    if (!pending) {
-      throw new Error(`No pending action found for session ${sessionId}, request ${requestId}`);
-    }
-
-    // Consume without execution
-    this.pendingActions.delete(key);
-
-    this.audit.record(requestId, "human_rejection");
-    this.audit.record(requestId, "tool_execution_blocked", { reason: "human_rejected" });
   }
 
   /**

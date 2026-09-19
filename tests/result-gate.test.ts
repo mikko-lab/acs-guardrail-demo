@@ -31,7 +31,8 @@ describe("Phase 5: Result Gate Governance", () => {
       new ReplayGuard({ audit }),
       guardian,
       audit,
-      correlation
+      correlation,
+      new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1")
     );
   });
 

@@ -142,10 +142,12 @@ GuardedExecutor.process(request)
 Approval cannot be manufactured by the Guardian or the AI agent.
 
 - `ASK` pauses an already accepted request without executing the tool.
-- Approval resumes that exact pending action via `GuardedExecutor.approve(sessionId, requestId)`.
-- The original `request_id` is preserved for correlation. No second `toolCallRequest` is generated.
-- Replay protection applies to incoming hook requests, not to the local approval-resume transition.
-- Full ACS approval transport semantics are still out of scope.
+- **ACS requirement:** Approver authentication is required.
+- **Local implementation:** Approval grants are authenticated using an out-of-band Ed25519 approval authority configured by public key.
+- **Explicit limitation:** This local profile supports authenticated human approval grants only. Human identity authentication itself remains out of band; the runtime verifies a cryptographic grant from the configured approval authority.
+- **Expiry:** ASK expiry is strictly enforced. The timeout boundary uses strict `>` semantics (expires when `elapsedMs > timeout_seconds * 1000`).
+- **Fail Closed:** This local human-approval profile fails closed on timeout. `timeout_disposition: allow` is deliberately unsupported and will cause the local profile to reject the ASK immediately.
+- Pending ASK actions are stored as independent authenticated snapshots. Approval resumes the verified snapshot using `resolveApproval(grant)`, consuming the pending state.
 
 ## Security Properties Demonstrated
 
@@ -182,14 +184,14 @@ npm run verify
 
 ### Run Demo
 ```bash
-npx ts-node src/demo.ts
+npx ts-node examples/approval-demo.ts
 ```
 
 ## Result Gate & Output Delivery (Phase 5)
 
 The execution boundary implements a two-sided security model separating request approval from output delivery:
 - **Request Gate**: Controls whether the tool may run (and whether side effects may occur). A request-gate DENY strictly prevents execution.
-- **Execution Permit**: ExecutionGate does not trust raw Guardian decision objects. Tool execution requires an internal single-use permit, minted only after verified ALLOW or approved pending ASK.
+- **Execution Permit**: ExecutionGate does not trust raw Guardian decision objects. GuardedExecutor owns the runtime authority used to mint permits for its ExecutionGate instance. Tool execution requires an internal single-use permit, minted only after verified ALLOW or approved pending ASK.
 - **ASK Action Snapshots**: Pending ASK actions are stored as independent authenticated snapshots. Approval resumes the verified snapshot, not the caller-owned request object.
 - **Result Gate**: Controls whether the tool's output may reach the agent. A result-gate DENY does NOT undo side effects (which have already happened) but firmly withholds the restricted output.
 - **Strict Output Boundary**: Output is never exposed before Result Guardian approval. If denied, a safe blocked payload is delivered instead of raw output. Sensitive output is carefully scrubbed and never leaked into Audit logs, error messages, or reasoning text.

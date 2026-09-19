@@ -19,7 +19,8 @@ describe("Audit Collector invariants", () => {
       new ReplayGuard({ audit }),
       new Guardian(),
       audit,
-        new ExecutionCorrelationStore()
+        new ExecutionCorrelationStore(),
+        new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1")
       );
   });
 

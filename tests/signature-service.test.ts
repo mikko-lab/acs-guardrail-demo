@@ -251,7 +251,8 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
         replayGuard,
         guardian,
         audit,
-        new ExecutionCorrelationStore()
+        new ExecutionCorrelationStore(),
+        new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1")
       );
     });
 

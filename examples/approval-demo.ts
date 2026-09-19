@@ -1,12 +1,15 @@
-import { SchemaValidator } from "./schema-validator";
-import { AcsToolCallRequest, AcsToolCallRequestPayload } from "./acs-types";
-import { ReplayGuard } from "./replay-guard";
-import { Guardian } from "./guardian";
-import { ExecutionGate } from "./execution-gate";
-import { AuditCollector } from "./audit";
-import { GuardedExecutor } from "./guarded-executor";
-import { SignatureService } from "./signature-service";
-import { ExecutionCorrelationStore } from "./execution-correlation";
+import { SchemaValidator } from "../src/schema-validator";
+import { AcsToolCallRequest, AcsToolCallRequestPayload } from "../src/acs-types";
+import { ReplayGuard } from "../src/replay-guard";
+import { Guardian } from "../src/guardian";
+import { ExecutionGate } from "../src/execution-gate";
+import { AuditCollector } from "../src/audit";
+import { GuardedExecutor } from "../src/guarded-executor";
+import { SignatureService } from "../src/signature-service";
+import { ExecutionCorrelationStore } from "../src/execution-correlation";
+import { ApprovalGrantVerifier } from "../src/approval-verifier";
+import { TestSigner } from "../tests/test-signer";
+import crypto from "crypto";
 
 async function runDemo(): Promise<void> {
   const sessionId = "session-demo-001";
@@ -15,6 +18,12 @@ async function runDemo(): Promise<void> {
   const signatureService = new SignatureService("demo-root-secret-for-testing", "key-1");
   const replayGuard = new ReplayGuard({ audit });
   const guardian = new Guardian();
+
+  // Local approval authority setup
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const approverKeyId = "demo-approver-key-1";
+  const approvalVerifier = new ApprovalGrantVerifier(publicKey, approverKeyId);
+  const demoSigner = new TestSigner(privateKey, approverKeyId);
     // Wire the enforcement stack through GuardedExecutor — the mandatory
   // orchestration boundary that prevents replay-guard from being skipped.
   const executor = new GuardedExecutor(
@@ -23,7 +32,8 @@ async function runDemo(): Promise<void> {
     replayGuard,
     guardian,
     audit,
-    new ExecutionCorrelationStore()
+    new ExecutionCorrelationStore(),
+    approvalVerifier
   );
 
   // --- Construct a request using the ACS params-nested shape ---
@@ -60,7 +70,16 @@ async function runDemo(): Promise<void> {
 
   // --- Supply approval for this exact session_id + request_id ---
   console.log("Supplying human approval...");
-  const toolResult = await executor.approve(sessionId, request.params.request_id);
+  const grantBase = {
+    version: 1 as const,
+    decision: "approve" as const,
+    session_id: sessionId,
+    request_id: request.params.request_id,
+    approver: { type: "human" as const, id: "demo-user" },
+    issued_at: new Date().toISOString()
+  };
+  const grant = demoSigner.sign(grantBase);
+  const toolResult = await executor.resolveApproval(grant);
   console.log(`Tool result:`, toolResult);
 
   // --- Demonstrate replay rejection: same request in same session ---

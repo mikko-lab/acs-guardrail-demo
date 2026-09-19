@@ -1,0 +1,111 @@
+import crypto from "crypto";
+import { canonicalize } from "json-canonicalize";
+
+export interface ApprovalGrantV1 {
+  version: 1;
+  decision: "approve" | "reject";
+  session_id: string;
+  request_id: string;
+  approver: {
+    type: "human"; // Restricted to human
+    id: string;
+  };
+  issued_at: string;
+  signature: {
+    algorithm: "Ed25519";
+    key_id: string;
+    value: string;
+  };
+}
+
+const ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const BASE64_REGEX = /^[A-Za-z0-9+/]+={0,2}$/;
+
+export class ApprovalGrantVerifier {
+  constructor(
+    private readonly publicKey: crypto.KeyObject,
+    private readonly expectedKeyId: string
+  ) {
+    if (publicKey.type !== "public") {
+      throw new Error("ApprovalGrantVerifier requires a public key, not a private key");
+    }
+  }
+
+  verify(input: unknown): ApprovalGrantV1 {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("Validation Error: input must be a JSON object");
+    }
+    
+    const grant = input as Record<string, unknown>;
+
+    if (grant.version !== 1) throw new Error("Validation Error: version must be 1");
+    if (grant.decision !== "approve" && grant.decision !== "reject") {
+      throw new Error("Validation Error: decision must be 'approve' or 'reject'");
+    }
+    if (typeof grant.session_id !== "string" || grant.session_id.length === 0) {
+      throw new Error("Validation Error: session_id must be a non-empty string");
+    }
+    if (typeof grant.request_id !== "string" || grant.request_id.length === 0) {
+      throw new Error("Validation Error: request_id must be a non-empty string");
+    }
+
+    if (!grant.approver || typeof grant.approver !== "object" || Array.isArray(grant.approver)) {
+      throw new Error("Validation Error: approver must be an object");
+    }
+    const approver = grant.approver as Record<string, unknown>;
+    if (approver.type !== "human") {
+      throw new Error("Validation Error: approver.type must be 'human'");
+    }
+    if (typeof approver.id !== "string" || approver.id.length === 0) {
+      throw new Error("Validation Error: approver.id must be a non-empty string");
+    }
+
+    if (typeof grant.issued_at !== "string" || !ISO_REGEX.test(grant.issued_at) || isNaN(Date.parse(grant.issued_at))) {
+      throw new Error("Validation Error: issued_at must be a valid ISO-8601 timestamp");
+    }
+
+    if (!grant.signature || typeof grant.signature !== "object" || Array.isArray(grant.signature)) {
+      throw new Error("Validation Error: signature must be an object");
+    }
+    const signature = grant.signature as Record<string, unknown>;
+    if (signature.algorithm !== "Ed25519") {
+      throw new Error("Validation Error: signature.algorithm must be 'Ed25519'");
+    }
+    if (signature.key_id !== this.expectedKeyId) {
+      throw new Error("Validation Error: signature.key_id mismatch");
+    }
+    if (typeof signature.value !== "string" || signature.value.length === 0 || signature.value.length % 4 !== 0 || !BASE64_REGEX.test(signature.value)) {
+      throw new Error("Validation Error: signature.value must be valid base64 format");
+    }
+    const dec = Buffer.from(signature.value, "base64");
+    if (dec.length !== 64) {
+      throw new Error("Validation Error: signature must be exactly 64 bytes");
+    }
+    if (dec.toString("base64") !== signature.value) {
+      throw new Error("Validation Error: signature.value must be canonical base64");
+    }
+
+    // Return a deeply cloned snapshot to prevent caller mutation after verification
+    const verifiedSnapshot = JSON.parse(JSON.stringify(grant)) as ApprovalGrantV1;
+
+    // Cryptographic verification
+    const cloneForSig = JSON.parse(JSON.stringify(verifiedSnapshot));
+    delete cloneForSig.signature;
+
+    const dataBuffer = Buffer.from(canonicalize(cloneForSig));
+    const sigBuffer = Buffer.from(verifiedSnapshot.signature.value, "base64");
+
+    let isVerified = false;
+    try {
+      isVerified = crypto.verify(null, dataBuffer, this.publicKey, sigBuffer);
+    } catch {
+      throw new Error("Validation Error: crypto verification failed");
+    }
+
+    if (!isVerified) {
+      throw new Error("Validation Error: Invalid signature");
+    }
+
+    return verifiedSnapshot;
+  }
+}
