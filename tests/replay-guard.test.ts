@@ -47,7 +47,7 @@ function makeRequest(overrides: {
     id: "call-test",
     params: {
       acs_version: "0.1.0",
-      request_id: overrides.requestId ?? "req-a",
+      request_id: overrides.requestId ?? "e55c5785-8542-44d4-9a74-27d0960d9e7b",
       timestamp: overrides.timestamp ?? new Date().toISOString(),
       metadata: {
         agent_id: "test-agent",
@@ -78,7 +78,7 @@ describe("ReplayGuard: duplicate request_id", () => {
   it("2. duplicate request_id in same session → REPLAY_DETECTED (-32005)", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
-    const req = makeRequest({ requestId: "req-dup", sessionId: "session-x", timestamp: fresh(nowMs) });
+    const req = makeRequest({ requestId: "2dcd2c40-675e-4295-a278-31d11e068831", sessionId: "session-x", timestamp: fresh(nowMs) });
 
     guard.check(req); // first: OK
 
@@ -95,7 +95,7 @@ describe("ReplayGuard: duplicate request_id", () => {
   it("12. second identical accepted-path attempt is rejected before Guardian", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
-    const req = makeRequest({ requestId: "req-12", timestamp: fresh(nowMs) });
+    const req = makeRequest({ requestId: "9c658bdb-ab56-41b6-b347-3a94a59b20aa", timestamp: fresh(nowMs) });
 
     guard.check(req); // first accepted, request_id recorded
 
@@ -118,8 +118,8 @@ describe("ReplayGuard: cross-session isolation", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
 
-    const reqA = makeRequest({ requestId: "req-cross", sessionId: "session-A", timestamp: fresh(nowMs) });
-    const reqB = makeRequest({ requestId: "req-cross", sessionId: "session-B", timestamp: fresh(nowMs) });
+    const reqA = makeRequest({ requestId: "e9153c57-874e-4776-a07f-10b47b00db78", sessionId: "session-A", timestamp: fresh(nowMs) });
+    const reqB = makeRequest({ requestId: "e9153c57-874e-4776-a07f-10b47b00db78", sessionId: "session-B", timestamp: fresh(nowMs) });
 
     guard.check(reqA); // session-A, OK
     expect(() => guard.check(reqB)).not.toThrow(); // session-B, different scope → OK
@@ -197,7 +197,7 @@ describe("ReplayGuard: tool never invoked on rejection", () => {
   it("7. rejected replay never invokes the tool", async () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
-    const req = makeRequest({ requestId: "req-7", timestamp: fresh(nowMs), tool: "read_record" });
+    const req = makeRequest({ requestId: "1711acc5-bc85-4a06-84ee-643beef68ee0", timestamp: fresh(nowMs), tool: "read_record" });
 
     await tryExecute(req, guard); // first: OK, counter = 1
     expect(executionCounters.read_record).toBe(1);
@@ -232,14 +232,14 @@ describe("ReplayGuard: timestamp failure does not poison request_id", () => {
   it("10. stale request does not record request_id; fresh retry with same id is allowed", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
-    const staleReq = makeRequest({ requestId: "req-10", timestamp: fresh(nowMs, -(SKEW_MS + 1_000)) });
+    const staleReq = makeRequest({ requestId: "e7da3215-5232-4560-8b66-d160c09e8fcb", timestamp: fresh(nowMs, -(SKEW_MS + 1_000)) });
 
     // Stale attempt must throw (timestamp invalid)
     expect(() => guard.check(staleReq)).toThrow(ReplayGuardError);
 
     // Same request_id with a fresh timestamp from a different clock window must NOT be a replay,
     // because the stale attempt never recorded the id.
-    const freshReq = makeRequest({ requestId: "req-10", timestamp: fresh(nowMs) });
+    const freshReq = makeRequest({ requestId: "e7da3215-5232-4560-8b66-d160c09e8fcb", timestamp: fresh(nowMs) });
     expect(() => guard.check(freshReq)).not.toThrow();
   });
 });
@@ -250,7 +250,7 @@ describe("ReplayGuard: first-acceptance recording", () => {
   it("11. first accepted request records request_id exactly once", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
-    const req = makeRequest({ requestId: "req-11", timestamp: fresh(nowMs) });
+    const req = makeRequest({ requestId: "98ed3e37-331a-42f4-9649-e92269f36a1e", timestamp: fresh(nowMs) });
 
     guard.check(req); // should not throw
 
@@ -272,12 +272,12 @@ describe("ReplayGuard: audit events", () => {
     const nowMs = Date.now();
     const audit = new AuditCollector();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs), audit });
-    const req = makeRequest({ requestId: "req-audit-r", timestamp: fresh(nowMs) });
+    const req = makeRequest({ requestId: "0da90b3e-f8a4-46a6-88c1-c27209706082", timestamp: fresh(nowMs) });
 
     guard.check(req); // first: OK
     try { guard.check(req); } catch { /* expected */ }
 
-    const events = audit.getEventsForRequest("req-audit-r");
+    const events = audit.getEventsForRequest("0da90b3e-f8a4-46a6-88c1-c27209706082");
     expect(events.some(e => e.event_type === "replay_rejected")).toBe(true);
   });
 
@@ -285,11 +285,11 @@ describe("ReplayGuard: audit events", () => {
     const nowMs = Date.now();
     const audit = new AuditCollector();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs), audit });
-    const req = makeRequest({ requestId: "req-audit-t", timestamp: fresh(nowMs, -(SKEW_MS + 1_000)) });
+    const req = makeRequest({ requestId: "44c41ded-76c1-4f60-b50f-4aa4ba464ded", timestamp: fresh(nowMs, -(SKEW_MS + 1_000)) });
 
     try { guard.check(req); } catch { /* expected */ }
 
-    const events = audit.getEventsForRequest("req-audit-t");
+    const events = audit.getEventsForRequest("44c41ded-76c1-4f60-b50f-4aa4ba464ded");
     expect(events.some(e => e.event_type === "timestamp_rejected")).toBe(true);
   });
 
@@ -297,14 +297,14 @@ describe("ReplayGuard: audit events", () => {
     const nowMs = Date.now();
     const audit = new AuditCollector();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs), audit });
-    const req = makeRequest({ requestId: "req-audit-sid", sessionId: "sess-99", timestamp: fresh(nowMs) });
+    const req = makeRequest({ requestId: "149ec3df-bc45-4aaf-a868-4b77ab764572", sessionId: "7e0b8aa6-a979-4a23-bcd4-adb25645887b", timestamp: fresh(nowMs) });
 
     guard.check(req);
     try { guard.check(req); } catch { /* expected */ }
 
-    const events = audit.getEventsForRequest("req-audit-sid");
+    const events = audit.getEventsForRequest("149ec3df-bc45-4aaf-a868-4b77ab764572");
     const replayEvent = events.find(e => e.event_type === "replay_rejected");
-    expect(replayEvent?.metadata?.["session_id"]).toBe("sess-99");
+    expect(replayEvent?.metadata?.["session_id"]).toBe("7e0b8aa6-a979-4a23-bcd4-adb25645887b");
   });
 });
 
@@ -322,7 +322,7 @@ describe("ReplayGuard: session-lifetime retention", () => {
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(t0) });
 
     const req1 = makeRequest({
-      requestId: "req-long-lived",
+      requestId: "81947b0b-7262-4547-90cd-22d6cd693703",
       sessionId: "session-long",
       timestamp: fresh(t0),
     });
@@ -333,7 +333,7 @@ describe("ReplayGuard: session-lifetime retention", () => {
     // Construct a fresh replay with the SAME request_id but a fresh timestamp
     // so the timestamp check passes — only the duplicate check should fire.
     const replay = makeRequest({
-      requestId: "req-long-lived",   // ← same id
+      requestId: "81947b0b-7262-4547-90cd-22d6cd693703",   // ← same id
       sessionId: "session-long",      // ← same session
       timestamp: fresh(t1),           // ← fresh timestamp; passes skew check
     });
@@ -351,7 +351,7 @@ describe("ReplayGuard: session-lifetime retention", () => {
     // Pre-populate the advanced guard with the accepted id from "session-long"
     // by replaying the original acceptance path.
     const req1ForAdvanced = makeRequest({
-      requestId: "req-long-lived",
+      requestId: "81947b0b-7262-4547-90cd-22d6cd693703",
       sessionId: "session-long",
       timestamp: fresh(t1),           // fresh for this clock
     });
@@ -370,9 +370,9 @@ describe("ReplayGuard: session-lifetime retention", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
 
-    guard.check(makeRequest({ requestId: "req-cross2", sessionId: "sess-A", timestamp: fresh(nowMs) }));
+    guard.check(makeRequest({ requestId: "a2c31897-d40f-405a-b878-3fe09881c3a0", sessionId: "772e9141-a8ac-4608-91cf-7cc078812239", timestamp: fresh(nowMs) }));
     expect(() =>
-      guard.check(makeRequest({ requestId: "req-cross2", sessionId: "sess-B", timestamp: fresh(nowMs) }))
+      guard.check(makeRequest({ requestId: "a2c31897-d40f-405a-b878-3fe09881c3a0", sessionId: "2f36747d-3efa-4768-aad2-afb20c7a2b3e", timestamp: fresh(nowMs) }))
     ).not.toThrow();
   });
 });
@@ -382,19 +382,19 @@ describe("ReplayGuard: clearSession", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
 
-    guard.check(makeRequest({ requestId: "req-cs", sessionId: "sess-cs", timestamp: fresh(nowMs) }));
+    guard.check(makeRequest({ requestId: "dcc5e706-9f43-4e38-8bbf-7f420084e827", sessionId: "b3317fcf-b120-4de0-9a06-5730344e656b", timestamp: fresh(nowMs) }));
     // id is now recorded → replay would be blocked
     expect(() =>
-      guard.check(makeRequest({ requestId: "req-cs", sessionId: "sess-cs", timestamp: fresh(nowMs) }))
+      guard.check(makeRequest({ requestId: "dcc5e706-9f43-4e38-8bbf-7f420084e827", sessionId: "b3317fcf-b120-4de0-9a06-5730344e656b", timestamp: fresh(nowMs) }))
     ).toThrow(ReplayGuardError);
 
     // Clear the session
-    guard.clearSession("sess-cs");
+    guard.clearSession("b3317fcf-b120-4de0-9a06-5730344e656b");
 
     // After clear, the same id in the same session must be accepted again
     // (session has effectively restarted)
     expect(() =>
-      guard.check(makeRequest({ requestId: "req-cs", sessionId: "sess-cs", timestamp: fresh(nowMs) }))
+      guard.check(makeRequest({ requestId: "dcc5e706-9f43-4e38-8bbf-7f420084e827", sessionId: "b3317fcf-b120-4de0-9a06-5730344e656b", timestamp: fresh(nowMs) }))
     ).not.toThrow();
   });
 
@@ -402,15 +402,15 @@ describe("ReplayGuard: clearSession", () => {
     const nowMs = Date.now();
     const guard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs) });
 
-    guard.check(makeRequest({ requestId: "req-iso", sessionId: "sess-iso-A", timestamp: fresh(nowMs) }));
-    guard.check(makeRequest({ requestId: "req-iso", sessionId: "sess-iso-B", timestamp: fresh(nowMs) }));
+    guard.check(makeRequest({ requestId: "d3212afa-0a27-4409-a319-5015e27250b1", sessionId: "5e347bbc-044d-4e55-8689-fd81030dfd85", timestamp: fresh(nowMs) }));
+    guard.check(makeRequest({ requestId: "d3212afa-0a27-4409-a319-5015e27250b1", sessionId: "54bf550e-2f56-4e6b-81c1-dfe54597d929", timestamp: fresh(nowMs) }));
 
     // Clear A only
-    guard.clearSession("sess-iso-A");
+    guard.clearSession("5e347bbc-044d-4e55-8689-fd81030dfd85");
 
     // B's replay state must be intact
     expect(() =>
-      guard.check(makeRequest({ requestId: "req-iso", sessionId: "sess-iso-B", timestamp: fresh(nowMs) }))
+      guard.check(makeRequest({ requestId: "d3212afa-0a27-4409-a319-5015e27250b1", sessionId: "54bf550e-2f56-4e6b-81c1-dfe54597d929", timestamp: fresh(nowMs) }))
     ).toThrow(ReplayGuardError);
   });
 });

@@ -30,6 +30,7 @@ import { ReplayGuard } from "./replay-guard";
 import { Guardian } from "./guardian";
 import { ExecutionGate } from "./execution-gate";
 import { AuditCollector } from "./audit";
+import { SchemaValidator, AddressableSchemaError } from "./schema-validator";
 
 export type ProcessResult =
   | { status: "executed"; result: AcsToolCallResult }
@@ -41,6 +42,7 @@ interface PendingAction {
 }
 
 export class GuardedExecutor {
+  private readonly schemaValidator: SchemaValidator;
   private readonly replayGuard: ReplayGuard;
   private readonly guardian: Guardian;
   private readonly gate: ExecutionGate;
@@ -50,11 +52,13 @@ export class GuardedExecutor {
   private readonly pendingActions: Map<string, PendingAction> = new Map();
 
   constructor(
+    schemaValidator: SchemaValidator,
     replayGuard: ReplayGuard,
     guardian: Guardian,
     gate: ExecutionGate,
     audit: AuditCollector
   ) {
+    this.schemaValidator = schemaValidator;
     this.replayGuard = replayGuard;
     this.guardian = guardian;
     this.gate = gate;
@@ -62,14 +66,16 @@ export class GuardedExecutor {
   }
 
   /**
-   * Process a single tool-call request through the full enforcement stack.
+   * Process a single untrusted tool-call request through the full enforcement stack.
    *
-   * Throws ReplayGuardError if the request fails timestamp or replay checks.
-   * Throws Error if the Guardian denies.
-   * Returns { status: "pending" } if Guardian asks for approval.
-   * Returns { status: "executed", result: AcsToolCallResult } on allow.
+   * 0. Validates schema (throws AddressableSchemaError or SchemaValidationError on failure).
+   * 1. ReplayGuard checks timestamp or replay violations.
+   * 2. Guardian policy evaluated (and outbound response schema validated).
+   * 3. Branches on decision (throws on deny, pending on ask, executes on allow).
    */
-  async process(request: AcsToolCallRequest): Promise<ProcessResult> {
+  async process(input: unknown): Promise<ProcessResult> {
+    // Step 0 — Schema validation
+    const request = this.schemaValidator.validateRequest(input);
     const { params } = request;
     
     // Step 1 — replay/timestamp gate (throws on any violation)
@@ -80,8 +86,9 @@ export class GuardedExecutor {
       tool: params.payload.tool.name,
     });
 
-    // Step 2 — deterministic Guardian policy
-    const response = this.guardian.evaluate(request);
+    // Step 2 — deterministic Guardian policy (and outbound validation)
+    const rawResponse = this.guardian.evaluate(request);
+    const response = this.schemaValidator.validateResponse(rawResponse);
 
     this.audit.record(params.request_id, "guardian_decision", {
       decision: response.result.decision,

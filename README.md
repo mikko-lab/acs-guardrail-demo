@@ -30,7 +30,15 @@ To demonstrate a zero-dependency, local control flow that:
 ## Architecture
 
 ```text
-Agent requests toolCallRequest
+Untrusted parsed value
+        ↓
+JSON-RPC Protocol Validation
+  — invalid JSON-RPC → -32600 Invalid Request
+        ↓
+ACS Schema Validation (Phase 3)
+  — validate request-envelope and toolCallRequest payload
+  — ACS-invalid but valid UUID request_id → local ACS DENY
+  — unaddressable failures → typed Error
         ↓
 ReplayGuard (Phase 2)
   — reject timestamp outside ±skewWindowMs
@@ -38,6 +46,9 @@ ReplayGuard (Phase 2)
         ↓
 Guardian evaluates deterministic policy
   — ALLOW / DENY / ASK
+        ↓
+SchemaValidator
+  — validate Guardian outbound response-envelope
         ↓
 GuardedExecutor branches:
   — DENY blocks unconditionally
@@ -53,6 +64,17 @@ Tool executes or does not execute
         ↓
 AcsToolCallResult + minimal audit evidence
 ```
+
+## Runtime Schema Validation (Phase 3)
+
+The project implements a strict separation of protocol validation and schema validation boundaries:
+
+1. **JSON-RPC Protocol Validation:** Validates the base JSON-RPC 2.0 object shape. Invalid requests immediately return `-32600 Invalid Request` without creating ACS dummy envelopes. JSON parse errors (`-32700 Parse error`) are considered out of scope for this layer and belong to the future transport boundary.
+2. **ACS Schema Validation:** Validates both the `request-envelope` and `toolCallRequest` payloads using Ajv (Draft 2020-12).
+3. **Fail Closed & Strict Correlation:** If an ACS-invalid request contains a valid UUID in `params.request_id`, the system produces a local ACS-shaped `DENY` decision. If no valid UUID exists, it throws a typed schema error and refuses to fabricate a UUID. *This intentionally avoids the behavior tracked in upstream ACS issue #163 (where the reference Guardian misclassifies invalid JSON-RPC requests).*
+4. **Outbound Defensive Checks:** Guardian responses are also checked against `response-envelope.json` before ExecutionGate accepts them.
+5. **Pinned Schemas:** Schemas are pinned locally to a specific ACS v0.1.0 upstream commit.
+6. **No ACS-Core Conformance Claim:** Do not call this full ACS interoperability.
 
 ## Demo Policies
 

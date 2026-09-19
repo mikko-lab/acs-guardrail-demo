@@ -1,3 +1,5 @@
+import { SchemaValidator } from "./schema-validator";
+
 import { AcsToolCallRequest, AcsToolCallRequestPayload } from "./acs-types";
 import { ReplayGuard } from "./replay-guard";
 import { Guardian } from "./guardian";
@@ -11,7 +13,7 @@ async function runDemo(): Promise<void> {
 
   // Wire the enforcement stack through GuardedExecutor — the mandatory
   // orchestration boundary that prevents replay-guard from being skipped.
-  const executor = new GuardedExecutor(
+  const executor = new GuardedExecutor(new SchemaValidator(),
     new ReplayGuard({ audit }),
     new Guardian(),
     new ExecutionGate(audit),

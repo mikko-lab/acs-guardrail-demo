@@ -5,7 +5,7 @@ describe("Guardian deterministic decisions", () => {
   const guardian = new Guardian();
 
   /** Build a minimal valid ACS request with params nesting. */
-  const createRequest = (tool: string, reqId = "req-test"): AcsToolCallRequest => ({
+  const createRequest = (tool: string, reqId = "dca0d958-d13c-4e49-818f-cf2592b094bc"): AcsToolCallRequest => ({
     jsonrpc: "2.0",
     method: "steps/toolCallRequest",
     id: "call-test",

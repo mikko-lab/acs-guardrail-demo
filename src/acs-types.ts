@@ -55,7 +55,7 @@ export interface AcsParams {
 export interface AcsToolCallRequest {
   jsonrpc: "2.0";
   method: "steps/toolCallRequest";
-  id: string | number;
+  id: string | number | null;
   params: AcsParams;
 }
 
@@ -101,7 +101,7 @@ export interface GuardianDecision {
  */
 export interface AcsResponseEnvelope {
   jsonrpc: "2.0";
-  id: string | number;
+  id: string | number | null;
   result: GuardianDecision;
 }
 
