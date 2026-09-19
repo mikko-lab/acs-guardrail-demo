@@ -4,10 +4,9 @@ import { ExecutionCorrelationStore, CorrelationError } from "../src/execution-co
 import { GuardedExecutor } from "../src/guarded-executor";
 import { ReplayGuard } from "../src/replay-guard";
 import { Guardian } from "../src/guardian";
-import { ExecutionGate } from "../src/execution-gate";
 import { AuditCollector } from "../src/audit";
 import { AcsToolCallRequest } from "../src/acs-types";
-import { executionCounters, resetCounters } from "../src/tools";
+import { executionCounters, resetCounters, tools } from "../src/tools";
 
 describe("Phase 5: Result Gate Governance", () => {
   let audit: AuditCollector;
@@ -24,7 +23,7 @@ describe("Phase 5: Result Gate Governance", () => {
     signatureService = new SignatureService("test-secret", "key-1");
     guardian = new Guardian();
     correlation = new ExecutionCorrelationStore();
-    
+
     executor = new GuardedExecutor(
       new SchemaValidator(),
       signatureService,
@@ -55,7 +54,7 @@ describe("Phase 5: Result Gate Governance", () => {
   it("1 & 2 & 3 & 4 & 5. allowed request executes exactly once and creates a separate result hook", async () => {
     const req = createRequest("123e4567-e89b-12d3-a456-426614174010", "read_record");
     const result = await executor.process(req);
-    
+
     expect(result.status).toBe("executed");
     if (result.status === "executed") {
       expect(result.result.tool.name).toBe("read_record");
@@ -66,7 +65,7 @@ describe("Phase 5: Result Gate Governance", () => {
       const events = audit.getEvents();
       const createdEvents = events.filter(e => e.event_type === "tool_result_created");
       expect(createdEvents.length).toBe(1);
-      
+
       const newResultId = createdEvents[0].request_id;
       expect(newResultId).not.toBe("123e4567-e89b-12d3-a456-426614174010"); // 3. new request_id
     }
@@ -75,7 +74,7 @@ describe("Phase 5: Result Gate Governance", () => {
   it("12. ordinary output → ALLOW → exact output delivered", async () => {
     // We mock execution gate to return ordinary data
     const req = createRequest("123e4567-e89b-12d3-a456-426614174011", "read_record");
-    
+
     const result = await executor.process(req);
     expect(result.status).toBe("executed");
     if (result.status === "executed") {
@@ -85,15 +84,14 @@ describe("Phase 5: Result Gate Governance", () => {
 
   it("13 & 14 & 15. restricted demo output → DENY → raw output not delivered / leaked", async () => {
     const req = createRequest("123e4567-e89b-12d3-a456-426614174012", "read_record");
-    
-    // Force the execution gate to return restricted data for this test
-    const origExecute = ExecutionGate.prototype.execute;
-    jest.spyOn(ExecutionGate.prototype, "execute").mockResolvedValueOnce({
-      tool: { name: "read_record" },
-      request_id_ref: "123e4567-e89b-12d3-a456-426614174012",
-      exit_status: "success",
-      outputs: [{ value: { classification: "restricted", sensitive: "secret123" } }]
-    });
+
+    // Register temporary tool
+    const originalTool = tools["read_record"];
+    try {
+      tools["read_record"] = async () => {
+        executionCounters.read_record = (executionCounters.read_record || 0) + 1;
+        return { classification: "restricted", sensitive: "secret123" };
+      };
 
     const result = await executor.process(req);
     expect(result.status).toBe("executed");
@@ -103,14 +101,18 @@ describe("Phase 5: Result Gate Governance", () => {
       expect((result.result.outputs[0].value as any).sensitive).toBeUndefined(); // raw output not delivered
     }
 
-    // 14. denied raw output does not appear in audit log
+    expect(executionCounters.read_record).toBe(1);
+
     const events = audit.getEvents();
     const logStr = JSON.stringify(events);
     expect(logStr).not.toContain("secret123");
 
-    // 15. denied raw output does not appear in reasoning
     const decisionEvents = events.filter(e => e.event_type === "result_guardian_decision");
     expect(JSON.stringify(decisionEvents[0].metadata)).not.toContain("secret123");
+
+    } finally {
+      tools["read_record"] = originalTool;
+    }
   });
 
   it("16 & 17 & 18. request vs result distinction (DENY behavior)", async () => {
@@ -119,64 +121,59 @@ describe("Phase 5: Result Gate Governance", () => {
     await expect(executor.process(reqDeny)).rejects.toThrow();
     expect(executionCounters.unknown_tool || 0).toBe(0);
 
-    // 18. result-gate DENY -> execution counter is 1 but delivery is blocked
+    // 18. result-gate DENY -> execution counter is exactly 1 but delivery is blocked
     const reqResultDeny = createRequest("123e4567-e89b-12d3-a456-426614174014", "read_record");
-    jest.spyOn(ExecutionGate.prototype, "execute").mockResolvedValueOnce({
-      tool: { name: "read_record" },
-      request_id_ref: "123e4567-e89b-12d3-a456-426614174014",
-      exit_status: "success",
-      outputs: [{ value: { classification: "restricted", data: "leaked" } }]
-    });
-    executionCounters.read_record = 1;
+    const originalTool = tools["read_record"];
+    try {
+      tools["read_record"] = async () => {
+        executionCounters.read_record = (executionCounters.read_record || 0) + 1;
+        return { classification: "restricted", data: "leaked" };
+      };
+
     const result = await executor.process(reqResultDeny);
-    expect(executionCounters.read_record).toBe(1); // tool executed!
+    expect(executionCounters.read_record).toBe(1); // tool ACTUALLY executed!
     if (result.status === "executed") {
       expect(result.result.exit_status).toBe("blocked"); // but blocked
     }
-  });
 
-  it("19 & 20 & 21 & 22. throwing tool executes once, handles failure", async () => {
-    const req = createRequest("123e4567-e89b-12d3-a456-426614174015", "read_record");
-    
-    // Inject throwing tool
-    jest.spyOn(ExecutionGate.prototype, "execute").mockRejectedValueOnce(new Error("MySecretStackTrace"));
-
-    const result = await executor.process(req);
-    expect(executionCounters.read_record).toBe(0); // My mock intercepted before tools.ts incremented it! 
-    // Wait, the spy intercepted the whole ExecutionGate.
-    
-    if (result.status === "executed") {
-      expect(result.result.exit_status).toBe("failure");
-      expect((result.result.outputs[0].value as any).error).toBe("Tool execution failed");
-      expect((result.result.outputs[0].value as any).stack).toBeUndefined();
+    } finally {
+      tools["read_record"] = originalTool;
     }
   });
 
+  it("19 & 20 & 21 & 22. throwing tool executes once, handles failure securely without leaking exception messages", async () => {
+    const req = createRequest("123e4567-e89b-12d3-a456-426614174015", "read_record");
 
-  it("fails securely without leaking exception messages or secrets to audit logs", async () => {
-    const req = createRequest("123e4567-e89b-12d3-a456-426614174099", "read_record");
-    
-    // Inject a throwing tool that leaks a fake secret
-    jest.spyOn(ExecutionGate.prototype, "execute").mockRejectedValueOnce(new Error("DB password=super-secret-value"));
+    const originalTool = tools["read_record"];
+    try {
+      tools["read_record"] = async () => {
+        executionCounters.read_record = (executionCounters.read_record || 0) + 1;
+        throw new Error("DB password=super-secret-value");
+      };
 
     const result = await executor.process(req);
-    expect(result.status).toBe("executed");
+    expect(executionCounters.read_record).toBe(1); // Real tool ran and incremented counter
+
     if (result.status === "executed") {
       expect(result.result.exit_status).toBe("failure");
       expect((result.result.outputs[0].value as any).error).toBe("Tool execution failed");
       expect((result.result.outputs[0].value as any).code).toBe("tool_execution_failed");
       expect((result.result.outputs[0].value as any).stack).toBeUndefined();
+      expect((result.result.outputs[0].value as any).message).toBeUndefined();
     }
-    
+
     // Prove the secret is nowhere in the audit log
     const events = audit.getEvents();
     const logStr = JSON.stringify(events);
     expect(logStr).not.toContain("super-secret-value");
 
-    // Nor in guardian reasoning (if it were somehow processed)
     const decisionEvents = events.filter(e => e.event_type === "result_guardian_decision");
     if (decisionEvents.length > 0) {
       expect(JSON.stringify(decisionEvents[0].metadata)).not.toContain("super-secret-value");
+    }
+
+    } finally {
+      tools["read_record"] = originalTool;
     }
   });
 
@@ -194,3 +191,4 @@ describe("Phase 5: Result Gate Governance", () => {
   });
 });
 
+// append test at the end? wait, the last line is `});`. We need to insert before `});`

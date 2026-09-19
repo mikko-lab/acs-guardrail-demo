@@ -280,6 +280,28 @@ describe("M-01/M-02: Final Hardening", () => {
 
 
   describe("M-05: Result Correlation Tool Binding", () => {
+    it("H-02 INTEGRATION: forged permit fails to execute", async () => {
+      const { executor, audit } = setup(Date.now());
+      const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
+
+      const origExecute = require("../src/execution-gate").ExecutionGate.prototype.execute;
+      const spy = jest.spyOn(require("../src/execution-gate").ExecutionGate.prototype, "execute").mockImplementationOnce(function (this: any, r: any, p: any) {
+        const forgedPermit = { ...p, toolName: "hacker_tool" };
+        return origExecute.call(this, r, forgedPermit);
+      });
+
+      try {
+        const result = await executor.process(req);
+        expect(result.status).toBe("executed");
+        if (result.status === "executed") {
+          expect(result.result.exit_status).toBe("failure");
+        }
+        expect(executionCounters.read_record || 0).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it("F. GUARDEDEXECUTOR INTEGRATION: normal correlation passes", async () => {
       const { executor, signatureService } = setup(Date.now());
       const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
@@ -323,8 +345,12 @@ describe("M-01/M-02: Final Hardening", () => {
       const { executor, audit } = setup(Date.now());
       const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
 
-      const gateExecuteSpy = jest.spyOn(require("../src/execution-gate").ExecutionGate.prototype, "execute")
-        .mockRejectedValueOnce(new Error("Simulated tool crash"));
+      const origTool = tools["read_record"];
+      try {
+        tools["read_record"] = async () => {
+          executionCounters.read_record = (executionCounters.read_record || 0) + 1;
+          throw new Error("Simulated tool crash");
+        };
 
       const result = await executor.process(req);
 
@@ -333,15 +359,25 @@ describe("M-01/M-02: Final Hardening", () => {
         expect(result.result.exit_status).toBe("failure");
       }
 
-      // Audit should show failure but also successful delivery
-      const logs = audit.getEvents();
-      expect(logs.some(l => l.event_type === "tool_execution_blocked" && l.metadata?.error === "failed")).toBe(true);
-      expect(logs.some(l => l.event_type === "tool_result_delivered" && l.metadata?.tool === "read_record")).toBe(true);
+      expect(executionCounters.read_record).toBe(1);
 
-      gateExecuteSpy.mockRestore();
+      const events = audit.getEvents();
+      expect(events.some(l => l.event_type === "tool_execution_blocked" && l.metadata?.error === "failed")).toBe(true);
+      expect(events.some(l => l.event_type === "tool_result_delivered" && l.metadata?.tool === "read_record")).toBe(true);
+
+      } finally {
+        tools["read_record"] = origTool;
+      }
     });
   });
 
+
+    it("temporarily registered tools are correctly restored to the original implementation", async () => {
+      const origTool = tools["read_record"];
+      expect(origTool).toBeDefined();
+      const result = await origTool({});
+      expect(result).toEqual({ status: "success", data: "fake_record_data" });
+    });
   describe("M-04: JSON-RPC vs ACS Params Validation", () => {
     it("A. MISSING PARAMS: throws SchemaValidationError, not JsonRpcProtocolError", async () => {
       const { executor, signatureService, guardian } = setup(Date.now());
@@ -495,6 +531,16 @@ describe("M-01/M-02: Final Hardening", () => {
   });
 
   describe("IDENTITY & REJECTION", () => {
+    it("E. HMAC INTEGRATION: process() rejects request with invalid signature", async () => {
+      const { executor } = setup(Date.now());
+      const req = makeRequest({ tool: "read_record", sessionId: sess1, requestId: req1 });
+
+      // Corrupt the signature
+      (req.params as any).signature.value = Buffer.alloc(64, "X").toString("base64");
+
+      await expect(executor.process(req)).rejects.toThrow(/Invalid signature/);
+    });
+
     it("legitimate grant may still approve after an invalid attempt", async () => {
       const { executor } = setup(Date.now());
       const req = makeRequest({ tool: "update_record", sessionId: sess1, requestId: req1 });
