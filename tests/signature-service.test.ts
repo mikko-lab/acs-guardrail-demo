@@ -48,6 +48,87 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
     }
   });
 
+
+  describe("Strict Decoder canonicality (L-03)", () => {
+    it("canonical signature passes", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      expect(() => service.verifyRequest(signed)).not.toThrow();
+    });
+
+    it("rejects invalid trailing garbage", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      signed.params.signature!.value += "!!!!";
+      expect(() => service.verifyRequest(signed)).toThrow(SignatureInvalidError);
+    });
+
+    it("rejects whitespace/newline", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      signed.params.signature!.value += "\n";
+      expect(() => service.verifyRequest(signed)).toThrow(SignatureInvalidError);
+    });
+
+    it("rejects URL-safe alphabet variant", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      signed.params.signature!.value = signed.params.signature!.value.replace(/\+/g, "-").replace(/\//g, "_");
+      if (!/-|_/.test(signed.params.signature!.value)) {
+         signed.params.signature!.value = signed.params.signature!.value.substring(0, 42) + "-=";
+      }
+      expect(() => service.verifyRequest(signed)).toThrow(SignatureInvalidError);
+    });
+
+    it("rejects syntactically base64-looking value that decodes to fewer than 32 bytes", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      signed.params.signature!.value = "A".repeat(42) + "==";
+      expect(() => service.verifyRequest(signed)).toThrow(SignatureInvalidError);
+    });
+
+    it("rejects valid 32-byte base64 but wrong MAC", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      const val = signed.params.signature!.value;
+      signed.params.signature!.value = (val[0] === 'A' ? 'B' : 'A') + val.substring(1);
+      expect(() => service.verifyRequest(signed)).toThrow(SignatureInvalidError);
+    });
+
+    it("explicitly proves Node accepts textual alias but SignatureService rejects it", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      const canonical = signed.params.signature!.value;
+
+      const mutated = canonical + "GARBAGE";
+
+      const decodedCanonical = Buffer.from(canonical, "base64");
+      const decodedMutated = Buffer.from(mutated, "base64");
+      expect(decodedMutated.equals(decodedCanonical)).toBe(true);
+
+      signed.params.signature!.value = mutated;
+      expect(() => service.verifyRequest(signed)).toThrow(SignatureInvalidError);
+    });
+
+    it("explicitly proves Node accepts missing padding but SignatureService rejects it", () => {
+      const req = makeBaseRequest("strict-test-session");
+      const signed = service.signRequest(req);
+      const canonical = signed.params.signature!.value;
+
+      const mutated = canonical.replace(/=+$/, "");
+      if (mutated === canonical) {
+        return;
+      }
+
+      const decodedCanonical = Buffer.from(canonical, "base64");
+      const decodedMutated = Buffer.from(mutated, "base64");
+      expect(decodedMutated.equals(decodedCanonical)).toBe(true);
+
+      signed.params.signature!.value = mutated;
+      expect(() => service.verifyRequest(signed)).toThrow(SignatureInvalidError);
+    });
+  });
+
   describe("Core Integrity Properties", () => {
     it("1. valid signed request passes", () => {
       const req = makeBaseRequest("123e4567-e89b-12d3-a456-426614174001");
@@ -127,7 +208,7 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
     it("10. signature from session A fails in session B", () => {
       const reqA = makeBaseRequest("session-A");
       const signedA = service.signRequest(reqA);
-      
+
       const reqB = makeBaseRequest("session-B");
       reqB.params.signature = signedA.params.signature;
       expect(() => service.verifyRequest(reqB)).toThrow(SignatureInvalidError);
@@ -149,6 +230,21 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
   });
 
   describe("Response Integrity", () => {
+
+    it("rejects non-canonical trailing garbage in response signature", () => {
+      const res = makeBaseResponse("strict-test-session");
+      const signed = service.signResponse(res, "strict-test-session");
+      signed.result.signature!.value += "!!!!";
+      expect(() => service.verifyResponse(signed, "strict-test-session")).toThrow(SignatureInvalidError);
+    });
+
+    it("rejects wrong length in response signature", () => {
+      const res = makeBaseResponse("strict-test-session");
+      const signed = service.signResponse(res, "strict-test-session");
+      signed.result.signature!.value = "A".repeat(42) + "=="; // 31 bytes
+      expect(() => service.verifyResponse(signed, "strict-test-session")).toThrow(SignatureInvalidError);
+    });
+
     it("18. valid response is signed", () => {
       const res = makeBaseResponse("123e4567-e89b-12d3-a456-426614174001");
       const signed = service.signResponse(res, "123e4567-e89b-12d3-a456-426614174001");
@@ -189,7 +285,7 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
     it("21. signature field itself is excluded from canonicalized input", () => {
       const req = makeBaseRequest("123e4567-e89b-12d3-a456-426614174001");
       const signed = service.signRequest(req);
-      
+
       // If we change another property of the signature block, it does not invalidate the MAC of the ENVELOPE.
       // Wait, we explicitly check keyId and algorithm first, so if we pass those, changing some arbitrary field in signature should not affect MAC.
       (signed.params.signature as any).extra_field = "ignored";
@@ -228,7 +324,7 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
           }
         }
       };
-      
+
       const signed2 = service.signRequest(req2);
       expect(signed1.params.signature!.value).toEqual(signed2.params.signature!.value);
     });

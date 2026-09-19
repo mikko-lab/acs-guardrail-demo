@@ -34,7 +34,7 @@ export class SignatureService {
   private getCanonicalInput(envelope: any, removeSignatureFrom: "params" | "result"): string {
     // Clone to remove signature
     const clone = JSON.parse(JSON.stringify(envelope));
-    
+
     if (removeSignatureFrom === "params" && clone.params) {
       delete clone.params.signature;
     } else if (removeSignatureFrom === "result" && clone.result) {
@@ -48,11 +48,34 @@ export class SignatureService {
     return canonicalInput;
   }
 
+
+  private decodeCanonicalHmacSha256Signature(value: string): Buffer {
+    if (!value || typeof value !== "string") {
+      throw new SignatureInvalidError("Signature value must be a non-empty string");
+    }
+
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+      throw new SignatureInvalidError("Signature value must be standard base64");
+    }
+
+    const decoded = Buffer.from(value, "base64");
+
+    if (decoded.length !== 32) {
+      throw new SignatureInvalidError("Invalid signature length");
+    }
+
+    if (decoded.toString("base64") !== value) {
+      throw new SignatureInvalidError("Non-canonical base64 signature");
+    }
+
+    return decoded;
+  }
+
   public signRequest(request: AcsToolCallRequest): AcsToolCallRequest {
     const sessionId = request.params.metadata.session_id;
     const key = this.deriveKey(sessionId);
     const canonicalInput = this.getCanonicalInput(request, "params");
-    
+
     const signature: AcsSignature = {
       algorithm: "HMAC-SHA256",
       value: this.computeMac(key, canonicalInput),
@@ -86,9 +109,9 @@ export class SignatureService {
     const expectedMac = this.computeMac(key, canonicalInput);
 
     const expectedBuffer = Buffer.from(expectedMac, "base64");
-    const actualBuffer = Buffer.from(signature.value, "base64");
+    const actualBuffer = this.decodeCanonicalHmacSha256Signature(signature.value);
 
-    if (expectedBuffer.length !== actualBuffer.length || !crypto.timingSafeEqual(expectedBuffer, actualBuffer)) {
+    if (!crypto.timingSafeEqual(expectedBuffer, actualBuffer)) {
       throw new SignatureInvalidError("Invalid signature value for request");
     }
   }
@@ -96,7 +119,7 @@ export class SignatureService {
   public signResponse(response: AcsResponseEnvelope, sessionId: string): AcsResponseEnvelope {
     const key = this.deriveKey(sessionId);
     const canonicalInput = this.getCanonicalInput(response, "result");
-    
+
     const signature: AcsSignature = {
       algorithm: "HMAC-SHA256",
       value: this.computeMac(key, canonicalInput),
@@ -129,9 +152,9 @@ export class SignatureService {
     const expectedMac = this.computeMac(key, canonicalInput);
 
     const expectedBuffer = Buffer.from(expectedMac, "base64");
-    const actualBuffer = Buffer.from(signature.value, "base64");
+    const actualBuffer = this.decodeCanonicalHmacSha256Signature(signature.value);
 
-    if (expectedBuffer.length !== actualBuffer.length || !crypto.timingSafeEqual(expectedBuffer, actualBuffer)) {
+    if (!crypto.timingSafeEqual(expectedBuffer, actualBuffer)) {
       throw new SignatureInvalidError("Invalid signature value for response");
     }
   }
