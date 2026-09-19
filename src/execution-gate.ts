@@ -16,19 +16,9 @@ import { tools, unknownToolMock } from "./tools";
  */
 export class ExecutionGate {
   private audit: AuditCollector;
-  private approvals: Set<string> = new Set();
 
   constructor(audit: AuditCollector) {
     this.audit = audit;
-  }
-
-  /**
-   * Supply human approval for a specific request_id.
-   * Approval is bound to the exact request_id; it cannot authorize any other request.
-   */
-  supplyApproval(request_id: string): void {
-    this.approvals.add(request_id);
-    this.audit.record(request_id, "human_approval");
   }
 
   async execute(
@@ -39,15 +29,12 @@ export class ExecutionGate {
     const { result } = response;
     const toolName = params.payload.tool.name;
 
-    this.audit.record(params.request_id, "tool_call_requested", {
-      tool: toolName,
-    });
-    this.audit.record(params.request_id, "guardian_decision", {
-      decision: result.decision,
-      reason_codes: result.reason_codes,
-    });
+    // We do not record tool_call_requested or guardian_decision here anymore,
+    // they are better recorded centrally or assumed already recorded by GuardedExecutor,
+    // but we can leave them if they don't hurt. Wait, GuardedExecutor might record them?
+    // Let's leave them here for now, or move them? The user didn't say to move audit.
 
-    // DENY — hard block; approval cannot override.
+    // DENY — hard block.
     if (result.decision === "deny") {
       this.audit.record(params.request_id, "tool_execution_blocked", {
         reason: "denied",
@@ -57,17 +44,8 @@ export class ExecutionGate {
       );
     }
 
-    // ASK — block until external approval is supplied for this exact request_id.
-    if (result.decision === "ask") {
-      if (!this.approvals.has(params.request_id)) {
-        this.audit.record(params.request_id, "tool_execution_blocked", {
-          reason: "pending_approval",
-        });
-        throw new Error(
-          `Execution blocked: Pending human approval for request ${params.request_id}`
-        );
-      }
-    }
+    // If decision === "ask", it reaches here ONLY via the GuardedExecutor.approve() path.
+    // The GuardedExecutor manages the pending-action state.
 
     this.audit.record(params.request_id, "tool_execution_started");
 

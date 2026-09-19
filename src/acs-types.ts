@@ -124,9 +124,14 @@ export type AuditEventType =
   | "tool_call_requested"
   | "guardian_decision"
   | "human_approval"
+  | "human_rejection"
+  | "approval_requested"
   | "tool_execution_started"
   | "tool_execution_completed"
-  | "tool_execution_blocked";
+  | "tool_execution_blocked"
+  // Phase 2 — replay protection events (not ACS-Audit)
+  | "replay_rejected"
+  | "timestamp_rejected";
 
 export interface AuditEvent {
   timestamp: string;

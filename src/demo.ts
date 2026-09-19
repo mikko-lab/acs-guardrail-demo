@@ -1,12 +1,22 @@
 import { AcsToolCallRequest, AcsToolCallRequestPayload } from "./acs-types";
+import { ReplayGuard } from "./replay-guard";
 import { Guardian } from "./guardian";
 import { ExecutionGate } from "./execution-gate";
 import { AuditCollector } from "./audit";
+import { GuardedExecutor } from "./guarded-executor";
 
 async function runDemo(): Promise<void> {
+  const sessionId = "session-demo-001";
   const audit = new AuditCollector();
-  const guardian = new Guardian();
-  const gate = new ExecutionGate(audit);
+
+  // Wire the enforcement stack through GuardedExecutor — the mandatory
+  // orchestration boundary that prevents replay-guard from being skipped.
+  const executor = new GuardedExecutor(
+    new ReplayGuard({ audit }),
+    new Guardian(),
+    new ExecutionGate(audit),
+    audit
+  );
 
   // --- Construct a request using the ACS params-nested shape ---
   const request: AcsToolCallRequest = {
@@ -19,7 +29,7 @@ async function runDemo(): Promise<void> {
       timestamp: new Date().toISOString(),
       metadata: {
         agent_id: "demo-agent",
-        session_id: "session-demo-001",
+        session_id: sessionId,
       },
       payload: {
         tool: { name: "update_record" },
@@ -31,21 +41,31 @@ async function runDemo(): Promise<void> {
     },
   };
 
-  const response = guardian.evaluate(request);
-  console.log(`Guardian decision: ${response.result.decision}`);
-
-  // --- First attempt: no approval supplied → should block ---
-  try {
-    await gate.execute(request, response);
-  } catch (e: unknown) {
-    console.log(`Blocked (expected): ${(e as Error).message}`);
+  // --- First attempt: yields a pending status without executing ---
+  console.log("Sending request...");
+  const processResult = await executor.process(request);
+  if (processResult.status === "pending") {
+    console.log(`Paused: Pending human approval for request ${request.params.request_id}`);
+  } else {
+    console.log(`Executed immediately:`, processResult.result);
   }
 
-  // --- Supply approval for this exact request_id ---
-  gate.supplyApproval(request.params.request_id);
-  const toolResult = await gate.execute(request, response);
+  // --- Supply approval for this exact session_id + request_id ---
+  console.log("Supplying human approval...");
+  const toolResult = await executor.approve(sessionId, request.params.request_id);
   console.log(`Tool result:`, toolResult);
+
+  // --- Demonstrate replay rejection: same request in same session ---
+  try {
+    await executor.process(request);
+  } catch (e: unknown) {
+    console.log(`Replay blocked (expected): ${(e as Error).message}`);
+  }
+
   console.log(`\nAudit log:\n`, JSON.stringify(audit.getEvents(), null, 2));
+
+  // --- Clean up session state ---
+  executor.clearSession(sessionId);
 }
 
 if (require.main === module) {
