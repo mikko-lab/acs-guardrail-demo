@@ -2,7 +2,7 @@
 
 **This project demonstrates selected ACS v0.1.0 control patterns. It does not claim ACS-Core conformance.**
 
-This is a standalone, public demo of a deterministic Agent Control Standard (ACS) control flow. It proves how an external, deterministic guardian policy can mediate AI agent tool calls before they execute, blocking replays and stale requests, gating side-effects behind explicit human approval, and recording a minimal audit trail.
+This is a standalone, public demo of a deterministic Agent Control Standard (ACS) control flow. It proves how an external, deterministic guardian policy can mediate AI agent tool calls before they execute, blocking replays and stale requests, gating side-effects behind explicit human approval, and collecting lifecycle events in memory for demonstration purposes.
 
 ## Non-Goals & Limitations
 
@@ -14,7 +14,9 @@ This demo intentionally **DOES NOT** implement:
 - `modify` or `defer` decisions
 - SessionContext
 - Wrapped MCP
-- ACS-Trace, ACS-Inspect / AgBOM, ACS-Provenance, ACS-Crypto, ACS-Audit
+- ACS-Trace, ACS-Inspect / AgBOM, ACS-Provenance, ACS-Crypto
+
+- **ACS-Audit is not implemented:** The `AuditCollector` is strictly an in-memory event collector used to demonstrate runtime control flow. Events are not persisted, not cryptographically chained, and do not constitute a tamper-evident production audit log. No DDN evidence-chain guarantees are provided in this repository.
 
 See the detailed crosswalk analysis in [docs/acs-crosswalk.md](./docs/acs-crosswalk.md).
 
@@ -25,7 +27,7 @@ To demonstrate a zero-dependency, local control flow that:
 1. Checks requests for timestamp skew and session-scoped replay before policy evaluation.
 2. Applies deterministic Guardian policy (ALLOW / DENY / ASK) without relying on LLM self-correction.
 3. Enforces the execution gate: blocked requests never reach the tool implementation.
-4. Records a minimal append-only audit trail of all lifecycle events.
+4. Maintains an in-memory event collector used to demonstrate runtime control flow.
 
 ## Architecture
 

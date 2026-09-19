@@ -263,7 +263,6 @@ export class GuardedExecutor {
     let exitStatus: "success" | "failure" | "blocked" | "timeout" = "success";
     let outputs: any[] = [];
     try {
-      this.audit.record(originalRequestId, "tool_execution_started", { tool: toolName });
       this.correlation.registerExecution(sessionId, originalRequestId, toolName);
 
       const permit = this.#gate.mintPermit(this.#permitAuthority, sessionId, originalRequestId, toolName);
@@ -271,7 +270,6 @@ export class GuardedExecutor {
 
       outputs = result.outputs || [{ value: result }];
       exitStatus = result.exit_status || "success";
-      this.audit.record(originalRequestId, "tool_execution_completed", { tool: toolName });
     } catch (error: unknown) {
       exitStatus = "failure";
       outputs = [{ value: { error: "Tool execution failed", code: "tool_execution_failed" } }];
