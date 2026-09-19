@@ -226,8 +226,8 @@ export class GuardedExecutor {
     const sessionId = params.metadata.session_id;
     const requestIdRef = params.payload.request_id_ref;
 
-    this.signatureService.verifyRequest(request as any);
-    this.replayGuard.check(request as any);
+    this.signatureService.verifyRequest(request);
+    this.replayGuard.check(request);
     this.correlation.validateAndConsume(sessionId, requestIdRef, request.params.payload.tool.name);
 
     const rawResponse = this.guardian.evaluateResult(request);
@@ -261,7 +261,7 @@ export class GuardedExecutor {
     const originalRequestId = params.request_id;
 
     let exitStatus: "success" | "failure" | "blocked" | "timeout" = "success";
-    let outputs: any[] = [];
+    let outputs: import("./acs-types").AcsToolCallResult["outputs"] = [];
     try {
       this.correlation.registerExecution(sessionId, originalRequestId, toolName);
 
@@ -276,7 +276,7 @@ export class GuardedExecutor {
       this.audit.record(originalRequestId, "tool_execution_blocked", { error: "failed" });
     }
 
-    const resultRequest = {
+    const resultRequest: import("./acs-types").AcsToolCallResultRequest = {
       jsonrpc: "2.0",
       method: "steps/toolCallResult",
       id: crypto.randomUUID(),
@@ -298,8 +298,8 @@ export class GuardedExecutor {
     };
 
     this.audit.record(resultRequest.params.request_id, "tool_result_created", { tool: toolName });
-    const signedResultRequest = this.signatureService.signRequest(resultRequest as any);
-    return this.processResultRequest(signedResultRequest as any);
+    const signedResultRequest = this.signatureService.signRequest(resultRequest);
+    return this.processResultRequest(signedResultRequest);
   }
 
   /**
@@ -360,7 +360,7 @@ export class GuardedExecutor {
     if (validated.method !== "steps/toolCallRequest") {
       throw new Error("Invalid request method in pending action");
     }
-    this.signatureService.verifyRequest(pending.request as any);
+    this.signatureService.verifyRequest(pending.request);
 
     this.audit.record(grant.request_id, "human_approval", {
       approver_type: grant.approver.type,
@@ -368,7 +368,7 @@ export class GuardedExecutor {
       session_id: grant.session_id,
       request_id: grant.request_id
     });
-    return this.executeAndProcessResult(pending.request as any, pending.response);
+    return this.executeAndProcessResult(pending.request, pending.response);
   }
 
   /**

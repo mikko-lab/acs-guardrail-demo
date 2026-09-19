@@ -2,6 +2,64 @@ import { Guardian } from "../src/guardian";
 import type { AcsToolCallRequest } from "../src/acs-types";
 
 describe("Guardian deterministic decisions", () => {
+
+  describe("isRestrictedOutput type guard", () => {
+    // We test evaluateResult to prove the type guard handles these inputs safely
+    const makeResultRequest = (value: unknown): import("../src/acs-types").AcsToolCallResultRequest => ({
+      jsonrpc: "2.0",
+      method: "steps/toolCallResult",
+      id: "req-1",
+      params: {
+        acs_version: "0.1.0",
+        request_id: "req-1",
+        timestamp: "2024-01-01T00:00:00Z",
+        metadata: { agent_id: "a1", session_id: "s1" },
+        payload: {
+          tool: { name: "test" },
+          request_id_ref: "req-1",
+          exit_status: "success",
+          outputs: [{ value }]
+        }
+      }
+    });
+
+    it("null does not throw (ALLOW)", () => {
+      const result = guardian.evaluateResult(makeResultRequest(null));
+      expect(result.result.decision).toBe("allow");
+    });
+
+    it("primitive values do not throw (ALLOW)", () => {
+      const result1 = guardian.evaluateResult(makeResultRequest("string"));
+      expect(result1.result.decision).toBe("allow");
+
+      const result2 = guardian.evaluateResult(makeResultRequest(123));
+      expect(result2.result.decision).toBe("allow");
+
+      const result3 = guardian.evaluateResult(makeResultRequest(true));
+      expect(result3.result.decision).toBe("allow");
+    });
+
+    it("array does not throw (ALLOW)", () => {
+      const result = guardian.evaluateResult(makeResultRequest(["restricted"]));
+      expect(result.result.decision).toBe("allow");
+    });
+
+    it("ordinary object without classification is ALLOW", () => {
+      const result = guardian.evaluateResult(makeResultRequest({ ordinary: "data" }));
+      expect(result.result.decision).toBe("allow");
+    });
+
+    it("other classification values are ALLOW", () => {
+      const result = guardian.evaluateResult(makeResultRequest({ classification: "public" }));
+      expect(result.result.decision).toBe("allow");
+    });
+
+    it("{ classification: 'restricted' } is DENY", () => {
+      const result = guardian.evaluateResult(makeResultRequest({ classification: "restricted" }));
+      expect(result.result.decision).toBe("deny");
+    });
+  });
+
   const guardian = new Guardian();
 
   /** Build a minimal valid ACS request with params nesting. */

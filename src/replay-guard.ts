@@ -46,7 +46,7 @@
  *   future-skewed request cannot "poison" a valid request_id.
  */
 
-import { AcsToolCallRequest } from "./acs-types";
+import { AcsSupportedRequest } from "./acs-types";
 import { AuditCollector } from "./audit";
 
 // ── ACS error codes (§17.1) ───────────────────────────────────────────────
@@ -122,7 +122,7 @@ export class ReplayGuard {
    * Security ordering guaranteed:
    *   parse → skew-check → duplicate-check → record
    */
-  check(request: AcsToolCallRequest): void {
+  check(request: AcsSupportedRequest): void {
     const { request_id, timestamp, metadata } = request.params;
     const session_id = metadata.session_id;
     const nowMs = this.clock.nowMs();

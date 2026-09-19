@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 import { canonicalize } from "json-canonicalize";
-import { AcsToolCallRequest, AcsResponseEnvelope, AcsSignature } from "./acs-types";
+import { AcsSupportedRequest, AcsToolCallRequest, AcsResponseEnvelope, AcsSignature } from "./acs-types";
 
 export class SignatureInvalidError extends Error {
   public code = -32004;
@@ -31,7 +31,7 @@ export class SignatureService {
       .digest("base64");
   }
 
-  private getCanonicalInput(envelope: any, removeSignatureFrom: "params" | "result"): string {
+  private getCanonicalInput(envelope: unknown, removeSignatureFrom: "params" | "result"): string {
     // Clone to remove signature
     const clone = JSON.parse(JSON.stringify(envelope));
 
@@ -71,7 +71,7 @@ export class SignatureService {
     return decoded;
   }
 
-  public signRequest(request: AcsToolCallRequest): AcsToolCallRequest {
+  public signRequest<T extends AcsSupportedRequest>(request: T): T {
     const sessionId = request.params.metadata.session_id;
     const key = this.deriveKey(sessionId);
     const canonicalInput = this.getCanonicalInput(request, "params");
@@ -91,7 +91,7 @@ export class SignatureService {
     };
   }
 
-  public verifyRequest(request: AcsToolCallRequest): void {
+  public verifyRequest(request: AcsSupportedRequest): void {
     const signature = request.params.signature;
     if (!signature) {
       throw new SignatureInvalidError("Missing signature in request envelope");

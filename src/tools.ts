@@ -1,4 +1,4 @@
-export type ToolImplementation = (args: Record<string, unknown>) => Promise<any>;
+export type ToolImplementation = (args: Record<string, unknown>) => Promise<unknown>;
 
 export const executionCounters: Record<string, number> = {
   read_record: 0,

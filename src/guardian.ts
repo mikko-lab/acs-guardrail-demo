@@ -14,6 +14,17 @@ import {
  *   - reason_codes   (string[], machine-readable)
  *   - ask_details    (REQUIRED when decision === "ask")
  */
+
+function isRestrictedOutput(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "classification" in value &&
+    (value as Record<string, unknown>).classification === "restricted"
+  );
+}
+
 export class Guardian {
   evaluateResult(request: import("./acs-types").AcsToolCallResultRequest): AcsResponseEnvelope {
     const { params } = request;
@@ -21,10 +32,8 @@ export class Guardian {
 
     let hasRestricted = false;
     for (const out of payload.outputs) {
-      if (out && typeof out.value === "object" && out.value !== null) {
-        if ((out.value as any).classification === "restricted") {
-          hasRestricted = true;
-        }
+      if (out && isRestrictedOutput(out.value)) {
+        hasRestricted = true;
       }
     }
 
