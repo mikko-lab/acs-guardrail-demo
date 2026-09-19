@@ -20,6 +20,14 @@ This demo intentionally **DOES NOT** implement:
 
 See the detailed crosswalk analysis in [docs/acs-crosswalk.md](./docs/acs-crosswalk.md).
 
+
+## Documentation
+
+- [Runtime Invariants and Evidence Matrix](docs/invariants-evidence.md)
+- [ACS Implementation Crosswalk](docs/acs-crosswalk.md)
+- [Schema Attribution](schemas/ATTRIBUTION.md)
+- [Approval Demo Example](examples/approval-demo.ts)
+
 ## Purpose
 
 To demonstrate a zero-dependency, local control flow that:
@@ -198,3 +206,10 @@ The execution boundary implements a two-sided security model separating request 
 - **Result Gate**: Controls whether the tool's output may reach the agent. A result-gate DENY does NOT undo side effects (which have already happened) but firmly withholds the restricted output.
 - **Strict Output Boundary**: Output is never exposed before Result Guardian approval. If denied, a safe blocked payload is delivered instead of raw output. Sensitive output is carefully scrubbed and never leaked into Audit logs, error messages, or reasoning text.
 - **Correlation Profile (Issue #118)**: ACS `request_id_ref` correlation uses a local strict profile because upstream ACS issue #118 leaves unresolved-reference semantics underspecified. ACS v0.1.0 vendored toolCallResult schema does not require `request_id_ref`. This demo's local strict correlation profile DOES require it. Correlation binds session, `request_id_ref` and executed tool name. This is a local strengthening, not normative ACS behavior, and upstream issue #118 is the reason this local profile is documented separately.
+
+## License & Attribution
+
+- **Project Code:** [Apache License 2.0](LICENSE)
+- **Vendored ACS Schemas:** Retain their upstream attribution and Apache 2.0 license.
+
+See [LICENSE](LICENSE), [NOTICE](NOTICE), and [schemas/ATTRIBUTION.md](schemas/ATTRIBUTION.md) for full details. This project is not affiliated with, nor endorsed by, the OWASP Foundation or the Agent Control Standard project.

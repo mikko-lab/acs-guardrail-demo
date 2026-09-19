@@ -2,6 +2,7 @@
   "name": "acs-guardrail-demo",
   "version": "0.1.0",
   "description": "Public Phase 1 demo of selected ACS v0.1.0 control patterns. Does not claim ACS-Core conformance.",
+  "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,0 +1,26 @@
+ACS Guardrail Demo
+Copyright 2026 Mikko Tarkiainen
+
+This product includes software developed for the ACS Guardrail Demo project.
+
+-------------------------------------------------------------------------------
+Vendored Components
+-------------------------------------------------------------------------------
+
+This project includes machine-readable Agent Control Standard (ACS) schemas,
+vendored from the official ACS specification repository.
+
+Agent Control Standard (ACS)
+Copyright 2025-2026 The OWASP GenAI Security Project and the ACS contributors
+
+Code and machine-readable schemas are licensed under the
+Apache License, Version 2.0.
+
+Source Repository:
+https://github.com/GenAI-Security-Project/agent-control-standard
+
+Pinned Source Commit:
+dc265475139a922824f0c817e2ecc2a2ce31c06c
+
+This project is not affiliated with or endorsed by the OWASP Foundation,
+the OWASP GenAI Security Project, or the Agent Control Standard project.
