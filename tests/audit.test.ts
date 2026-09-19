@@ -1,4 +1,5 @@
 import { SchemaValidator } from "../src/schema-validator";
+import { SignatureService } from "../src/signature-service";
 
 import { GuardedExecutor } from "../src/guarded-executor";
 import { ReplayGuard } from "../src/replay-guard";
@@ -13,7 +14,7 @@ describe("Audit Collector invariants", () => {
 
   beforeEach(() => {
     audit = new AuditCollector();
-    executor = new GuardedExecutor(new SchemaValidator(),
+    executor = new GuardedExecutor(new SchemaValidator(), new SignatureService("test-secret", "key-1"),
       new ReplayGuard({ audit }),
       new Guardian(),
       new ExecutionGate(audit),
@@ -21,10 +22,11 @@ describe("Audit Collector invariants", () => {
     );
   });
 
-  const createRequest = (id: string, tool: string): AcsToolCallRequest => ({
+  const testSignatureService = new SignatureService("test-secret", "key-1");
+  const createRequest = (id: string, tool: string): AcsToolCallRequest => testSignatureService.signRequest({
     jsonrpc: "2.0",
     method: "steps/toolCallRequest",
-    id: `call-${id}`,
+    id: id,
     params: {
       acs_version: "0.1.0",
       request_id: id,

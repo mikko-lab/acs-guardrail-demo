@@ -1,4 +1,5 @@
 import { SchemaValidator } from "../src/schema-validator";
+import { SignatureService } from "../src/signature-service";
 
 /**
  * tests/guarded-executor.test.ts
@@ -23,13 +24,14 @@ function makeClock(nowMs: number): Clock {
 const fresh = (nowMs: number, offsetMs = 0) =>
   new Date(nowMs + offsetMs).toISOString();
 
+const testSignatureService = new SignatureService("test-secret", "key-1");
 function makeRequest(overrides: {
   requestId?: string;
   sessionId?: string;
   timestamp?: string;
   tool?: string;
 }): AcsToolCallRequest {
-  return {
+  const req: AcsToolCallRequest = {
     jsonrpc: "2.0",
     method: "steps/toolCallRequest",
     id: "8910e724-3b59-4c4e-9883-9a83495b3f8e",
@@ -47,6 +49,7 @@ function makeRequest(overrides: {
       },
     },
   };
+  return testSignatureService.signRequest(req);
 }
 
 function makeExecutor(nowMs: number): {
@@ -58,7 +61,7 @@ function makeExecutor(nowMs: number): {
   const audit = new AuditCollector();
   const replayGuard = new ReplayGuard({ skewWindowMs: SKEW_MS, clock: makeClock(nowMs), audit });
   const guardian = new Guardian();
-  const executor = new GuardedExecutor(new SchemaValidator(),
+  const executor = new GuardedExecutor(new SchemaValidator(), new SignatureService("test-secret", "key-1"),
     replayGuard,
     guardian,
     new ExecutionGate(audit),

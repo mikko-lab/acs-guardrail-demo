@@ -1,3 +1,4 @@
+import { SignatureService } from "../src/signature-service";
 import { ExecutionGate } from "../src/execution-gate";
 import { Guardian } from "../src/guardian";
 import { AuditCollector } from "../src/audit";

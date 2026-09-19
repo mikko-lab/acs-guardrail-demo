@@ -46,6 +46,7 @@ export interface AcsParams {
   timestamp: string;
   metadata: AcsMetadata;
   payload: AcsToolCallRequestPayload;
+  signature?: AcsSignature;
 }
 
 /**
@@ -62,6 +63,12 @@ export interface AcsToolCallRequest {
 // ── Response ─────────────────────────────────────────────────────────
 
 export type GuardianDecisionValue = "allow" | "deny" | "ask";
+
+export interface AcsSignature {
+  algorithm: "HMAC-SHA256";
+  value: string;
+  key_id: string;
+}
 
 /**
  * ACS ask-details.json shape.
@@ -94,6 +101,7 @@ export interface GuardianDecision {
   reasoning?: string;
   reason_codes?: string[];
   ask_details?: AcsAskDetails;
+  signature?: AcsSignature;
 }
 
 /**

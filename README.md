@@ -40,6 +40,10 @@ ACS Schema Validation (Phase 3)
   — ACS-invalid but valid UUID request_id → local ACS DENY
   — unaddressable failures → typed Error
         ↓
+HMAC Signature Verification (Phase 4)
+  — verify request signature via HKDF session key
+  — invalid signature → fail closed (-32004)
+        ↓
 ReplayGuard (Phase 2)
   — reject timestamp outside ±skewWindowMs
   — reject duplicate request_id within same session
@@ -75,6 +79,20 @@ The project implements a strict separation of protocol validation and schema val
 4. **Outbound Defensive Checks:** Guardian responses are also checked against `response-envelope.json` before ExecutionGate accepts them.
 5. **Pinned Schemas:** Schemas are pinned locally to a specific ACS v0.1.0 upstream commit.
 6. **No ACS-Core Conformance Claim:** Do not call this full ACS interoperability.
+
+## Envelope Integrity (Phase 4)
+
+- **ACS §10-Oriented HMAC Integrity:** The demo implements envelope-level integrity using HMAC-SHA256. 
+- **JCS Canonicalization:** Signatures bind the complete ACS envelope. The *entire* envelope (request or response), excluding only the nested `signature` field itself, is deep-cloned and canonicalized using exact RFC 8785 JSON Canonicalization Scheme (via the `json-canonicalize` package) before signing. This guarantees that top-level fields like `jsonrpc` and `id` are inextricably bound to the payload MAC.
+- **Verification Ordering:** Request verification occurs *after* schema validation but *before* replay protection and policy evaluation, guaranteeing that invalid signatures cannot poison the replay state.
+- **Outbound Responses Signed & Verified:** The outbound Guardian responses are signed, and the orchestrator explicitly verifies that signature before any downstream execution gate processing.
+- **Local HKDF Profile (Issue #118):** ACS v0.1.0 requires a per-session HKDF-derived HMAC key, but the exact HKDF interoperability parameters remain underspecified (tracked in upstream issue #118). Therefore, this demo uses an explicitly documented **local derivation profile**:
+  - `HKDF-SHA256`
+  - Empty salt
+  - UTF-8 `session_id` as the HKDF `info` parameter
+  - 32-byte derived key length
+  - Root key provided via deployment configuration
+- **Warning:** Because of the ambiguity in upstream #118, this profile does not claim normative ACS-Core interoperability. It serves as a strict structural demonstration of the authenticated envelope boundary.
 
 ## Demo Policies
 

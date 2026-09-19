@@ -1,22 +1,29 @@
 import { SchemaValidator } from "./schema-validator";
-
 import { AcsToolCallRequest, AcsToolCallRequestPayload } from "./acs-types";
 import { ReplayGuard } from "./replay-guard";
 import { Guardian } from "./guardian";
 import { ExecutionGate } from "./execution-gate";
 import { AuditCollector } from "./audit";
 import { GuardedExecutor } from "./guarded-executor";
+import { SignatureService } from "./signature-service";
 
 async function runDemo(): Promise<void> {
   const sessionId = "session-demo-001";
   const audit = new AuditCollector();
+  const schemaValidator = new SchemaValidator();
+  const signatureService = new SignatureService("demo-root-secret-for-testing", "key-1");
+  const replayGuard = new ReplayGuard({ audit });
+  const guardian = new Guardian();
+  const gate = new ExecutionGate(audit);
 
   // Wire the enforcement stack through GuardedExecutor — the mandatory
   // orchestration boundary that prevents replay-guard from being skipped.
-  const executor = new GuardedExecutor(new SchemaValidator(),
-    new ReplayGuard({ audit }),
-    new Guardian(),
-    new ExecutionGate(audit),
+  const executor = new GuardedExecutor(
+    schemaValidator,
+    signatureService,
+    replayGuard,
+    guardian,
+    gate,
     audit
   );
 

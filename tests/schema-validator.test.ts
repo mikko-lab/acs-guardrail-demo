@@ -1,4 +1,5 @@
 import { SchemaValidator, AddressableSchemaError, SchemaValidationError, JsonRpcProtocolError } from "../src/schema-validator";
+import { SignatureService } from "../src/signature-service";
 import { GuardedExecutor } from "../src/guarded-executor";
 import { ReplayGuard } from "../src/replay-guard";
 import { Guardian } from "../src/guardian";
@@ -6,7 +7,8 @@ import { ExecutionGate } from "../src/execution-gate";
 import { AuditCollector } from "../src/audit";
 import { executionCounters, resetCounters } from "../src/tools";
 
-const validBaseRequest = {
+const testSignatureService = new SignatureService("test-secret", "key-1");
+const validBaseRequest = testSignatureService.signRequest({
   jsonrpc: "2.0",
   method: "steps/toolCallRequest",
   id: "call-1",
@@ -23,7 +25,7 @@ const validBaseRequest = {
       arguments: { arg1: { value: "test" } }
     }
   }
-};
+});
 
 describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
   let validator: SchemaValidator;
@@ -140,8 +142,7 @@ describe("GuardedExecutor with Security Ordering", () => {
     audit = new AuditCollector();
     replayGuard = new ReplayGuard({ audit });
     guardian = new Guardian();
-    executor = new GuardedExecutor(
-      new SchemaValidator(),
+    executor = new GuardedExecutor(new SchemaValidator(), new SignatureService("test-secret", "key-1"),
       replayGuard,
       guardian,
       new ExecutionGate(audit),

@@ -20,7 +20,7 @@
  *   removes all pending actions for that session.
  *
  * Human approval for ASK decisions:
- *   An ASK decision results in a pending action. 
+ *   An ASK decision results in a pending action.
  *   approve(sessionId, requestId) consumes the action and executes it exactly once.
  *   reject(sessionId, requestId) consumes it without execution.
  */
@@ -31,6 +31,7 @@ import { Guardian } from "./guardian";
 import { ExecutionGate } from "./execution-gate";
 import { AuditCollector } from "./audit";
 import { SchemaValidator, AddressableSchemaError } from "./schema-validator";
+import { SignatureService } from "./signature-service";
 
 export type ProcessResult =
   | { status: "executed"; result: AcsToolCallResult }
@@ -43,6 +44,7 @@ interface PendingAction {
 
 export class GuardedExecutor {
   private readonly schemaValidator: SchemaValidator;
+  private readonly signatureService: SignatureService;
   private readonly replayGuard: ReplayGuard;
   private readonly guardian: Guardian;
   private readonly gate: ExecutionGate;
@@ -53,12 +55,14 @@ export class GuardedExecutor {
 
   constructor(
     schemaValidator: SchemaValidator,
+    signatureService: SignatureService,
     replayGuard: ReplayGuard,
     guardian: Guardian,
     gate: ExecutionGate,
     audit: AuditCollector
   ) {
     this.schemaValidator = schemaValidator;
+    this.signatureService = signatureService;
     this.replayGuard = replayGuard;
     this.guardian = guardian;
     this.gate = gate;
@@ -69,15 +73,19 @@ export class GuardedExecutor {
    * Process a single untrusted tool-call request through the full enforcement stack.
    *
    * 0. Validates schema (throws AddressableSchemaError or SchemaValidationError on failure).
+   * 0.5. Verifies envelope signature (throws SignatureInvalidError).
    * 1. ReplayGuard checks timestamp or replay violations.
-   * 2. Guardian policy evaluated (and outbound response schema validated).
+   * 2. Guardian policy evaluated (and outbound response schema validated & signed).
    * 3. Branches on decision (throws on deny, pending on ask, executes on allow).
    */
   async process(input: unknown): Promise<ProcessResult> {
     // Step 0 — Schema validation
     const request = this.schemaValidator.validateRequest(input);
     const { params } = request;
-    
+
+    // Step 0.5 — Signature verification
+    this.signatureService.verifyRequest(request);
+
     // Step 1 — replay/timestamp gate (throws on any violation)
     this.replayGuard.check(request);
 
@@ -88,7 +96,14 @@ export class GuardedExecutor {
 
     // Step 2 — deterministic Guardian policy (and outbound validation)
     const rawResponse = this.guardian.evaluate(request);
-    const response = this.schemaValidator.validateResponse(rawResponse);
+    let response = this.schemaValidator.validateResponse(rawResponse);
+
+    // Step 2.5 — sign outbound response and immediately verify it
+    response = this.signatureService.signResponse(response, params.metadata.session_id);
+    this.schemaValidator.validateResponse(response); // verify signing didn't break schema
+
+    // Demonstrate response verification (Consumer-side check before executing)
+    this.signatureService.verifyResponse(response, params.metadata.session_id);
 
     this.audit.record(params.request_id, "guardian_decision", {
       decision: response.result.decision,
@@ -101,7 +116,7 @@ export class GuardedExecutor {
       const result = await this.gate.execute(request, response);
       return { status: "executed", result }; // Unreachable; gate throws
     }
-    
+
     if (response.result.decision === "ask") {
       const key = `${params.metadata.session_id}:${params.request_id}`;
       this.pendingActions.set(key, { request, response });
@@ -121,7 +136,7 @@ export class GuardedExecutor {
   async approve(sessionId: string, requestId: string): Promise<AcsToolCallResult> {
     const key = `${sessionId}:${requestId}`;
     const pending = this.pendingActions.get(key);
-    
+
     if (!pending) {
       throw new Error(`No pending action found for session ${sessionId}, request ${requestId}`);
     }
@@ -146,7 +161,7 @@ export class GuardedExecutor {
 
     // Consume without execution
     this.pendingActions.delete(key);
-    
+
     this.audit.record(requestId, "human_rejection");
     this.audit.record(requestId, "tool_execution_blocked", { reason: "human_rejected" });
   }
