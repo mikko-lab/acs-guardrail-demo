@@ -277,6 +277,75 @@ describe("M-01/M-02: Final Hardening", () => {
     });
   });
 
+
+  describe("M-04: JSON-RPC vs ACS Params Validation", () => {
+    it("A. MISSING PARAMS: throws SchemaValidationError, not JsonRpcProtocolError", async () => {
+      const { executor, signatureService, guardian } = setup(Date.now());
+      const signSpy = jest.spyOn(signatureService, "signResponse");
+      const evalSpy = jest.spyOn(guardian, "evaluate");
+
+      const req: any = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallRequest",
+        id: "rpc-id-1"
+      };
+
+      let err: any;
+      try { await executor.process(req); } catch (e) { err = e; }
+
+      expect(err).toBeDefined();
+      expect(err.name).toBe("SchemaValidationError");
+      expect(err.acsResponse).toBeUndefined();
+      expect(signSpy).not.toHaveBeenCalled();
+      expect(evalSpy).not.toHaveBeenCalled();
+    });
+
+    it("B. ARRAY PARAMS: throws SchemaValidationError", async () => {
+      const { executor, signatureService } = setup(Date.now());
+      const signSpy = jest.spyOn(signatureService, "signResponse");
+
+      const req: any = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallRequest",
+        id: "rpc-id-1",
+        params: []
+      };
+
+      let err: any;
+      try { await executor.process(req); } catch (e) { err = e; }
+
+      expect(err.name).toBe("SchemaValidationError");
+      expect(err.acsResponse).toBeUndefined();
+      expect(signSpy).not.toHaveBeenCalled();
+    });
+
+    it("D. NULL PARAMS: throws JsonRpcProtocolError (-32600)", async () => {
+      const { executor } = setup(Date.now());
+      const req: any = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallRequest",
+        id: "rpc-id-1",
+        params: null
+      };
+
+      await expect(executor.process(req)).rejects.toThrow("Invalid Request: params must be a structured value");
+      try { await executor.process(req); } catch (e: any) { expect(e.name).toBe("JsonRpcProtocolError"); }
+    });
+
+    it("E. SCALAR PARAMS: throws JsonRpcProtocolError (-32600)", async () => {
+      const { executor } = setup(Date.now());
+      const req: any = {
+        jsonrpc: "2.0",
+        method: "steps/toolCallRequest",
+        id: "rpc-id-1",
+        params: "bad"
+      };
+
+      await expect(executor.process(req)).rejects.toThrow("Invalid Request: params must be a structured value");
+      try { await executor.process(req); } catch (e: any) { expect(e.name).toBe("JsonRpcProtocolError"); }
+    });
+  });
+
   describe("APPROVAL FRESHNESS", () => {
     it("resolveApproval exposes no skew override parameter", () => {
       const { executor } = setup(Date.now());

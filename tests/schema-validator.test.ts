@@ -60,10 +60,37 @@ describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
       expect(() => validate(req)).toThrow(JsonRpcProtocolError);
     });
 
+
     it("invalid id object -> -32600", () => {
       const req = { ...validBaseRequest, id: {} };
       expect(() => validate(req)).toThrow(JsonRpcProtocolError);
     });
+
+    it("null params -> -32600", () => {
+      const req = { ...validBaseRequest, params: null };
+      expect(() => validate(req)).toThrow(JsonRpcProtocolError);
+    });
+
+    it("scalar params -> -32600", () => {
+      const req = { ...validBaseRequest, params: "invalid" };
+      expect(() => validate(req)).toThrow(JsonRpcProtocolError);
+    });
+
+    it("missing params -> passes JSON-RPC but fails ACS Schema (SchemaValidationError)", () => {
+      const req = { ...validBaseRequest };
+      delete (req as any).params;
+      expect(() => validate(req)).toThrow(SchemaValidationError);
+      expect(() => validate(req)).not.toThrow(JsonRpcProtocolError);
+      expect(() => validate(req)).not.toThrow(AddressableSchemaError);
+    });
+
+    it("array params -> passes JSON-RPC but fails ACS Schema (SchemaValidationError)", () => {
+      const req = { ...validBaseRequest, params: [] };
+      expect(() => validate(req)).toThrow(SchemaValidationError);
+      expect(() => validate(req)).not.toThrow(JsonRpcProtocolError);
+      expect(() => validate(req)).not.toThrow(AddressableSchemaError);
+    });
+
   });
 
   describe("2. ACS Envelope & Payload layer", () => {

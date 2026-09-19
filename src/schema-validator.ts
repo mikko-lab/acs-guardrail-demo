@@ -84,8 +84,10 @@ export class SchemaValidator {
     if (typeof obj.id !== "string" && typeof obj.id !== "number") {
       throw new JsonRpcProtocolError("Invalid Request: id must be a string or number");
     }
-    if (!obj.params || typeof obj.params !== "object") {
-      throw new JsonRpcProtocolError("Invalid Request: params must be a non-null object");
+    if ("params" in obj) {
+      if (obj.params === null || typeof obj.params !== "object") {
+        throw new JsonRpcProtocolError("Invalid Request: params must be a structured value (object or array) if provided");
+      }
     }
 
     // 2. ACS Schema validation (Fail closed)
@@ -109,17 +111,19 @@ export class SchemaValidator {
       const errorMsg = "Schema validation failed: " + this.ajv.errorsText(errors);
 
       // 3. Strict UUID requirement for addressable DENY
-      const params = obj.params as Record<string, unknown>;
       let validRequestId: string | undefined;
-
-      if (typeof params.request_id === "string" && UUID_REGEX.test(params.request_id)) {
-        validRequestId = params.request_id;
-      }
-
-      const metadata = params.metadata as Record<string, unknown> | undefined;
       let validSessionId: string | undefined;
-      if (metadata && typeof metadata.session_id === "string" && UUID_REGEX.test(metadata.session_id)) {
-        validSessionId = metadata.session_id;
+
+      if (obj.params && typeof obj.params === "object" && !Array.isArray(obj.params)) {
+        const params = obj.params as Record<string, unknown>;
+        if (typeof params.request_id === "string" && UUID_REGEX.test(params.request_id)) {
+          validRequestId = params.request_id;
+        }
+
+        const metadata = params.metadata as Record<string, unknown> | undefined;
+        if (metadata && typeof metadata.session_id === "string" && UUID_REGEX.test(metadata.session_id)) {
+          validSessionId = metadata.session_id;
+        }
       }
 
       if (validRequestId && validSessionId) {
