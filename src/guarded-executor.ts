@@ -146,6 +146,7 @@ export class GuardedExecutor {
 
     // Record request after replay passes
     this.audit.record(params.request_id, "tool_call_requested", {
+      session_id: params.metadata.session_id,
       tool: params.payload.tool.name,
     });
 
@@ -154,6 +155,7 @@ export class GuardedExecutor {
     const response = this.secureOutboundResponse(rawResponse, params.metadata.session_id);
 
     this.audit.record(params.request_id, "guardian_decision", {
+      session_id: params.metadata.session_id,
       decision: response.result.decision,
       reason_codes: response.result.reason_codes,
     });
@@ -186,7 +188,7 @@ export class GuardedExecutor {
       const snapshotRequest = JSON.parse(JSON.stringify(request));
       const snapshotResponse = JSON.parse(JSON.stringify(response));
       this.pendingActions.set(key, { request: snapshotRequest, response: snapshotResponse, createdAtMs, expiresAtMs });
-      this.audit.record(params.request_id, "approval_requested");
+      this.audit.record(params.request_id, "approval_requested", { session_id: params.metadata.session_id });
       return { status: "pending" };
     }
 
@@ -342,7 +344,7 @@ export class GuardedExecutor {
     const elapsedMs = this.clock.nowMs() - pending.createdAtMs;
     if (elapsedMs > askDetails.timeout_seconds * 1000) {
       this.pendingActions.delete(key);
-      this.audit.record(grant.request_id, "approval_expired");
+      this.audit.record(grant.request_id, "approval_expired", { session_id: grant.session_id });
       throw new Error("Approval grant rejected: pending action has expired");
     }
 
