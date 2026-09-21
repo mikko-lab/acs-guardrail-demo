@@ -1,12 +1,15 @@
-# ACS Guardrail Demo v0.2.0
+# ACS Guardrail Demo
 
 A reference implementation demonstrating a deterministic enforcement boundary for a scoped subset of ACS v0.1.0 JSON-RPC tool-call hooks.
 
-> **Disclaimer**: This is a demo/reference implementation, not production infrastructure. It is strictly scoped to demonstrate execution gating and architectural security boundaries. It is not affiliated with, nor endorsed by, the OWASP Foundation or the Agent Control Standard project. **No ACS certification claim is made.**
+**Status / Scope:**
+- Release candidate: v0.2.0
+- Scope: Runtime controls, human oversight, execution correlation, audit evidence, oversight metrics, and conformance-oriented evaluation.
+- No certification or full ACS conformance claim is made.
 
 ## Architecture & Control Flow
 
-Within the demo's controlled runtime path, `GuardedExecutor` applies the following enforcement sequence:
+Within the demo's controlled runtime path, the `GuardedExecutor` applies the following enforcement sequence:
 
 ```text
 Tool request
@@ -21,68 +24,178 @@ Guardian request decision
   │          └── approve → execution
   └── ALLOW → execution
                ↓
-          correlation
+           correlation
                ↓
-          result Guardian (Result Gate)
-          ├── DENY → withheld
-          └── ALLOW → delivered
+          Result Guardian
+          ├── DENY → raw output withheld
+          └── ALLOW → result delivered
 ```
 
-Audit events are generated for the instrumented lifecycle and decision points described below.
+## Security Model
 
-## Implemented Runtime Controls (v0.2.0)
+The security model separates the AI agent's intent from execution authority:
+- The AI agent (or LLM) can interpret tasks and propose tool calls.
+- A deterministic runtime strictly decides execution rights.
+- Authorization, state transitions, replay protection, human approval, correlation, and result delivery are handled programmatically by the execution environment, independent of the AI agent's instructions. The LLM itself does not enforce or monitor security.
 
-### Request Guardian & Execution Gate
-- **Request Policy**: Enforces `allow`, `deny`, and `ask` decisions strictly. Unknown tools default to `deny`.
-- **Human Approval**: `ask` decisions require an out-of-band cryptographic approval grant.
-- **Fail-Closed Paths**: Rejections and expirations fail closed.
+## Runtime Controls
 
-### Replay & Session Protection
-- **Timestamp validation**: Requests outside a fixed skew window are rejected.
-- **Session-scoped deduplication**: Identical `request_id`s within the same session are rejected.
+### Guardian request gate
+Implemented dispositions:
+- `ALLOW`: Proceeds to execution.
+- `DENY`: Blocks execution.
+- `ASK`: Blocks execution pending explicit approval.
 
-### Result Gate & Correlation
-- **Result Guardian**: Evaluates tool output. If denied, raw output is withheld and the executor returns a blocked/withheld result representation.
-- **Strict Correlation**: The Result Gate is tightly coupled to the execution phase. Correlation is enforced internally, binding `session_id`, `request_id_ref`, and tool name.
+Unknown tools default to deny. `MODIFY` and `DEFER` dispositions are not implemented.
 
-## Audit Evidence & Oversight Metrics
+### Human oversight
+Implemented for `ASK` decisions:
+- Cryptographically signed approval grant verification.
+- `approve` / `reject` / expiry semantics.
+- Session binding and request binding.
+- Pending-state isolation.
+- Rejection and expiry finality.
 
-### Audit Collection
-The system implements an in-memory `AuditCollector` to record lifecycle events.
-- **Fail-closed Correlation**: Unresolved references or correlation mismatches generate a `correlation_failed` event and fail closed. Events include `request_id`, `request_id_ref`, `session_id`, `tool`, `disposition`, and `reason` (`unresolved_request_id_ref` or `tool_name_mismatch`).
+An approval grant for one session or request_id cannot resolve a different request. 
+**Note**: `ApprovalGrantV1` signs `session_id` and `request_id`, but NOT the tool identity itself. The executor safely resumes the stored pending action (preventing runtime tool swapping), but the grant itself does not cryptographically bind tool identity. Tool binding inside the grant is NOT IMPLEMENTED / NOT CLAIMED.
 
-### Oversight Metrics
-A post-hoc observability layer deriving metrics from the audit event stream:
-- **Decision distribution**: Total decisions, allow/deny/ask counts and rates.
-- **Review latency**: Decision latency and human review latency (completed, expired, pending).
-- **Correlation failures**: Counts and reason breakdown.
-- **Escalation rate**.
+### Replay protection
+- Timestamp skew validation.
+- Session-scoped `request_id` replay detection.
+- Same request in the same session fails.
+
+### Execution correlation
+Correlation tightly binds the execution phase to the Result Gate using:
+- `session_id`
+- `request_id_ref`
+- `tool` name
+
+Tested failure scenarios include unknown reference, consumed reference, tool name mismatch, and cross-session reference.
+
+### Result gate
+Request authorization does not imply result authorization. If the Result Guardian evaluates to `DENY`:
+- Raw output is withheld.
+- A blocked/withheld result representation is returned instead.
+- A `tool_result_withheld` audit event is emitted.
+- No `tool_result_delivered` event is emitted.
+
+## Audit Evidence
+
+The system implements an in-memory `AuditCollector`. 
+
+Correlation failures generate a `correlation_failed` event containing the following relevant fields:
+- `request_id`
+- `request_id_ref`
+- `session_id`
+- `tool`
+- `disposition` (deny)
+- `reason`
+
+Reasons for correlation failure are `unresolved_request_id_ref` or `tool_name_mismatch`. Note that unknown and already consumed references share the same `unresolved_request_id_ref` reason at this layer.
+
+The audit collection is purely local. It is NOT a tamper-evident, immutable ledger, a persistent audit backend, or a SIEM integration.
+
+## Oversight Metrics
+
+A post-hoc observability layer deriving metrics from the audit event stream. It includes:
+- Total decisions
+- Allow / deny / ask counts
+- Allow / deny / ask rates
+- Escalation rate
+- Decision latency
+- Completed human reviews
+- Pending human reviews
+- Expired reviews
+- Human review latency
+- Correlation failure count
+- Correlation reason breakdown
+
+Latency and review-event correlation uses session-aware request identity to prevent cross-session event pairing.
+
+**No Guardian coverage metric is reported.**
+Current internal audit events cannot prove universal mediation or reliably measure executions that might bypass the controlled runtime path without independent external instrumentation.
+
+## Evaluation / Test Evidence
+
+The repository includes an automated evaluation layer covering conformance-oriented and adversarial scenarios. 
+
+**Current baseline**:
+- 266 automated tests
+- 17 Jest suites
+- TypeScript typecheck clean
+
+The evaluation exercises the following domains:
+
+### A Request policy
+`EVAL-A1..A6`
+
+### B Replay
+`EVAL-B1..B4`
+
+### C Correlation
+`EVAL-C1..C4`
+
+### D Human oversight / isolation
+`EVAL-D1`, `EVAL-D2`, `EVAL-D4`, `EVAL-D5`
+(D3 Tool Binding: NOT IMPLEMENTED / NOT CLAIMED)
+
+### F Result gate
+`EVAL-F1..F5`
+
+### H Audit evidence
+`H1..H6`
+
+### I Metrics
+`EVAL-I1`
+
+### Adversarial sequences
+`Sequence 1–3` (exercising state-machine bypass attempts).
+
+## Evidence Links
+
+For exact mappings from claims to implementation and test code, see:
+- [docs/invariants-evidence.md](docs/invariants-evidence.md)
+- [docs/acs-crosswalk.md](docs/acs-crosswalk.md)
+- [CHANGELOG.md](CHANGELOG.md)
+- [schemas/ATTRIBUTION.md](schemas/ATTRIBUTION.md)
+
+## ACS Provenance
+
+- **ACS version**: v0.1.0
+- **Upstream commit**: `dc265475139a922824f0c817e2ecc2a2ce31c06c`
+- **Vendored path**: `schemas/`
+
+The crosswalk explicitly distinguishes between pinned normative requirements, underspecified pinned behavior, local implementation policy, and non-normative context.
 
 ## Limitations / Non-goals
 
-- **Infrastructure**: Demo/reference implementation, not production infrastructure.
-- **State Durability**: Replay, correlation, pending approvals, and audit states are strictly in-memory. There are no durable state guarantees across process restarts, and no distributed/multi-process state synchronization.
-- **Audit Backend**: No persistent, tamper-evident audit backend, immutable log, or SIEM integration.
-- **Coverage**: No universal mediation or coverage proof. The current audit model cannot structurally guarantee 100% mediation without independent external instrumentation.
-- **Tool Binding**: No cryptographic tool binding in `ApprovalGrantV1`. The grant signs the `session_id` and `request_id`, but not the tool identity itself.
-- **Human Identity**: No external IAM integration or physical human intent authentication (institutional identity proofs are out of scope).
-- **Enforcement**: Metrics are post-hoc observability only, not an enforcement layer.
-- **Certification**: No ACS certification claim is made.
+- This is a reference/demo implementation, not production infrastructure.
+- In-memory audit only.
+- No persistent / tamper-evident audit backend.
+- No universal mediation proof.
+- No coverage proof.
+- No cryptographic tool binding inside `ApprovalGrantV1`.
+- No external IAM integration.
+- No institutional identity proof.
+- No physical human intent proof.
+- No durable replay/correlation/pending state across process restart.
+- No distributed/multi-process state guarantees.
+- No full ACS Audit implementation.
+- No ACS certification.
+- No full ACS conformance claim.
+- Metrics are observability, not enforcement.
 
-## Evaluation & Conformance Evidence
+## Verification
 
-The repository contains an evaluation test layer spanning 17 test suites and 266 automated tests. These verify schemas, signatures, replay protection, isolation, adversarial sequences, and oversight metrics.
+To run the automated verification suite:
 
-Key evaluation vectors tested:
-- **Domain A**: Request policy (ALLOW, DENY, ASK).
-- **Domain B**: Replay and duplicate attempts.
-- **Domain C**: Correlation attacks (unknown references, wrong tools, cross-session steals).
-- **Domain D & G**: Session and approval isolation (cross-session state theft attempts, finality of rejections).
-- **Domain F**: Result gate (withheld outputs, metric independence).
-- **Domain I**: Oversight metrics accuracy.
-- **Negative Assertions**: Tests explicitly assert that forbidden outcomes (e.g., `tool_execution_started` without authorization) do not occur.
+```bash
+npm run verify
+```
 
-## License & Attribution
+Current baseline: 266 tests passed, 17 test suites passed, TypeScript typecheck clean.
+
+## License / Attribution
 
 - **Project Code:** [Apache License 2.0](LICENSE)
 - **Vendored ACS Schemas:** Retain their upstream attribution and Apache 2.0 license.
