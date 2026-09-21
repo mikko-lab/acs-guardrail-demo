@@ -228,7 +228,12 @@ export class GuardedExecutor {
 
     this.signatureService.verifyRequest(request);
     this.replayGuard.check(request);
-    this.correlation.validateAndConsume(sessionId, requestIdRef, request.params.payload.tool.name);
+    this.correlation.validateAndConsume(sessionId, requestIdRef, request.params.payload.tool.name, {
+      audit: this.audit,
+      resultRequestId: params.request_id,
+      sessionId,
+      tool: request.params.payload.tool.name,
+    });
 
     const rawResponse = this.guardian.evaluateResult(request);
     const response = this.secureOutboundResponse(rawResponse, sessionId);

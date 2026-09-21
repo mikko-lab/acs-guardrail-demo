@@ -144,7 +144,9 @@ export type AuditEventType =
   | "tool_execution_blocked"
   // Phase 2 — replay protection events (not ACS-Audit)
   | "replay_rejected"
-  | "timestamp_rejected";
+  | "timestamp_rejected"
+  // WP-01 — unresolved correlation evidence
+  | "correlation_failed";
 
 export interface AuditEvent {
   timestamp: string;
