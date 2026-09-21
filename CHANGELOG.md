@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.2.0] - Unreleased
+## [v0.2.0] - 2026-09-21
 
 ### Added
 - **Correlation failure evidence**: The `ExecutionCorrelationStore` now generates detailed audit events on failure (including `request_id`, `request_id_ref`, `session_id`, `tool`, `disposition`, and `reason`).
