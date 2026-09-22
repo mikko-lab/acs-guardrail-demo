@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — target v0.3.0
+## [v0.3.0] - 2026-09-22
 
 ### Added
 - **Deterministic incident evidence (WP-05):** Added `IncidentEnvelopeV1` and deterministic incident classification for selected runtime security and boundary events.

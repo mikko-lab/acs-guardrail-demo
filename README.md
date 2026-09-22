@@ -3,7 +3,7 @@
 A reference implementation demonstrating a deterministic enforcement boundary for a scoped subset of ACS v0.1.0 JSON-RPC tool-call hooks.
 
 **Status / Scope:**
-- Release candidate: v0.3.0 (unreleased)
+- Release: v0.3.0
 - Scope: Runtime controls, scoped capabilities, human oversight, execution correlation, result gating, audit evidence, oversight metrics, adversarial evaluation, and deterministic incident classification.
 - No certification or full ACS conformance claim is made.
 
