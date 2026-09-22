@@ -237,4 +237,503 @@ describe("IncidentClassifier (WP-05)", () => {
       expect(incidents).toHaveLength(0);
     });
   });
+
+  describe("Authority Incident Runtime Integration (WP-07B)", () => {
+    it("REAL-AUTH-001: invalid capability signature produces authentication incident from runtime evidence", async () => {
+      const { executor, audit, clock, capabilityProvider } = setup(Date.now());
+
+      capabilityProvider.postTamperCapability = cap => ({
+        ...cap,
+        agent_id: "tampered-after-signing"
+      });
+
+      const req = makeRequest({
+        tool: "read_record",
+        sessionId: "real-auth-1",
+        requestId: "real-auth-001"
+      }, clock);
+
+      await expect(executor.process(req)).rejects.toThrow(/Capability rejected/);
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_authentication_failure");
+      expect(incidents[0].severity).toBe("high");
+      expect(incidents[0].requires_human_review).toBe(true);
+
+      // Incident context must come from trusted runtime audit context.
+      expect(incidents[0].agent_id).toBe(req.params.metadata.agent_id);
+      expect(incidents[0].session_id).toBe(req.params.metadata.session_id);
+      expect(incidents[0].tool).toBe("read_record");
+      expect(incidents[0].reason).toBe("capability_authentication_failed");
+      expect(incidents[0].source_event_type).toBe("capability_rejected");
+    });
+
+    it("REAL-AUTH-002: validly signed wrong-agent capability produces boundary incident", async () => {
+      const { executor, audit, clock, capabilityProvider } = setup(Date.now());
+
+      capabilityProvider.tamperCapability = cap => ({
+        ...cap,
+        agent_id: "spoofed-agent"
+      });
+
+      const req = makeRequest({
+        tool: "read_record",
+        sessionId: "real-auth-2",
+        requestId: "real-auth-002"
+      }, clock);
+
+      await expect(executor.process(req)).rejects.toThrow(/Capability rejected/);
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].reason).toBe("capability_agent_mismatch");
+      expect(incidents[0].agent_id).toBe(req.params.metadata.agent_id);
+      expect(incidents[0].agent_id).not.toBe("spoofed-agent");
+    });
+
+    it("REAL-AUTH-003: validly signed wrong-session capability produces boundary incident", async () => {
+      const { executor, audit, clock, capabilityProvider } = setup(Date.now());
+
+      capabilityProvider.tamperCapability = cap => ({
+        ...cap,
+        session_id: "spoofed-session"
+      });
+
+      const req = makeRequest({
+        tool: "read_record",
+        sessionId: "real-auth-3",
+        requestId: "real-auth-003"
+      }, clock);
+
+      await expect(executor.process(req)).rejects.toThrow(/Capability rejected/);
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].reason).toBe("capability_session_mismatch");
+      expect(incidents[0].session_id).toBe(req.params.metadata.session_id);
+      expect(incidents[0].session_id).not.toBe("spoofed-session");
+    });
+
+    it("REAL-AUTH-004: capability tool-scope mismatch produces boundary incident", async () => {
+      const { executor, audit, clock, capabilityProvider } = setup(Date.now());
+
+      capabilityProvider.tamperCapability = cap => ({
+        ...cap,
+        allowed_tools: ["delete_record"]
+      });
+
+      const req = makeRequest({
+        tool: "read_record",
+        sessionId: "real-auth-4",
+        requestId: "real-auth-004"
+      }, clock);
+
+      await expect(executor.process(req)).rejects.toThrow(/Capability rejected/);
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].reason).toBe("capability_scope_mismatch");
+      expect(incidents[0].tool).toBe("read_record");
+    });
+
+    it("REAL-AUTH-005: tampered ApprovalGrantV2 produces authentication incident and preserves trusted tool context", async () => {
+      const { executor, audit, clock, testSigner } = setup(Date.now());
+
+      const req = makeRequest({
+        tool: "update_record",
+        sessionId: "real-auth-5",
+        requestId: "real-auth-005"
+      }, clock);
+
+      await executor.process(req);
+
+      const validGrant = testSigner.sign({
+        version: 2,
+        tool: "update_record",
+        decision: "approve",
+        session_id: req.params.metadata.session_id,
+        request_id: req.params.request_id,
+        approver: { type: "human", id: "demo-operator" },
+        issued_at: new Date(clock.nowMs()).toISOString()
+      });
+
+      const tamperedGrant = {
+        ...validGrant,
+        tool: "delete_record"
+      };
+
+      await expect(
+        executor.resolveApproval(tamperedGrant)
+      ).rejects.toThrow(/Invalid signature/);
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_authentication_failure");
+      expect(incidents[0].reason).toBe("invalid_signature");
+      expect(incidents[0].session_id).toBe(req.params.metadata.session_id);
+
+      // expected_tool from PendingAction is normalized into incident.tool.
+      expect(incidents[0].tool).toBe("update_record");
+    });
+
+    it("REAL-AUTH-006: validly signed wrong-tool approval produces boundary incident", async () => {
+      const { executor, audit, clock, testSigner } = setup(Date.now());
+
+      const req = makeRequest({
+        tool: "update_record",
+        sessionId: "real-auth-6",
+        requestId: "real-auth-006"
+      }, clock);
+
+      await executor.process(req);
+
+      const wrongToolGrant = testSigner.sign({
+        version: 2,
+        tool: "read_record",
+        decision: "approve",
+        session_id: req.params.metadata.session_id,
+        request_id: req.params.request_id,
+        approver: { type: "human", id: "demo-operator" },
+        issued_at: new Date(clock.nowMs()).toISOString()
+      });
+
+      await expect(
+        executor.resolveApproval(wrongToolGrant)
+      ).rejects.toThrow(/tool does not match/);
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].reason).toBe("tool_binding_mismatch");
+      expect(incidents[0].tool).toBe("update_record");
+    });
+
+    it("REAL-AUTH-007: validly signed wrong approver produces boundary incident without spoofed identity evidence", async () => {
+      const { executor, audit, clock, testSigner } = setup(Date.now());
+
+      const req = makeRequest({
+        tool: "update_record",
+        sessionId: "real-auth-7",
+        requestId: "real-auth-007"
+      }, clock);
+
+      await executor.process(req);
+
+      const wrongApproverGrant = testSigner.sign({
+        version: 2,
+        tool: "update_record",
+        decision: "approve",
+        session_id: req.params.metadata.session_id,
+        request_id: req.params.request_id,
+        approver: { type: "human", id: "spoofed-human" },
+        issued_at: new Date(clock.nowMs()).toISOString()
+      });
+
+      await expect(
+        executor.resolveApproval(wrongApproverGrant)
+      ).rejects.toThrow(/approver does not match expected approver/);
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].reason).toBe("wrong_approver_identity");
+      expect(incidents[0].tool).toBe("update_record");
+
+      expect(JSON.stringify(incidents[0])).not.toContain("spoofed-human");
+    });
+
+    it("REAL-AUTH-008: operational capability rejection does not become a security incident", async () => {
+      const { executor, audit, clock, capabilityProvider } = setup(Date.now());
+
+      capabilityProvider.returnNull = true;
+
+      const req = makeRequest({
+        tool: "read_record",
+        sessionId: "real-auth-8",
+        requestId: "real-auth-008"
+      }, clock);
+
+      await expect(executor.process(req)).rejects.toThrow(/Missing capability/);
+
+      const authorityEvents = audit.getEvents().filter(
+        e => e.event_type === "capability_rejected"
+      );
+
+      expect(authorityEvents).toHaveLength(1);
+      expect(authorityEvents[0].metadata?.reason).toBe("missing_capability");
+
+      const incidents = IncidentClassifier.fromAudit(audit.getEvents());
+      expect(incidents).toHaveLength(0);
+    });
+  });
+
+
+  describe("Authority Incident Mapping (WP-07B)", () => {
+    it("AIM-001: invalid capability signature -> authentication incident", () => {
+      const incidents = IncidentClassifier.fromAudit([
+        baseEvent("capability_rejected", "aim-1", {
+          agent_id: "agent-a",
+          session_id: "sess-a",
+          tool: "read_record",
+          reason: "capability_authentication_failed"
+        }),
+      ]);
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_authentication_failure");
+      expect(incidents[0].severity).toBe("high");
+      expect(incidents[0].requires_human_review).toBe(true);
+      expect(incidents[0].disposition).toBe("blocked");
+      expect(incidents[0].agent_id).toBe("agent-a");
+      expect(incidents[0].tool).toBe("read_record");
+    });
+
+    it("AIM-002: capability agent mismatch -> authority boundary incident", () => {
+      const incidents = IncidentClassifier.fromAudit([
+        baseEvent("capability_rejected", "aim-2", {
+          agent_id: "trusted-agent",
+          session_id: "sess-a",
+          tool: "read_record",
+          reason: "capability_agent_mismatch"
+        }),
+      ]);
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].severity).toBe("high");
+      expect(incidents[0].requires_human_review).toBe(true);
+      expect(incidents[0].agent_id).toBe("trusted-agent");
+    });
+
+    it("AIM-003: capability session mismatch -> authority boundary incident", () => {
+      const incidents = IncidentClassifier.fromAudit([
+        baseEvent("capability_rejected", "aim-3", {
+          agent_id: "agent-a",
+          session_id: "trusted-session",
+          tool: "read_record",
+          reason: "capability_session_mismatch"
+        }),
+      ]);
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].session_id).toBe("trusted-session");
+    });
+
+    it("AIM-004: capability scope mismatch -> authority boundary incident", () => {
+      const incidents = IncidentClassifier.fromAudit([
+        baseEvent("capability_rejected", "aim-4", {
+          agent_id: "agent-a",
+          session_id: "sess-a",
+          tool: "update_record",
+          reason: "capability_scope_mismatch"
+        }),
+      ]);
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].tool).toBe("update_record");
+    });
+
+    it("AIM-005: operational and policy capability failures are not security incidents", () => {
+      const reasons = [
+        "missing_capability",
+        "capability_provider_error",
+        "capability_expired",
+        "capability_not_yet_valid",
+        "capability_malformed",
+        "capability_unsupported_scope",
+        "capability_verification_failed",
+      ];
+
+      for (const reason of reasons) {
+        const incidents = IncidentClassifier.fromAudit([
+          baseEvent("capability_rejected", `aim-cap-${reason}`, {
+            agent_id: "agent-a",
+            session_id: "sess-a",
+            tool: "read_record",
+            reason
+          }),
+        ]);
+
+        expect(incidents).toHaveLength(0);
+      }
+    });
+
+    it("AIM-006: invalid approval signature -> authentication incident", () => {
+      const incidents = IncidentClassifier.fromAudit([
+        baseEvent("approval_verification_failed", "aim-6", {
+          session_id: "sess-a",
+          expected_tool: "update_record",
+          reason: "invalid_signature"
+        }),
+      ]);
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_authentication_failure");
+      expect(incidents[0].severity).toBe("high");
+      expect(incidents[0].requires_human_review).toBe(true);
+      expect(incidents[0].tool).toBe("update_record");
+    });
+
+    it("AIM-007: approval tool binding mismatch -> authority boundary incident", () => {
+      const incidents = IncidentClassifier.fromAudit([
+        baseEvent("approval_verification_failed", "aim-7", {
+          session_id: "sess-a",
+          expected_tool: "update_record",
+          reason: "tool_binding_mismatch"
+        }),
+      ]);
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].tool).toBe("update_record");
+    });
+
+    it("AIM-008: wrong approver identity -> authority boundary incident", () => {
+      const incidents = IncidentClassifier.fromAudit([
+        baseEvent("approval_verification_failed", "aim-8", {
+          session_id: "sess-a",
+          expected_tool: "update_record",
+          reason: "wrong_approver_identity"
+        }),
+      ]);
+
+      expect(incidents).toHaveLength(1);
+      expect(incidents[0].incident_type).toBe("authority_boundary_violation");
+      expect(incidents[0].requires_human_review).toBe(true);
+    });
+
+    it("AIM-009: non-security and runtime-unreachable approval reasons are not incidents", () => {
+      const reasons = [
+        "missing_ids",
+        "pending_action_not_found",
+        "v1_rejected",
+        "malformed_grant",
+        "session_mismatch",
+        "request_mismatch",
+        "approval_verification_failed",
+      ];
+
+      for (const reason of reasons) {
+        const incidents = IncidentClassifier.fromAudit([
+          baseEvent("approval_verification_failed", `aim-app-${reason}`, {
+            session_id: "sess-a",
+            expected_tool: "update_record",
+            reason
+          }),
+        ]);
+
+        expect(incidents).toHaveLength(0);
+      }
+    });
+
+    it("AIM-009A: legacy incident fingerprint remains backward-compatible", () => {
+      const timestamp = "2026-09-22T12:00:00.000Z";
+
+      const event = {
+        ...baseEvent("replay_rejected", "legacy-request", {
+          session_id: "legacy-session",
+          reason_code: "REPLAY_DETECTED"
+        }),
+        timestamp
+      };
+
+      const incidents = IncidentClassifier.fromAudit([event]);
+
+      expect(incidents).toHaveLength(1);
+
+      const { createHash } = require("crypto");
+      const legacySerialized = JSON.stringify([
+        "replay_rejected",
+        timestamp,
+        "legacy-session",
+        "legacy-request",
+        "",
+        "",
+        "REPLAY_DETECTED",
+        ""
+      ]);
+
+      const expectedFingerprint = createHash("sha256")
+        .update(legacySerialized)
+        .digest("hex");
+
+      expect(
+        incidents[0].evidence_refs[0].source_fingerprint
+      ).toBe(expectedFingerprint);
+
+      expect(incidents[0].incident_id).toBe(
+        `INC-${expectedFingerprint}-1`
+      );
+    });
+
+    it("AIM-010: trusted authority context participates in incident identity", () => {
+      const timestamp = new Date().toISOString();
+
+      const eventA = {
+        ...baseEvent("capability_rejected", "shared-request", {
+          agent_id: "agent-A",
+          session_id: "shared-session",
+          tool: "read_record",
+          reason: "capability_agent_mismatch"
+        }),
+        timestamp
+      };
+
+      const eventB = {
+        ...baseEvent("capability_rejected", "shared-request", {
+          agent_id: "agent-B",
+          session_id: "shared-session",
+          tool: "read_record",
+          reason: "capability_agent_mismatch"
+        }),
+        timestamp
+      };
+
+      const incidentA = IncidentClassifier.fromAudit([eventA])[0];
+      const incidentB = IncidentClassifier.fromAudit([eventB])[0];
+
+      expect(incidentA.incident_id).not.toBe(incidentB.incident_id);
+      expect(incidentA.agent_id).toBe("agent-A");
+      expect(incidentB.agent_id).toBe("agent-B");
+
+      const approvalA = {
+        ...baseEvent("approval_verification_failed", "shared-approval", {
+          session_id: "shared-session",
+          expected_tool: "read_record",
+          reason: "tool_binding_mismatch"
+        }),
+        timestamp
+      };
+
+      const approvalB = {
+        ...baseEvent("approval_verification_failed", "shared-approval", {
+          session_id: "shared-session",
+          expected_tool: "update_record",
+          reason: "tool_binding_mismatch"
+        }),
+        timestamp
+      };
+
+      const approvalIncidentA = IncidentClassifier.fromAudit([approvalA])[0];
+      const approvalIncidentB = IncidentClassifier.fromAudit([approvalB])[0];
+
+      expect(approvalIncidentA.incident_id).not.toBe(approvalIncidentB.incident_id);
+      expect(approvalIncidentA.tool).toBe("read_record");
+      expect(approvalIncidentB.tool).toBe("update_record");
+    });
+  });
+
 });

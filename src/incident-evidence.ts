@@ -7,12 +7,15 @@ export type IncidentType =
   | "replay_attempt"
   | "correlation_failure"
   | "result_policy_violation"
-  | "request_freshness_violation";
+  | "request_freshness_violation"
+  | "authority_authentication_failure"
+  | "authority_boundary_violation";
 
 export interface IncidentEvidenceRef {
   event_type: AuditEventType;
   request_id: string;
   session_id?: string;
+  agent_id?: string;
   source_fingerprint: string;
   occurrence_index: number;
 }
@@ -26,6 +29,7 @@ export interface IncidentEnvelopeV1 {
   disposition: string;
   requires_human_review: boolean;
   session_id?: string;
+  agent_id?: string;
   request_id?: string;
   request_id_ref?: string;
   tool?: string;
@@ -69,13 +73,17 @@ export class IncidentClassifier {
 
   private static computeFingerprint(event: AuditEvent): string {
     const sessionId = (event.metadata?.session_id as string) || "";
+    const agentId = (event.metadata?.agent_id as string) || "";
     const reqIdRef = (event.metadata?.request_id_ref as string) || "";
-    const tool = (event.metadata?.tool as string) || "";
+    const tool =
+      (event.metadata?.tool as string) ||
+      (event.metadata?.expected_tool as string) ||
+      "";
     const reason = (event.metadata?.reason as string) || (event.metadata?.reason_code as string) || "";
     const decision = (event.metadata?.decision as string) || "";
 
-    // Structural deterministic serialization to prevent delimiter ambiguity attacks
-    const serialized = JSON.stringify([
+    // Preserve the legacy fingerprint shape for pre-authority events.
+    const fingerprintParts: unknown[] = [
       event.event_type,
       event.timestamp,
       sessionId,
@@ -84,7 +92,18 @@ export class IncidentClassifier {
       tool,
       reason,
       decision,
-    ]);
+    ];
+
+    // Authority events extend identity with trusted agent context without
+    // changing historical fingerprints for existing incident types.
+    if (
+      event.event_type === "capability_rejected" ||
+      event.event_type === "approval_verification_failed"
+    ) {
+      fingerprintParts.push(agentId);
+    }
+
+    const serialized = JSON.stringify(fingerprintParts);
 
     return createHash("sha256").update(serialized).digest("hex");
   }
@@ -145,6 +164,81 @@ export class IncidentClassifier {
         return null;
       }
 
+      case "capability_rejected": {
+        const reason = event.metadata?.reason;
+
+        if (reason === "capability_authentication_failed") {
+          return this.buildIncident(
+            event,
+            "authority_authentication_failure",
+            "high",
+            "blocked",
+            true,
+            fingerprint,
+            occurrenceIndex
+          );
+        }
+
+        if (
+          reason === "capability_agent_mismatch" ||
+          reason === "capability_session_mismatch" ||
+          reason === "capability_scope_mismatch"
+        ) {
+          return this.buildIncident(
+            event,
+            "authority_boundary_violation",
+            "high",
+            "blocked",
+            true,
+            fingerprint,
+            occurrenceIndex
+          );
+        }
+
+        // Missing capability, provider failures, freshness failures,
+        // malformed grants and unsupported scopes are not automatically
+        // security incidents.
+        return null;
+      }
+
+      case "approval_verification_failed": {
+        const reason = event.metadata?.reason;
+
+        if (reason === "invalid_signature") {
+          return this.buildIncident(
+            event,
+            "authority_authentication_failure",
+            "high",
+            "blocked",
+            true,
+            fingerprint,
+            occurrenceIndex
+          );
+        }
+
+        if (
+          reason === "tool_binding_mismatch" ||
+          reason === "wrong_approver_identity"
+        ) {
+          return this.buildIncident(
+            event,
+            "authority_boundary_violation",
+            "high",
+            "blocked",
+            true,
+            fingerprint,
+            occurrenceIndex
+          );
+        }
+
+        // session_mismatch and request_mismatch are verifier-level
+        // invariants but are not currently reachable through the
+        // GuardedExecutor runtime because pending lookup happens first.
+        // Other approval failures are policy, lifecycle or malformed-input
+        // outcomes rather than automatic security incidents.
+        return null;
+      }
+
       // Normal control actions and oversight outcomes are ignored.
       case "guardian_decision":
       case "human_rejection":
@@ -164,7 +258,11 @@ export class IncidentClassifier {
     occurrenceIndex: number
   ): IncidentEnvelopeV1 {
     const sessionId = (event.metadata?.session_id as string) || undefined;
-    const tool = (event.metadata?.tool as string) || undefined;
+    const agentId = (event.metadata?.agent_id as string) || undefined;
+    const tool =
+      (event.metadata?.tool as string) ||
+      (event.metadata?.expected_tool as string) ||
+      undefined;
     const reason = (event.metadata?.reason as string) || (event.metadata?.reason_code as string) || undefined;
     const reqIdRef = (event.metadata?.request_id_ref as string) || undefined;
 
@@ -180,6 +278,7 @@ export class IncidentClassifier {
       disposition,
       requires_human_review,
       session_id: sessionId,
+      agent_id: agentId,
       request_id: event.request_id,
       request_id_ref: reqIdRef,
       tool,
@@ -190,6 +289,7 @@ export class IncidentClassifier {
           event_type: event.event_type,
           request_id: event.request_id,
           session_id: sessionId,
+          agent_id: agentId,
           source_fingerprint: fingerprint,
           occurrence_index: occurrenceIndex,
         },
