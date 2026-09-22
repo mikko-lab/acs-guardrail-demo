@@ -3,8 +3,8 @@
 A reference implementation demonstrating a deterministic enforcement boundary for a scoped subset of ACS v0.1.0 JSON-RPC tool-call hooks.
 
 **Status / Scope:**
-- Release candidate: v0.2.0
-- Scope: Runtime controls, human oversight, execution correlation, audit evidence, oversight metrics, and conformance-oriented evaluation.
+- Release candidate: v0.3.0 (unreleased)
+- Scope: Runtime controls, scoped capabilities, human oversight, execution correlation, result gating, audit evidence, oversight metrics, adversarial evaluation, and deterministic incident classification.
 - No certification or full ACS conformance claim is made.
 
 ## Architecture & Control Flow
@@ -14,50 +14,93 @@ Within the demo's controlled runtime path, the `GuardedExecutor` applies the fol
 ```text
 Tool request
   ↓
-Schema / signature / replay checks
+Schema validation
+  ↓
+Request signature verification
+  ↓
+Replay / freshness checks
+  ↓
+Scoped capability verification
   ↓
 Guardian request decision
   ├── DENY → blocked + evidence
   ├── ASK → pending human oversight
   │          ├── reject → blocked
   │          ├── expire → blocked
-  │          └── approve → execution
+  │          └── ApprovalGrantV2 → verification
+  │                                  ↓
+  │                              execution
   └── ALLOW → execution
-               ↓
-           correlation
-               ↓
-          Result Guardian
-          ├── DENY → raw output withheld
-          └── ALLOW → result delivered
+                  ↓
+              correlation
+                  ↓
+             Result Guardian
+              ├── DENY → raw output withheld
+              └── ALLOW → result delivered
 ```
+
+A valid capability is necessary authority context, but it is not sufficient execution authorization. Guardian policy and, for `ASK`, human approval remain separate gates. Result authorization is evaluated separately after execution.
 
 ## Security Model
 
-The security model separates the AI agent's intent from execution authority:
-- The AI agent (or LLM) can interpret tasks and propose tool calls.
-- A deterministic runtime strictly decides execution rights.
-- Authorization, state transitions, replay protection, human approval, correlation, and result delivery are handled programmatically by the execution environment, independent of the AI agent's instructions. The LLM itself does not enforce or monitor security.
+The security model separates AI-proposed intent from execution authority:
+- The AI agent or LLM can interpret tasks and propose tool calls.
+- A deterministic runtime decides execution rights.
+- Request authentication, replay protection, scoped capabilities, Guardian policy, human approval, correlation, result gating, and audit evidence are handled programmatically outside the LLM.
+- The LLM itself does not enforce or monitor these controls.
+
+This demo does not claim independent workload identity, institutional identity proof, or physical-human identity verification.
+
+## Runtime Authority
+
+### Request authentication
+ACS request envelopes are authenticated before capability resolution. The current request-authentication mechanism uses HMAC-SHA256; capability and approval grants use Ed25519 separately.
+
+### Scoped capabilities
+The runtime requires a server-side `CapabilityGrantV1` before Guardian evaluation.
+
+The signed capability binds:
+- `capability_id`
+- `agent_id`
+- `session_id`
+- exact `allowed_tools`
+- `issued_at`
+- `expires_at`
+
+Capability verification uses Ed25519 signatures and exact tool matching. Wildcard tool scopes are unsupported.
+
+The capability provider is repository-local runtime authority context and is not part of the ACS v0.1.0 wire schema.
+
+`agent_id` is an authenticated request claim in this demo, not an independently verified workload identity.
+
+Capabilities may be reused while their signed agent/session/tool/time scope remains valid. `capability_id` is not a nonce.
 
 ## Runtime Controls
 
 ### Guardian request gate
 Implemented dispositions:
-- `ALLOW`: Proceeds to execution.
+- `ALLOW`: Proceeds toward execution.
 - `DENY`: Blocks execution.
-- `ASK`: Blocks execution pending explicit approval.
+- `ASK`: Blocks execution pending explicit human approval.
 
-Unknown tools default to deny. `MODIFY` and `DEFER` dispositions are not implemented.
+Unknown tools default to deny. `MODIFY` and `DEFER` are not implemented. `timeout_disposition: allow` is deliberately unsupported.
 
 ### Human oversight
-Implemented for `ASK` decisions:
-- Cryptographically signed approval grant verification.
-- `approve` / `reject` / expiry semantics.
-- Session binding and request binding.
-- Pending-state isolation.
-- Rejection and expiry finality.
+The authority-enabled `ASK` path requires `ApprovalGrantV2`.
 
-An approval grant for one session or request_id cannot resolve a different request. 
-**Note**: `ApprovalGrantV1` signs `session_id` and `request_id`, but NOT the tool identity itself. The executor safely resumes the stored pending action (preventing runtime tool swapping), but the grant itself does not cryptographically bind tool identity. Tool binding inside the grant is NOT IMPLEMENTED / NOT CLAIMED.
+The signed V2 grant binds:
+- decision (`approve` / `reject`)
+- `session_id`
+- `request_id`
+- exact `tool`
+- approver claim
+- `issued_at`
+
+The runtime verifies the grant against trusted pending-action context before execution. Implemented behavior includes Ed25519 signature verification, exact tool binding, session/request binding, configured approver binding, approval/rejection semantics, expiry, pending-state isolation, and rejection/expiry finality.
+
+`ApprovalGrantV1` remains available at primitive level for historical/backwards-compatible tests, but the authority-enabled runtime rejects V1 grants.
+
+A valid V2 signature proves that the configured approval authority signed a payload containing the approver claim. It does not prove the physical identity or intent of a human person.
 
 ### Replay protection
 - Timestamp skew validation.
@@ -79,21 +122,36 @@ Request authorization does not imply result authorization. If the Result Guardia
 - A `tool_result_withheld` audit event is emitted.
 - No `tool_result_delivered` event is emitted.
 
-## Audit Evidence
+## Audit & Incident Evidence
 
-The system implements an in-memory `AuditCollector`. 
+The system implements an in-memory `AuditCollector`. Runtime authority evidence includes `capability_verified`, `capability_rejected`, `approval_verification_failed`, `human_approval`, `human_rejection`, and `approval_expired`.
 
-Correlation failures generate a `correlation_failed` event containing the following relevant fields:
-- `request_id`
-- `request_id_ref`
-- `session_id`
-- `tool`
-- `disposition` (deny)
-- `reason`
+`IncidentClassifier` deterministically derives selected security and boundary incidents from audit evidence.
 
-Reasons for correlation failure are `unresolved_request_id_ref` or `tool_name_mismatch`. Note that unknown and already consumed references share the same `unresolved_request_id_ref` reason at this layer.
+Current incident types are:
+- `replay_attempt`
+- `correlation_failure`
+- `result_policy_violation`
+- `request_freshness_violation`
+- `authority_authentication_failure`
+- `authority_boundary_violation`
 
-The audit collection is purely local. It is NOT a tamper-evident, immutable ledger, a persistent audit backend, or a SIEM integration.
+Authority authentication incidents currently cover invalid capability or approval signatures.
+
+Authority boundary incidents currently cover:
+- capability agent mismatch
+- capability session mismatch
+- capability tool-scope mismatch
+- approval tool-binding mismatch
+- wrong configured approver identity
+
+Not every authorization failure is promoted to a security incident. Missing capabilities, provider failures, expired or not-yet-valid capabilities, malformed or unsupported scopes, ApprovalGrantV1 rejection, pending-action lookup failures, ordinary human rejection, and approval expiry are not automatically classified as security incidents.
+
+Authority incident evidence preserves trusted request or pending-action context rather than treating spoofed grant fields as trusted facts. Legacy pre-authority incident fingerprint behavior is regression-tested for backward compatibility.
+
+Correlation failures emit `correlation_failed` evidence containing relevant request, session, reference, tool, disposition, and reason fields. Unknown and already-consumed references currently share the `unresolved_request_id_ref` reason at this layer.
+
+The audit collection is local and in memory. It is not a persistent or tamper-evident ledger, an immutable receipt chain, a SIEM integration, or proof of universal mediation.
 
 ## Oversight Metrics
 
@@ -117,39 +175,46 @@ Current internal audit events cannot prove universal mediation or reliably measu
 
 ## Evaluation / Test Evidence
 
-The repository includes an automated evaluation layer covering conformance-oriented and adversarial scenarios. 
+The repository includes automated conformance-oriented, adversarial, authority, isolation, result-gate, audit, incident, and metrics tests.
 
-**Current baseline**:
-- 266 automated tests
-- 17 Jest suites
+**Current baseline:**
+- 378 automated tests
+- 22 Jest suites
 - TypeScript typecheck clean
 
-The evaluation exercises the following domains:
-
-### A Request policy
+### Request policy
 `EVAL-A1..A6`
 
-### B Replay
+### Replay
 `EVAL-B1..B4`
 
-### C Correlation
+### Correlation
 `EVAL-C1..C4`
 
-### D Human oversight / isolation
-`EVAL-D1`, `EVAL-D2`, `EVAL-D4`, `EVAL-D5`
-(D3 Tool Binding: NOT IMPLEMENTED / NOT CLAIMED)
+### Human oversight / isolation
+Existing `EVAL-D` isolation tests plus the authority runtime and adversarial suites below.
 
-### F Result gate
+### Runtime authority
+`AUTHR-001..021` in `tests/runtime-authority.test.ts`.
+
+The suite covers scoped capabilities, fail-closed capability verification, ApprovalGrantV2 enforcement, tool and approver binding, approval lifecycle behavior, capability reuse, Guardian composition, and Result Guardian composition.
+
+### Authority adversarial evaluation
+`AEV-001..018` plus `NORMAL-001..003` in `tests/evals/authority-adversarial.test.ts`.
+
+The suite covers invalid signatures, agent/session/tool-scope mismatches, missing/provider-failed capabilities, ApprovalGrantV1 rejection, tool-bound V2 failures, wrong approver identity, approval expiry, replay/signature ordering, result withholding, trusted evidence, and normal oversight outcomes.
+
+### Result gate
 `EVAL-F1..F5`
 
-### H Audit evidence
-`H1..H6`
+### Audit and incident evidence
+Dedicated audit and incident tests verify authority incident mapping, trusted-context preservation, negative classification controls, real runtime evidence, and legacy incident fingerprint compatibility.
 
-### I Metrics
-`EVAL-I1`
+### Oversight metrics
+`EVAL-I1` plus dedicated metrics unit tests.
 
 ### Adversarial sequences
-`Sequence 1–3` (exercising state-machine bypass attempts).
+State-machine and isolation sequences under `tests/evals/adversarial.test.ts`.
 
 ## Evidence Links
 
@@ -170,20 +235,22 @@ The crosswalk explicitly distinguishes between pinned normative requirements, un
 ## Limitations / Non-goals
 
 - This is a reference/demo implementation, not production infrastructure.
-- In-memory audit only.
-- No persistent / tamper-evident audit backend.
-- No universal mediation proof.
-- No coverage proof.
-- No cryptographic tool binding inside `ApprovalGrantV1`.
-- No external IAM integration.
+- In-memory audit only; no persistent or tamper-evident audit backend or SIEM integration.
+- No universal mediation proof or coverage proof.
+- No external IAM integration or independent workload-identity provider.
+- `agent_id` is an authenticated request claim in the local request-authentication model, not independent workload identity.
 - No institutional identity proof.
-- No physical human intent proof.
+- No physical-human identity or intent proof.
+- No capability revocation mechanism.
+- No distributed capability store.
 - No durable replay/correlation/pending state across process restart.
-- No distributed/multi-process state guarantees.
+- No distributed or multi-process state guarantees.
 - No full ACS Audit implementation.
-- No ACS certification.
-- No full ACS conformance claim.
+- No ACS certification or full ACS conformance claim.
 - Metrics are observability, not enforcement.
+- `ApprovalGrantV1` itself remains non-tool-bound; the active authority-enabled runtime instead requires tool-bound `ApprovalGrantV2`.
+- Approval verifier `SESSION_MISMATCH` and `REQUEST_MISMATCH` checks exist at primitive level but are not normally runtime-reachable through `GuardedExecutor`, because pending-action lookup by session/request happens first.
+- Approval `issued_at` freshness failures currently fail closed but do not emit a dedicated audit event.
 
 ## Verification
 
@@ -193,7 +260,7 @@ To run the automated verification suite:
 npm run verify
 ```
 
-Current baseline: 266 tests passed, 17 test suites passed, TypeScript typecheck clean.
+Current baseline: 378 tests passed, 22 Jest suites passed, TypeScript typecheck clean.
 
 ## License / Attribution
 

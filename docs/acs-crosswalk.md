@@ -12,7 +12,19 @@ This document maps the actual implementation of the ACS Guardrail Demo against t
   - Vendored path: `schemas/`
 - Status mapping: `IMPLEMENTED`, `PARTIAL`, `NOT IMPLEMENTED`, `NOT CLAIMED`, `OUT OF SCOPE`, `UNDERSPECIFIED IN PINNED SPEC`.
 
-For exact test evidence of these claims, see the evaluation test suites in `tests/evals/`.
+For exact test evidence of these claims, see `docs/invariants-evidence.md` and the referenced evaluation, runtime-authority, incident, correlation, and metrics test suites.
+
+## Repository-Local Runtime Authority
+
+The following controls are repository-local security policy layered around the scoped ACS tool-call runtime. They are not additions to the normative ACS v0.1.0 wire specification and do not constitute an ACS conformance claim.
+
+- `CapabilityGrantV1`: server-side authority context binding `agent_id`, `session_id`, exact `allowed_tools`, and a signed validity window. Verification uses Ed25519 and exact tool matching; wildcard scopes are unsupported.
+- `ApprovalGrantV2`: repository-local signed approval payload binding decision, session, request, exact tool, approver claim, and `issued_at`.
+- The authority-enabled `GuardedExecutor` path requires a valid scoped capability before Guardian evaluation and requires `ApprovalGrantV2` when Guardian returns `ASK`.
+- A valid capability is necessary authority context but is not sufficient execution authorization; Guardian and Result Guardian remain independent controls.
+- `ApprovalGrantV1` remains available at primitive level but is rejected by the authority-enabled runtime path.
+
+Known local-policy limitations include no external IAM, no independent workload identity, no capability revocation, and no distributed authority-state store.
 
 ## ACS-Core
 
@@ -70,13 +82,15 @@ For exact test evidence of these claims, see the evaluation test suites in `test
 - **Normative pinned requirement:** Authenticate human approval grants before proceeding with an `ask` decision.
 - **ACS profile:** ACS-Human
 - **Status:** IMPLEMENTED
-- **Implementation:** `ApprovalGrantVerifier` verifies Ed25519 signatures on `ApprovalGrantV1` payloads. `GuardedExecutor` strictly enforces approve/reject/expiry semantics and session/request isolation (`tests/evals/isolation.test.ts`).
+- **Implementation:** The authority-enabled runtime uses `ApprovalGrantVerifier.verifyV2()` to verify Ed25519-signed `ApprovalGrantV2` payloads against trusted pending-action context, including session, request, exact tool, and configured approver binding. `GuardedExecutor` rejects V1 grants on this runtime path. `ApprovalGrantV1` remains available at primitive level for historical/backwards-compatible verification tests. Evidence includes `tests/runtime-authority.test.ts` and `tests/evals/authority-adversarial.test.ts`.
 
 ### Tool Identity Binding
 - **Related capability:** Cryptographic tool identity binding inside the grant object.
 - **ACS profile:** ACS-Human
-- **Status:** NOT IMPLEMENTED / NOT CLAIMED
-- **Limitations:** `ApprovalGrantV1` does not include a tool identifier field in the signed payload. While `GuardedExecutor` safely resumes the exact `pendingAction` (preventing runtime tool swapping), the grant mathematically doesn't claim to sign the tool identity.
+- **Status:** IMPLEMENTED AS REPOSITORY-LOCAL POLICY
+- **Implementation:** `ApprovalGrantV2` includes the exact tool in the Ed25519-signed payload, and `verifyV2()` checks it against the trusted pending-action tool before execution. The authority-enabled runtime requires V2 for `ASK` resolution.
+- **Claim boundary:** This is a repository-local control layered around the scoped ACS runtime. It is not, by itself, a claim of full ACS-Human or full ACS conformance.
+- **Limitations:** `ApprovalGrantV1` itself remains non-tool-bound and is rejected by the authority-enabled runtime path.
 
 ### External Identity & IAM
 - **Non-normative context:** External IAM integration and institutional identity proofs.
