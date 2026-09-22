@@ -1,3 +1,4 @@
+import { createAuthorityTestDeps } from "./evals/eval-setup";
 import { ExecutionCorrelationStore } from "../src/execution-correlation";
 import { SignatureService, SignatureInvalidError } from "../src/signature-service";
 import { AcsToolCallRequest, AcsResponseEnvelope } from "../src/acs-types";
@@ -348,7 +349,7 @@ describe("Signature Service - Authenticated Envelope Integrity", () => {
         guardian,
         audit,
         new ExecutionCorrelationStore(),
-        new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1")
+        new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1"), ...(() => { const clock = new (require("./evals/eval-setup").MutableClock)(Date.now()); const auth = require("./evals/eval-setup").createAuthorityTestDeps(clock); return [clock, 30000, auth.provider, auth.verifier] as const; })()
       );
     });
 

@@ -223,7 +223,7 @@ describe("IncidentClassifier (WP-05)", () => {
       await executor.process(req); // -> PENDING
       
       const grant = testSigner.sign({
-        version: 1,
+        version: 2, tool: req.params.payload.tool.name,
         decision: "reject",
         session_id: toUuid("sess-ask"),
         request_id: toUuid("req-ask-1"),

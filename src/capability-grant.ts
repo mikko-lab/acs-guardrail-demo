@@ -2,6 +2,24 @@ import crypto from "crypto";
 import { canonicalize } from "json-canonicalize";
 import { Clock } from "./replay-guard"; // reusing the existing clock interface
 
+
+export type CapabilityErrorCode = 
+  | "MALFORMED_GRANT"
+  | "INVALID_SIGNATURE"
+  | "UNSUPPORTED_SCOPE"
+  | "EXPIRED"
+  | "NOT_YET_VALID"
+  | "AGENT_MISMATCH"
+  | "SESSION_MISMATCH"
+  | "TOOL_SCOPE_MISMATCH";
+
+export class CapabilityVerificationError extends Error {
+  constructor(public readonly code: CapabilityErrorCode, message: string) {
+    super(message);
+    this.name = "CapabilityVerificationError";
+  }
+}
+
 export interface CapabilityGrantV1 {
   version: 1;
   capability_id: string;
@@ -40,59 +58,59 @@ export class CapabilityGrantVerifier {
   verify(input: unknown, ctx: CapabilityContext): CapabilityGrantV1 {
     // 1. Basic Structural/Schema Validation
     if (!input || typeof input !== "object" || Array.isArray(input)) {
-      throw new Error("Validation Error: input must be a JSON object");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: input must be a JSON object");
     }
     
     const grant = input as Record<string, unknown>;
 
     if (grant.version !== 1) {
-      throw new Error("Validation Error: version must be 1");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: version must be 1");
     }
     if (typeof grant.capability_id !== "string" || grant.capability_id.length === 0) {
-      throw new Error("Validation Error: capability_id must be a non-empty string");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: capability_id must be a non-empty string");
     }
     if (typeof grant.agent_id !== "string" || grant.agent_id.length === 0) {
-      throw new Error("Validation Error: agent_id must be a non-empty string");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: agent_id must be a non-empty string");
     }
     if (typeof grant.session_id !== "string" || grant.session_id.length === 0) {
-      throw new Error("Validation Error: session_id must be a non-empty string");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: session_id must be a non-empty string");
     }
     if (!Array.isArray(grant.allowed_tools) || grant.allowed_tools.length === 0) {
-      throw new Error("Validation Error: allowed_tools must be a non-empty array");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: allowed_tools must be a non-empty array");
     }
     // We only check array structural types here, semantics (wildcard) is checked after authentication.
     for (const tool of grant.allowed_tools) {
       if (typeof tool !== "string" || tool.length === 0) {
-        throw new Error("Validation Error: allowed_tools must contain non-empty strings");
+        throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: allowed_tools must contain non-empty strings");
       }
     }
 
     if (typeof grant.issued_at !== "string" || !ISO_REGEX.test(grant.issued_at) || isNaN(Date.parse(grant.issued_at))) {
-      throw new Error("Validation Error: issued_at must be a valid ISO-8601 timestamp format");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: issued_at must be a valid ISO-8601 timestamp format");
     }
     if (typeof grant.expires_at !== "string" || !ISO_REGEX.test(grant.expires_at) || isNaN(Date.parse(grant.expires_at))) {
-      throw new Error("Validation Error: expires_at must be a valid ISO-8601 timestamp format");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: expires_at must be a valid ISO-8601 timestamp format");
     }
 
     if (!grant.signature || typeof grant.signature !== "object" || Array.isArray(grant.signature)) {
-      throw new Error("Validation Error: signature must be an object");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: signature must be an object");
     }
     const signature = grant.signature as Record<string, unknown>;
     if (signature.algorithm !== "Ed25519") {
-      throw new Error("Validation Error: signature.algorithm must be 'Ed25519'");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: signature.algorithm must be 'Ed25519'");
     }
     if (signature.key_id !== this.expectedKeyId) {
-      throw new Error("Validation Error: signature.key_id mismatch");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: signature.key_id mismatch");
     }
     if (typeof signature.value !== "string" || signature.value.length === 0 || signature.value.length % 4 !== 0 || !BASE64_REGEX.test(signature.value)) {
-      throw new Error("Validation Error: signature.value must be valid base64 format");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: signature.value must be valid base64 format");
     }
     const dec = Buffer.from(signature.value, "base64");
     if (dec.length !== 64) {
-      throw new Error("Validation Error: signature must be exactly 64 bytes");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: signature must be exactly 64 bytes");
     }
     if (dec.toString("base64") !== signature.value) {
-      throw new Error("Validation Error: signature.value must be canonical base64");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: signature.value must be canonical base64");
     }
 
     // 2. Authentication: Signature Verification
@@ -108,17 +126,17 @@ export class CapabilityGrantVerifier {
     try {
       isVerified = crypto.verify(null, dataBuffer, this.publicKey, sigBuffer);
     } catch {
-      throw new Error("Validation Error: crypto verification failed");
+      throw new CapabilityVerificationError("INVALID_SIGNATURE", "Validation Error: crypto verification failed");
     }
 
     if (!isVerified) {
-      throw new Error("Validation Error: Invalid signature");
+      throw new CapabilityVerificationError("INVALID_SIGNATURE", "Validation Error: Invalid signature");
     }
 
     // 3. Semantic Validation (Temporal & Wildcard)
     for (const tool of verifiedSnapshot.allowed_tools) {
       if (tool === "*" || tool.includes("*")) {
-        throw new Error("Validation Error: allowed_tools must contain exact matches (no wildcards)");
+        throw new CapabilityVerificationError("UNSUPPORTED_SCOPE", "Validation Error: allowed_tools must contain exact matches (no wildcards)");
       }
     }
 
@@ -127,26 +145,26 @@ export class CapabilityGrantVerifier {
     const now = this.clock.nowMs();
 
     if (expiresAt <= issuedAt) {
-      throw new Error("Validation Error: expires_at must be strictly after issued_at");
+      throw new CapabilityVerificationError("MALFORMED_GRANT", "Validation Error: expires_at must be strictly after issued_at");
     }
     if (now < issuedAt) {
-      throw new Error("Validation Error: capability is not yet valid");
+      throw new CapabilityVerificationError("NOT_YET_VALID", "Validation Error: capability is not yet valid");
     }
     if (now >= expiresAt) {
-      throw new Error("Validation Error: capability has expired");
+      throw new CapabilityVerificationError("EXPIRED", "Validation Error: capability has expired");
     }
 
     // 4. Authoritative Invariants Context Enforcement
     if (verifiedSnapshot.agent_id !== ctx.expectedAgentId) {
-      throw new Error("Invariant Violation: agent_id does not match");
+      throw new CapabilityVerificationError("AGENT_MISMATCH", "Invariant Violation: agent_id does not match");
     }
     if (verifiedSnapshot.session_id !== ctx.expectedSessionId) {
-      throw new Error("Invariant Violation: session_id does not match");
+      throw new CapabilityVerificationError("SESSION_MISMATCH", "Invariant Violation: session_id does not match");
     }
     
     // Tool Scope Binding
     if (!verifiedSnapshot.allowed_tools.includes(ctx.requestedTool)) {
-      throw new Error(`Invariant Violation: requested tool '${ctx.requestedTool}' is not in allowed_tools`);
+      throw new CapabilityVerificationError("TOOL_SCOPE_MISMATCH", `Invariant Violation: requested tool '${ctx.requestedTool}' is not in allowed_tools`);
     }
 
     return verifiedSnapshot;

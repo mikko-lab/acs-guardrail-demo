@@ -34,6 +34,19 @@ import { SchemaValidator, AddressableSchemaError } from "./schema-validator";
 import { SignatureService } from "./signature-service";
 import { ExecutionCorrelationStore } from "./execution-correlation";
 import * as crypto from "crypto";
+import { CapabilityGrantVerifier, CapabilityContext, CapabilityVerificationError } from "./capability-grant";
+
+export interface CapabilityLookupContext {
+  agent_id: string;
+  session_id: string;
+  request_id: string;
+  tool: string;
+}
+
+export interface CapabilityProvider {
+  resolve(context: CapabilityLookupContext): unknown | undefined;
+}
+
 
 export type ProcessResult =
   | { status: "executed"; result: AcsToolCallResult }
@@ -46,7 +59,7 @@ interface PendingAction {
   response: AcsResponseEnvelope;
 }
 
-import { ApprovalGrantVerifier, ApprovalGrantV1 } from "./approval-verifier";
+import { ApprovalGrantVerifier, ApprovalGrantV1, ApprovalVerificationError } from "./approval-verifier";
 import { Clock } from "./replay-guard";
 
 export class GuardedExecutor {
@@ -58,6 +71,8 @@ export class GuardedExecutor {
   private readonly correlation: ExecutionCorrelationStore;
   private readonly approvalVerifier: ApprovalGrantVerifier;
   private readonly clock: Clock;
+  private readonly capabilityProvider: CapabilityProvider;
+  private readonly capabilityVerifier: CapabilityGrantVerifier;
   private readonly approvalFutureSkewMs: number;
   #permitAuthority = Symbol("ExecutionAuthority");
   #gate: ExecutionGate;
@@ -74,7 +89,9 @@ export class GuardedExecutor {
     correlation: ExecutionCorrelationStore,
     approvalVerifier: ApprovalGrantVerifier,
     clock: Clock = { nowMs: () => Date.now() },
-    approvalFutureSkewMs: number = 30000
+    approvalFutureSkewMs: number = 30000,
+    capabilityProvider: CapabilityProvider,
+    capabilityVerifier: CapabilityGrantVerifier
   ) {
     this.schemaValidator = schemaValidator;
     this.signatureService = signatureService;
@@ -84,6 +101,14 @@ export class GuardedExecutor {
     this.correlation = correlation;
     this.approvalVerifier = approvalVerifier;
     this.clock = clock;
+    this.capabilityProvider = capabilityProvider;
+    if (!capabilityProvider) {
+      throw new Error("Constructor Invariant Violation: capabilityProvider is required");
+    }
+    if (!capabilityVerifier) {
+      throw new Error("Constructor Invariant Violation: capabilityVerifier is required");
+    }
+    this.capabilityVerifier = capabilityVerifier;
     if (typeof approvalFutureSkewMs !== 'number' || !Number.isFinite(approvalFutureSkewMs) || approvalFutureSkewMs < 0) {
       throw new Error("approvalFutureSkewMs must be a non-negative finite number");
     }
@@ -97,8 +122,10 @@ export class GuardedExecutor {
    * 0. Validates schema (throws AddressableSchemaError or SchemaValidationError on failure).
    * 0.5. Verifies envelope signature (throws SignatureInvalidError).
    * 1. ReplayGuard checks timestamp or replay violations.
-   * 2. Guardian policy evaluated (and outbound response schema validated & signed).
-   * 3. Branches on decision (throws on deny, pending on ask, executes on allow).
+   * 2. Resolves and verifies the scoped capability from authenticated request context.
+   * 3. Guardian policy is evaluated.
+   * 4. ASK requires tool-bound ApprovalGrantV2; ALLOW proceeds to execution.
+   * 5. Execution result passes through correlation and the Result Guardian before delivery.
    */
 
   private secureOutboundResponse(rawResponse: import("./acs-types").AcsResponseEnvelope, sessionId: string): import("./acs-types").AcsResponseEnvelope {
@@ -149,6 +176,77 @@ export class GuardedExecutor {
       session_id: params.metadata.session_id,
       tool: params.payload.tool.name,
     });
+
+
+
+    // Capability verification (WP-06B Strategy A)
+    const expectedAgentId = params.metadata.agent_id || "unknown";
+    const expectedSessionId = params.metadata.session_id;
+    const requestedTool = params.payload.tool.name;
+
+    let rawCap: unknown;
+    try {
+      rawCap = this.capabilityProvider.resolve({
+        agent_id: expectedAgentId,
+        session_id: expectedSessionId,
+        request_id: params.request_id,
+        tool: requestedTool
+      });
+    } catch (e: any) {
+      this.audit.record(params.request_id, "capability_rejected", {
+        reason: "capability_provider_error",
+        agent_id: expectedAgentId,
+        session_id: expectedSessionId,
+        tool: requestedTool
+      });
+      throw new Error("Capability provider error: " + e.message);
+    }
+
+    if (!rawCap) {
+      this.audit.record(params.request_id, "capability_rejected", {
+        reason: "missing_capability",
+        agent_id: expectedAgentId,
+        session_id: expectedSessionId,
+        tool: requestedTool
+      });
+      throw new Error("Missing capability");
+    }
+
+    try {
+      const verifiedCapability = this.capabilityVerifier.verify(rawCap, {
+        expectedAgentId,
+        expectedSessionId,
+        requestedTool
+      });
+
+      this.audit.record(params.request_id, "capability_verified", {
+        capability_id: verifiedCapability.capability_id,
+        agent_id: expectedAgentId,
+        session_id: expectedSessionId,
+        tool: requestedTool
+      });
+    } catch (err: any) {
+      let reason = "capability_verification_failed";
+      if (err instanceof CapabilityVerificationError) {
+        switch (err.code) {
+          case "INVALID_SIGNATURE": reason = "capability_authentication_failed"; break;
+          case "AGENT_MISMATCH": reason = "capability_agent_mismatch"; break;
+          case "SESSION_MISMATCH": reason = "capability_session_mismatch"; break;
+          case "TOOL_SCOPE_MISMATCH": reason = "capability_scope_mismatch"; break;
+          case "EXPIRED": reason = "capability_expired"; break;
+          case "NOT_YET_VALID": reason = "capability_not_yet_valid"; break;
+          case "MALFORMED_GRANT": reason = "capability_malformed"; break;
+          case "UNSUPPORTED_SCOPE": reason = "capability_unsupported_scope"; break;
+        }
+      }
+      this.audit.record(params.request_id, "capability_rejected", { 
+        reason,
+        agent_id: expectedAgentId,
+        session_id: expectedSessionId,
+        tool: requestedTool
+      });
+      throw new Error("Capability rejected: " + err.message);
+    }
 
     // Step 2 — deterministic Guardian policy (and outbound validation)
     const rawResponse = this.guardian.evaluate(request);
@@ -316,20 +414,69 @@ export class GuardedExecutor {
    * @param skewMs The maximum allowed future skew for issued_at. Default 30000ms (30s).
    */
   async resolveApproval(input: unknown): Promise<import("./acs-types").AcsToolCallResult | void> {
-    const grant = this.approvalVerifier.verify(input);
-    const key = `${grant.session_id}:${grant.request_id}`;
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("Validation Error: input must be a JSON object");
+    }
+    const rawGrant = input as Record<string, unknown>;
+    const sessionId = rawGrant.session_id as string;
+    const requestId = rawGrant.request_id as string;
+    
+    if (!sessionId || !requestId) {
+      this.audit.record("unknown", "approval_verification_failed", { reason: "missing_ids" });
+      throw new Error("Validation Error: missing session_id or request_id");
+    }
+
+    const key = `${sessionId}:${requestId}`;
     const pending = this.pendingActions.get(key);
 
     if (!pending) {
-      throw new Error(`No pending action found for session ${grant.session_id}, request ${grant.request_id}`);
+      this.audit.record(requestId, "approval_verification_failed", { reason: "pending_action_not_found" });
+      throw new Error(`No pending action found for session ${sessionId}, request ${requestId}`);
+    }
+
+    const trustedApprover = pending.response.result.ask_details!.approver;
+
+    if (trustedApprover.type !== "human") {
+      throw new Error(
+        "Invariant Violation: pending action approver must be human"
+      );
+    }
+
+    const trustedContext = {
+      expectedSessionId: pending.request.params.metadata.session_id,
+      expectedRequestId: pending.request.params.request_id,
+      expectedTool: pending.request.params.payload.tool.name,
+      expectedApproverType: trustedApprover.type,
+      expectedApproverId: trustedApprover.id,
+    };
+
+    let grant;
+    try {
+      grant = this.approvalVerifier.verifyV2(input, trustedContext);
+    } catch (err: any) {
+      let reason = "approval_verification_failed";
+      if (err instanceof ApprovalVerificationError) {
+        switch (err.code) {
+          case "V1_REJECTED": reason = "v1_rejected"; break;
+          case "TOOL_BINDING_MISMATCH": reason = "tool_binding_mismatch"; break;
+          case "INVALID_SIGNATURE": reason = "invalid_signature"; break;
+          case "WRONG_APPROVER_IDENTITY": reason = "wrong_approver_identity"; break;
+          case "MALFORMED_GRANT": reason = "malformed_grant"; break;
+          case "SESSION_MISMATCH": reason = "session_mismatch"; break;
+          case "REQUEST_MISMATCH": reason = "request_mismatch"; break;
+        }
+      }
+      this.audit.record(requestId, "approval_verification_failed", { 
+        reason, 
+        session_id: trustedContext.expectedSessionId,
+        expected_tool: trustedContext.expectedTool 
+      });
+      throw err;
     }
 
 
 
     const askDetails = pending.response.result.ask_details!;
-    if (grant.approver.type !== askDetails.approver.type || grant.approver.id !== askDetails.approver.id) {
-      throw new Error("Approval grant approver does not match pending ask_details approver");
-    }
 
     // Freshness check (issued_at)
     const issuedAtMs = Date.parse(grant.issued_at);

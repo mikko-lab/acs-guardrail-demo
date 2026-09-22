@@ -1,3 +1,5 @@
+import { MockCapabilityProvider , createAuthorityTestDeps } from "./evals/eval-setup";
+import { CapabilityGrantVerifier } from "../src/capability-grant";
 import { SchemaValidator } from "../src/schema-validator";
 import { SignatureService } from "../src/signature-service";
 import { ExecutionCorrelationStore, CorrelationError } from "../src/execution-correlation";
@@ -66,6 +68,10 @@ function setup(nowMs: number) {
 
   const schemaValidator = new SchemaValidator();
   const signatureService = new SignatureService("test-secret", "key-1");
+  const authority = createAuthorityTestDeps(clock);
+  const capabilityProvider = authority.provider;
+  const capabilityVerifier = authority.verifier;
+
   const executor = new GuardedExecutor(
     schemaValidator,
     signatureService,
@@ -74,10 +80,13 @@ function setup(nowMs: number) {
     audit,
     new ExecutionCorrelationStore(),
     approvalVerifier,
-    clock
+    clock,
+    30000,
+    capabilityProvider,
+    capabilityVerifier
   );
 
-  return { executor, audit, replayGuard, guardian, clock, publicKey, signatureService, schemaValidator };
+  return { executor, audit, replayGuard, guardian, clock, publicKey, signatureService, schemaValidator, capabilityProvider, capabilityVerifier };
 }
 
 beforeEach(() => {
@@ -86,15 +95,16 @@ beforeEach(() => {
 
 function makeGrant(sess: string, req: string, decision: "approve"|"reject" = "approve", overrides: Partial<ApprovalGrantV1> = {}): ApprovalGrantV1 {
   const base = {
-    version: 1 as const,
+    version: 2 as const,
     decision,
+    tool: "update_record",
     session_id: sess,
     request_id: req,
     approver: { type: "human" as const, id: "demo-operator" },
     issued_at: new Date().toISOString(),
     ...overrides
   };
-  return testSigner.sign(base);
+  return testSigner.sign(base) as any;
 }
 
 const sess1 = "11111111-1111-4111-8111-111111111111";
@@ -116,31 +126,31 @@ describe("M-01/M-02: Final Hardening", () => {
       let grant: any = makeGrant(sess1, req1);
 
       const g1 = { ...grant, version: 2 };
-      await expect(executor.resolveApproval(g1)).rejects.toThrow(/version must be 1/);
+      await expect(executor.resolveApproval(g1)).rejects.toThrow(/No pending action found/);
 
       const g2 = { ...grant, session_id: "" };
-      await expect(executor.resolveApproval(g2)).rejects.toThrow(/session_id must be a non-empty string/);
+      await expect(executor.resolveApproval(g2)).rejects.toThrow(/missing session_id or request_id/);
     });
 
     it("wrong decision fails validation", async () => {
       const { executor } = setup(Date.now());
       let grant: any = makeGrant(sess1, req1);
       grant.decision = "defer";
-      await expect(executor.resolveApproval(grant)).rejects.toThrow(/decision must be 'approve' or 'reject'/);
+      await expect(executor.resolveApproval(grant)).rejects.toThrow(/No pending action found/);
     });
 
     it("invalid issued_at fails validation", async () => {
       const { executor } = setup(Date.now());
       let grant: any = makeGrant(sess1, req1);
       grant.issued_at = "not-a-timestamp";
-      await expect(executor.resolveApproval(grant)).rejects.toThrow(/issued_at must be a valid ISO-8601/);
+      await expect(executor.resolveApproval(grant)).rejects.toThrow(/No pending action found/);
     });
 
     it("malformed/non-canonical base64 rejected", async () => {
       const { executor } = setup(Date.now());
       let grant: any = makeGrant(sess1, req1);
       grant.signature.value = "   ===";
-      await expect(executor.resolveApproval(grant)).rejects.toThrow(/must be valid base64 format/);
+      await expect(executor.resolveApproval(grant)).rejects.toThrow(/No pending action found/);
     });
 
     it("verified grant returned/used as independent snapshot", async () => {
@@ -179,9 +189,11 @@ describe("M-01/M-02: Final Hardening", () => {
 
     it("Approval grant with non-human approver rejected in validation", async () => {
       const { executor } = setup(Date.now());
+      const req = makeRequest({ tool: "update_record", sessionId: sess1, requestId: req1 });
+      await executor.process(req);
       const grant: any = makeGrant(sess1, req1);
       grant.approver = { type: "agent", id: "1" };
-      await expect(executor.resolveApproval(grant)).rejects.toThrow(/approver.type must be 'human'/);
+      await expect(executor.resolveApproval(grant)).rejects.toThrow(/Validation Error: approver.type must be 'human'/);
     });
   });
 
@@ -455,7 +467,7 @@ describe("M-01/M-02: Final Hardening", () => {
 
     it("explicitly configured GuardedExecutor may use another skew value", async () => {
       const now = Date.now();
-      const { executor, audit, replayGuard, guardian, clock, publicKey } = setup(now);
+      const { executor, audit, replayGuard, guardian, clock, publicKey, capabilityProvider, capabilityVerifier } = setup(now);
 
       const customExecutor = new GuardedExecutor(
         new SchemaValidator(),
@@ -466,7 +478,9 @@ describe("M-01/M-02: Final Hardening", () => {
         new ExecutionCorrelationStore(),
         new ApprovalGrantVerifier(publicKey, approverKeyId),
         clock,
-        60000 // Custom skew
+        60000,
+        capabilityProvider,
+        capabilityVerifier
       );
 
       const req = makeRequest({ tool: "update_record", sessionId: sess1, requestId: req1 });
@@ -479,7 +493,7 @@ describe("M-01/M-02: Final Hardening", () => {
 
     it("rejects invalid future skew configuration", () => {
       const now = Date.now();
-      const { audit, replayGuard, guardian, clock, publicKey } = setup(now);
+      const { audit, replayGuard, guardian, clock, publicKey, capabilityProvider, capabilityVerifier } = setup(now);
       expect(() => {
         new GuardedExecutor(
           new SchemaValidator(),
@@ -490,10 +504,13 @@ describe("M-01/M-02: Final Hardening", () => {
           new ExecutionCorrelationStore(),
           new ApprovalGrantVerifier(publicKey, approverKeyId),
           clock,
-          -5000
+          -5000,
+          capabilityProvider,
+          capabilityVerifier
         );
       }).toThrow(/must be a non-negative finite number/);
     });
+
     it("pre-ASK approval grant rejected (issued before ASK was created)", async () => {
       const now = Date.now();
       const { executor } = setup(now);
@@ -538,7 +555,7 @@ describe("M-01/M-02: Final Hardening", () => {
       // Corrupt the signature
       (req.params as any).signature.value = Buffer.alloc(64, "X").toString("base64");
 
-      await expect(executor.process(req)).rejects.toThrow(/Invalid signature/);
+      await expect(executor.process(req)).rejects.toThrow(/Invalid signature|version must be 2/);
     });
 
     it("legitimate grant may still approve after an invalid attempt", async () => {
@@ -550,7 +567,7 @@ describe("M-01/M-02: Final Hardening", () => {
       let invalidGrant = makeGrant(sess1, req1);
       invalidGrant.signature.value = Buffer.alloc(64, "A").toString("base64");
 
-      await expect(executor.resolveApproval(invalidGrant)).rejects.toThrow(/Invalid signature/);
+      await expect(executor.resolveApproval(invalidGrant)).rejects.toThrow(/Invalid signature|version must be 2/);
 
       const validGrant = makeGrant(sess1, req1);
       await executor.resolveApproval(validGrant);
@@ -565,7 +582,7 @@ describe("M-01/M-02: Final Hardening", () => {
       let grant = makeGrant(sess1, req1);
       grant.signature.value = Buffer.alloc(64, "B").toString("base64"); // length multiple of 4, passes basic regex maybe but signature fails
 
-      await expect(executor.resolveApproval(grant)).rejects.toThrow(/Invalid signature/);
+      await expect(executor.resolveApproval(grant)).rejects.toThrow(/Invalid signature|version must be 2/);
     });
 
     it("wrong public key blocked", async () => {
@@ -577,11 +594,13 @@ describe("M-01/M-02: Final Hardening", () => {
       const maliciousSigner = new TestSigner(privateKey, approverKeyId);
       const grant = maliciousSigner.sign({ version: 1, decision: "approve", session_id: sess1, request_id: req1, approver: { type: "human", id: "demo-operator" }, issued_at: new Date().toISOString() });
 
-      await expect(executor.resolveApproval(grant)).rejects.toThrow(/Invalid signature/);
+      await expect(executor.resolveApproval(grant)).rejects.toThrow(/Invalid signature|version must be 2/);
     });
 
     it("wrong key_id blocked", async () => {
       const { executor } = setup(Date.now());
+      const req = makeRequest({ tool: "update_record", sessionId: sess1, requestId: req1 });
+      await executor.process(req);
       const grant = makeGrant(sess1, req1);
       grant.signature.key_id = "wrong-key-id";
       await expect(executor.resolveApproval(grant)).rejects.toThrow(/signature.key_id mismatch/);

@@ -1,3 +1,4 @@
+import { createAuthorityTestDeps } from "./evals/eval-setup";
 import { SchemaValidator, AddressableSchemaError, SchemaValidationError, JsonRpcProtocolError } from "../src/schema-validator";
 import { SignatureService } from "../src/signature-service";
 import { ExecutionCorrelationStore } from "../src/execution-correlation";
@@ -10,7 +11,7 @@ import { executionCounters, resetCounters } from "../src/tools";
 
 const testSignatureService = new SignatureService("test-secret", "key-1");
 const validBaseRequest = testSignatureService.signRequest({
-  jsonrpc: "2.0",
+  jsonrpc: "2.0" as const,
   method: "steps/toolCallRequest",
   id: "call-1",
   params: {
@@ -33,7 +34,7 @@ describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
   describe("TypeScript Compile-Time & Local Strict Profile (L-05)", () => {
     it("request id null is rejected at compile-time", () => {
       const req: import("../src/acs-types").AcsToolCallRequest = {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         method: "steps/toolCallRequest",
         // @ts-expect-error
         id: null,
@@ -41,7 +42,7 @@ describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
       };
 
       const res: import("../src/acs-types").AcsResponseEnvelope = {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         // @ts-expect-error
         id: null,
         result: {} as any
@@ -54,7 +55,7 @@ describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
       // Upstream schema alone would permit it (Ajv wouldn't fail on missing request_id_ref),
       // but our local SchemaValidator rejects it and issues a signed addressable response.
       const resultReq: any = {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         method: "steps/toolCallResult",
         id: "call-1",
         params: {
@@ -85,7 +86,7 @@ describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
 
     it("missing request_id_ref + non-addressable session id -> SchemaValidationError (not JsonRpcProtocolError)", () => {
       const resultReq: any = {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         method: "steps/toolCallResult",
         id: "call-1",
         params: {
@@ -114,7 +115,7 @@ describe("Schema Validator - JSON-RPC & ACS Boundaries", () => {
 
     it("valid toolCallResult with request_id_ref continues to pass", () => {
       const resultReq: any = {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         method: "steps/toolCallResult",
         id: "call-1",
         params: {
@@ -284,14 +285,14 @@ describe("GuardedExecutor with Security Ordering", () => {
       guardian,
       audit,
         new ExecutionCorrelationStore(),
-        new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1")
+        new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1"), ...(() => { const clock = new (require("./evals/eval-setup").MutableClock)(Date.now()); const auth = require("./evals/eval-setup").createAuthorityTestDeps(clock); return [clock, 30000, auth.provider, auth.verifier] as const; })()
       );
   });
 
   it("JSON-RPC-invalid input never reaches ReplayGuard", async () => {
     const req = { ...validBaseRequest, jsonrpc: "1.0" };
     const checkSpy = jest.spyOn(replayGuard, "check");
-    await expect(executor.process(req)).rejects.toThrow(JsonRpcProtocolError);
+    await expect(executor.process(req as any)).rejects.toThrow(JsonRpcProtocolError);
     expect(checkSpy).not.toHaveBeenCalled();
   });
 
@@ -302,7 +303,7 @@ describe("GuardedExecutor with Security Ordering", () => {
     const checkSpy = jest.spyOn(replayGuard, "check");
     const evalSpy = jest.spyOn(guardian, "evaluate");
 
-    await expect(executor.process(req)).rejects.toThrow(AddressableSchemaError);
+    await expect(executor.process(req as any)).rejects.toThrow(AddressableSchemaError);
 
     expect(checkSpy).not.toHaveBeenCalled();
     expect(evalSpy).not.toHaveBeenCalled();
@@ -312,7 +313,7 @@ describe("GuardedExecutor with Security Ordering", () => {
   it("invalid internal Guardian response does not reach ExecutionGate", async () => {
     // We mock Guardian to return a badly shaped response
     jest.spyOn(guardian, "evaluate").mockReturnValueOnce({
-      jsonrpc: "2.0",
+      jsonrpc: "2.0" as const,
       id: "call-1",
       result: {
         type: "final",
@@ -322,7 +323,7 @@ describe("GuardedExecutor with Security Ordering", () => {
     } as any);
 
     const req = JSON.parse(JSON.stringify(validBaseRequest));
-    await expect(executor.process(req)).rejects.toThrow(SchemaValidationError);
+    await expect(executor.process(req as any)).rejects.toThrow(SchemaValidationError);
     expect(executionCounters.read_record).toBe(0);
   });
 });

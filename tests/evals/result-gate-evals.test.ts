@@ -69,7 +69,7 @@ describe("Domain F: Result Gate", () => {
     await executor.process(req); // Pending ASK
     
     const grant = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "approve"
     });
     

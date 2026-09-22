@@ -13,7 +13,7 @@ describe("Domain F & Adversarial Sequences", () => {
     
     // Now approve
     const grant = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
+      version: 2, tool: req.params.payload.tool.name, session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "approve"
     });
     

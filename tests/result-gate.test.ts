@@ -1,3 +1,4 @@
+import { createAuthorityTestDeps } from "./evals/eval-setup";
 import { SchemaValidator } from "../src/schema-validator";
 import { SignatureService, SignatureInvalidError } from "../src/signature-service";
 import { ExecutionCorrelationStore, CorrelationError } from "../src/execution-correlation";
@@ -31,7 +32,7 @@ describe("Phase 5: Result Gate Governance", () => {
       guardian,
       audit,
       correlation,
-      new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1")
+      new (require("../src/approval-verifier").ApprovalGrantVerifier)(require("crypto").generateKeyPairSync("ed25519").publicKey, "key-1"), ...(() => { const clock = new (require("./evals/eval-setup").MutableClock)(Date.now()); const auth = require("./evals/eval-setup").createAuthorityTestDeps(clock); return [clock, 30000, auth.provider, auth.verifier] as const; })()
     );
   });
 

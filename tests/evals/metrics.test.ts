@@ -19,7 +19,7 @@ describe("Domain I: Oversight metrics as evaluation evidence", () => {
     const reqAskApprove = makeRequest({ tool: "update_record", sessionId: "sess-1", requestId: "req-ask-approve" }, clock);
     await executor.process(reqAskApprove);
     const grantApprove = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-ask-approve"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-ask-approve"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +100), decision: "approve"
     });
     await executor.resolveApproval(grantApprove);
@@ -29,7 +29,7 @@ describe("Domain I: Oversight metrics as evaluation evidence", () => {
     const reqAskReject = makeRequest({ tool: "update_record", sessionId: "sess-1", requestId: "req-ask-reject" }, clock);
     await executor.process(reqAskReject);
     const grantReject = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-ask-reject"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-ask-reject"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +100), decision: "reject"
     });
     await executor.resolveApproval(grantReject);
@@ -40,7 +40,7 @@ describe("Domain I: Oversight metrics as evaluation evidence", () => {
     await executor.process(reqAskExpiry);
     clock.currentMs += 20 * 60 * 1000; // expire
     const grantLate = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-ask-expiry"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-ask-expiry"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs()), decision: "approve"
     });
     await expect(executor.resolveApproval(grantLate)).rejects.toThrow(/expired/);

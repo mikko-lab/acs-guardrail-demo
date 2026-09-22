@@ -1,6 +1,12 @@
 import crypto from "crypto";
 import { canonicalize } from "json-canonicalize";
-import { ApprovalGrantV1 } from "../src/approval-verifier";
+import { ApprovalGrantV1, ApprovalGrantV2 } from "../src/approval-verifier";
+
+type UnsignedApprovalGrant =
+  | Omit<ApprovalGrantV1, "signature">
+  | Omit<ApprovalGrantV2, "signature">;
+
+type ApprovalSignature = ApprovalGrantV1["signature"];
 
 export class TestSigner {
   constructor(
@@ -8,9 +14,13 @@ export class TestSigner {
     private readonly keyId: string
   ) {}
 
-  sign(grantBase: Omit<ApprovalGrantV1, "signature">): ApprovalGrantV1 {
+  sign<T extends UnsignedApprovalGrant>(
+    grantBase: T
+  ): T & { signature: ApprovalSignature } {
     const dataBuffer = Buffer.from(canonicalize(grantBase));
-    const signatureValue = crypto.sign(null, dataBuffer, this.privateKey).toString("base64");
+    const signatureValue = crypto
+      .sign(null, dataBuffer, this.privateKey)
+      .toString("base64");
 
     return {
       ...grantBase,

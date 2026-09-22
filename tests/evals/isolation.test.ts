@@ -12,7 +12,7 @@ describe("Domain D & G: Isolation", () => {
     
     // Grant for A
     const grantA = testSigner.sign({
-      version: 1, session_id: toUuid("sess-A"), request_id: toUuid("req-1"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-A"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "approve"
     });
     
@@ -25,7 +25,7 @@ describe("Domain D & G: Isolation", () => {
 
     // Grant for B
     const grantB = testSigner.sign({
-      version: 1, session_id: toUuid("sess-B"), request_id: toUuid("req-1"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-B"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "approve"
     });
     
@@ -47,7 +47,7 @@ describe("Domain D & G: Isolation", () => {
     
     // Grant for A
     const grantA = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-a"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-a"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "approve"
     });
     
@@ -62,7 +62,7 @@ describe("Domain D & G: Isolation", () => {
 
     // Grant for B
     const grantB = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-b"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-b"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "approve"
     });
 
@@ -87,7 +87,7 @@ describe("Domain D & G: Isolation", () => {
     
     // Sign an approval after expiry
     const grantLate = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), -10), decision: "approve"
     });
     
@@ -95,7 +95,7 @@ describe("Domain D & G: Isolation", () => {
     
     // Attacker tries AGAIN with a new grant, but the pending action was deleted during the first expiry!
     const grantLate2 = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "approve"
     });
     await expect(executor.resolveApproval(grantLate2)).rejects.toThrow(/No pending action/);
@@ -110,14 +110,14 @@ describe("Domain D & G: Isolation", () => {
     await executor.process(req);
     
     const grantReject = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +10), decision: "reject"
     });
     await executor.resolveApproval(grantReject);
     
     // Maliciously follow up with approve for same request
     const grantApprove = testSigner.sign({
-      version: 1, session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
+      version: 2, tool: "update_record", session_id: toUuid("sess-1"), request_id: toUuid("req-1"),
       approver: { type: "human", id: "demo-operator" }, issued_at: fresh(clock.nowMs(), +20), decision: "approve"
     });
     await expect(executor.resolveApproval(grantApprove)).rejects.toThrow(/No pending action/);

@@ -7,6 +7,10 @@ import { Guardian } from "../../src/guardian";
 import { AuditCollector } from "../../src/audit";
 import type { AcsToolCallRequest, AcsToolArgumentValue } from "../../src/acs-types";
 import { ApprovalGrantVerifier } from "../../src/approval-verifier";
+import { CapabilityGrantVerifier, CapabilityGrantV1 } from "../../src/capability-grant";
+import { CapabilityProvider, CapabilityLookupContext } from "../../src/guarded-executor";
+import { canonicalize } from "json-canonicalize";
+
 import { TestSigner } from "../test-signer";
 import crypto from "crypto";
 
@@ -82,6 +86,62 @@ export function makeResultRequest(overrides: {
   };
 }
 
+export function createAuthorityTestDeps(clock: Clock, keyId: string = "cap-key-1") {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const provider = new MockCapabilityProvider(keyId, privateKey, clock);
+  const verifier = new CapabilityGrantVerifier(publicKey, keyId, clock);
+  return { provider, verifier, publicKey, privateKey };
+}
+
+export class MockCapabilityProvider implements CapabilityProvider {
+  constructor(
+    public keyId: string,
+    public privateKey: crypto.KeyObject,
+    public clock: Clock,
+    public defaultTools: string[] = ["read_record", "update_record", "delete_record", "write_record", "system_shell", "read_all_records"]
+  ) {}
+
+  public resolveCalled = 0;
+  public forceThrow = false;
+  public returnNull = false;
+  /** Runs BEFORE signing — modified data is signed; use for validly signed semantic mismatches */
+  public tamperCapability?: (cap: CapabilityGrantV1) => CapabilityGrantV1;
+  /** Runs AFTER signing — mutates signed data and therefore produces INVALID_SIGNATURE */
+  public postTamperCapability?: (cap: CapabilityGrantV1) => CapabilityGrantV1;
+
+  public fixedCapability?: unknown;
+
+  resolve(context: CapabilityLookupContext): unknown | undefined {
+    this.resolveCalled++;
+    if (this.forceThrow) throw new Error("Mock provider error");
+    if (this.returnNull) return undefined;
+    if (this.fixedCapability) return this.fixedCapability;
+
+    const cap: CapabilityGrantV1 = {
+      version: 1,
+      capability_id: crypto.randomUUID(),
+      agent_id: context.agent_id,
+      session_id: context.session_id,
+      allowed_tools: [...this.defaultTools],
+      issued_at: fresh(this.clock.nowMs(), -1000),
+      expires_at: fresh(this.clock.nowMs(), 300000),
+      signature: { algorithm: "Ed25519", key_id: this.keyId, value: "" }
+    };
+
+    const toSign = this.tamperCapability ? this.tamperCapability(cap) : cap;
+
+    const clone = JSON.parse(JSON.stringify(toSign));
+    delete clone.signature;
+    const dataBuffer = Buffer.from(canonicalize(clone));
+    const sig = crypto.sign(null, dataBuffer, this.privateKey);
+    toSign.signature.value = sig.toString("base64");
+
+    if (this.postTamperCapability) return this.postTamperCapability(toSign);
+    return toSign;
+  }
+}
+
+
 export function setup(nowMs: number) {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
   const approverKeyId = "approver-1";
@@ -96,6 +156,10 @@ export function setup(nowMs: number) {
   const schemaValidator = new SchemaValidator();
   const signatureService = new SignatureService("test-secret", "key-1");
   const correlation = new ExecutionCorrelationStore();
+  const authority = createAuthorityTestDeps(clock);
+  const capabilityProvider = authority.provider;
+  const capabilityVerifier = authority.verifier;
+
   const executor = new GuardedExecutor(
     schemaValidator,
     signatureService,
@@ -104,9 +168,12 @@ export function setup(nowMs: number) {
     audit,
     correlation,
     approvalVerifier,
-    clock
+    clock,
+    30000,
+    capabilityProvider,
+    capabilityVerifier
   );
 
-  return { executor, audit, replayGuard, guardian, clock, publicKey, privateKey, signatureService, schemaValidator, correlation, testSigner, approverKeyId };
+  return { executor, audit, replayGuard, guardian, clock, publicKey, privateKey, signatureService, schemaValidator, correlation, testSigner, approverKeyId, capabilityProvider, capabilityVerifier };
 }
 export { toUuid };

@@ -49,7 +49,9 @@ describe("ApprovalGrantVerifier V2 (WP-06A)", () => {
   const validContext: ApprovalContext = {
     expectedSessionId: "sess-1",
     expectedRequestId: "req-1",
-    expectedTool: "delete_record"
+    expectedTool: "delete_record",
+    expectedApproverType: "human",
+    expectedApproverId: "human-1"
   };
 
   it("APR2-001: valid signed V2 approval -> valid", () => {
@@ -90,6 +92,16 @@ describe("ApprovalGrantVerifier V2 (WP-06A)", () => {
   it("APR2-007: V1 is not accepted as V2", () => {
     const grant = signV2(createBaseV1()); // Sign a V1 payload
     expect(() => verifier.verifyV2(grant, validContext)).toThrow(/Validation Error: version must be 2/);
+  });
+
+  it("APR2-008A: validly signed wrong approver identity -> fail", () => {
+    const base = createBaseV2();
+    base.approver.id = "another-human";
+    const grant = signV2(base);
+
+    expect(() => verifier.verifyV2(grant, validContext)).toThrow(
+      /Invariant Violation: approver does not match expected approver/
+    );
   });
 
   it("APR2-008: reject decision remains reject", () => {

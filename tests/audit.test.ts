@@ -1,3 +1,4 @@
+import { createAuthorityTestDeps } from "./evals/eval-setup";
 import { SchemaValidator } from "../src/schema-validator";
 import { SignatureService } from "../src/signature-service";
 import { ExecutionCorrelationStore } from "../src/execution-correlation";
@@ -24,7 +25,7 @@ describe("Audit Collector invariants", () => {
       new Guardian(),
       audit,
       new ExecutionCorrelationStore(),
-      new (require("../src/approval-verifier").ApprovalGrantVerifier)(keys.publicKey, "key-1")
+      new (require("../src/approval-verifier").ApprovalGrantVerifier)(keys.publicKey, "key-1"), ...(() => { const clock = new (require("./evals/eval-setup").MutableClock)(Date.now()); const auth = require("./evals/eval-setup").createAuthorityTestDeps(clock); return [clock, 30000, auth.provider, auth.verifier] as const; })()
     );
   });
 
@@ -55,7 +56,8 @@ describe("Audit Collector invariants", () => {
   });
 
   it("9. blocked actions get an audit event (deny)", async () => {
-    const req = createRequest("d4050efb-29e2-4edb-9564-115948d338c2", "some_random_tool");
+    // delete_record is in allowed_tools (capability passes) but Guardian denies it
+    const req = createRequest("d4050efb-29e2-4edb-9564-115948d338c2", "delete_record");
     await expect(executor.process(req)).rejects.toThrow();
     const events = audit.getEventsForRequest("d4050efb-29e2-4edb-9564-115948d338c2");
     const blockedEvent = events.find(e => e.event_type === "tool_execution_blocked");
@@ -83,6 +85,7 @@ describe("Audit Collector invariants", () => {
     const types = events.map(e => e.event_type);
     expect(types).toEqual([
       "tool_call_requested",
+      "capability_verified",
       "guardian_decision",
       "tool_execution_started",
       "tool_execution_completed",
@@ -92,13 +95,14 @@ describe("Audit Collector invariants", () => {
     ]);
   });
 
+
   it("ASK -> approval -> execution exact event sequence with no duplicates", async () => {
     const req = createRequest("7340d64e-3a59-4f17-9096-865ba73666aa", "update_record");
     await executor.process(req);
 
     const testSigner = new (require("../tests/test-signer").TestSigner)(privateKey, "key-1");
     const grant = testSigner.sign({
-      version: 1,
+      version: 2, tool: "update_record",
       decision: "approve",
       session_id: "26f7a67a-cfda-4fa3-8315-6de161b37a47",
       request_id: "7340d64e-3a59-4f17-9096-865ba73666aa",

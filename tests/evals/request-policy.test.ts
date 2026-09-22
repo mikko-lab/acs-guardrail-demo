@@ -49,7 +49,7 @@ describe("Domain A: Guardian request policy", () => {
     await executor.process(req);
     
     const grant = testSigner.sign({
-      version: 1,
+      version: 2, tool: req.params.payload.tool.name,
       session_id: req.params.metadata.session_id,
       request_id: req.params.request_id,
       approver: { type: "human", id: "demo-operator" },
@@ -70,7 +70,7 @@ describe("Domain A: Guardian request policy", () => {
     await executor.process(req);
     
     const grant = testSigner.sign({
-      version: 1,
+      version: 2, tool: req.params.payload.tool.name,
       session_id: req.params.metadata.session_id,
       request_id: req.params.request_id,
       approver: { type: "human", id: "demo-operator" },
@@ -94,7 +94,7 @@ describe("Domain A: Guardian request policy", () => {
     clock.currentMs += 20 * 60 * 1000;
     
     const grant = testSigner.sign({
-      version: 1,
+      version: 2, tool: req.params.payload.tool.name,
       session_id: req.params.metadata.session_id,
       request_id: req.params.request_id,
       approver: { type: "human", id: "demo-operator" },
