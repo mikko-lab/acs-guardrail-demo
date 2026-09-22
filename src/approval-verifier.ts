@@ -18,8 +18,34 @@ export interface ApprovalGrantV1 {
   };
 }
 
+export interface ApprovalGrantV2 {
+  version: 2;
+  decision: "approve" | "reject";
+  session_id: string;
+  request_id: string;
+  tool: string; // EXPLICIT TOOL BINDING
+  approver: {
+    type: "human";
+    id: string;
+  };
+  issued_at: string;
+  signature: {
+    algorithm: "Ed25519";
+    key_id: string;
+    value: string;
+  };
+}
+
+export type AnyApprovalGrant = ApprovalGrantV1 | ApprovalGrantV2;
+
 const ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const BASE64_REGEX = /^[A-Za-z0-9+/]+={0,2}$/;
+
+export interface ApprovalContext {
+  expectedSessionId: string;
+  expectedRequestId: string;
+  expectedTool: string;
+}
 
 export class ApprovalGrantVerifier {
   constructor(
@@ -31,14 +57,50 @@ export class ApprovalGrantVerifier {
     }
   }
 
+  // Backwards compatibility for existing code. Only verifies schema and signature.
+  // Note: V1 is not tool-bound. This does NOT verify tool binding.
   verify(input: unknown): ApprovalGrantV1 {
+    this.assertVersion(input, 1);
+    const grant = this.verifySchemaAndSignature(input);
+    return grant as ApprovalGrantV1;
+  }
+
+  // Verifies V2 explicitly with tool binding invariant.
+  verifyV2(input: unknown, ctx: ApprovalContext): ApprovalGrantV2 {
+    this.assertVersion(input, 2);
+    const grant = this.verifySchemaAndSignature(input);
+
+    const v2 = grant as ApprovalGrantV2;
+    if (v2.session_id !== ctx.expectedSessionId) {
+      throw new Error("Invariant Violation: session_id does not match");
+    }
+    if (v2.request_id !== ctx.expectedRequestId) {
+      throw new Error("Invariant Violation: request_id does not match");
+    }
+    if (v2.tool !== ctx.expectedTool) {
+      throw new Error("Invariant Violation: tool does not match expected tool");
+    }
+
+    return v2;
+  }
+
+  private assertVersion(input: unknown, expectedVersion: number) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("Validation Error: input must be a JSON object");
+    }
+    const grant = input as Record<string, unknown>;
+    if (grant.version !== expectedVersion) {
+      throw new Error(`Validation Error: version must be ${expectedVersion}`);
+    }
+  }
+
+  private verifySchemaAndSignature(input: unknown): AnyApprovalGrant {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
       throw new Error("Validation Error: input must be a JSON object");
     }
     
     const grant = input as Record<string, unknown>;
-
-    if (grant.version !== 1) throw new Error("Validation Error: version must be 1");
+    
     if (grant.decision !== "approve" && grant.decision !== "reject") {
       throw new Error("Validation Error: decision must be 'approve' or 'reject'");
     }
@@ -47,6 +109,12 @@ export class ApprovalGrantVerifier {
     }
     if (typeof grant.request_id !== "string" || grant.request_id.length === 0) {
       throw new Error("Validation Error: request_id must be a non-empty string");
+    }
+
+    if (grant.version === 2) {
+      if (typeof grant.tool !== "string" || grant.tool.length === 0) {
+        throw new Error("Validation Error: V2 requires a non-empty tool string");
+      }
     }
 
     if (!grant.approver || typeof grant.approver !== "object" || Array.isArray(grant.approver)) {
@@ -86,7 +154,7 @@ export class ApprovalGrantVerifier {
     }
 
     // Return a deeply cloned snapshot to prevent caller mutation after verification
-    const verifiedSnapshot = JSON.parse(JSON.stringify(grant)) as ApprovalGrantV1;
+    const verifiedSnapshot = JSON.parse(JSON.stringify(grant)) as AnyApprovalGrant;
 
     // Cryptographic verification
     const cloneForSig = JSON.parse(JSON.stringify(verifiedSnapshot));
