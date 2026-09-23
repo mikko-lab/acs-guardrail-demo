@@ -154,8 +154,61 @@ describe("Audit Collector invariants", () => {
     expect(events[0].previous_hash).toBe(AUDIT_GENESIS_HASH);
     expect(events[0].event_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(events[1].previous_hash).toBe(events[0].event_hash);
+    expect(audit.getHeadHash()).toBe(events[1].event_hash);
     expect(audit.verifyIntegrity()).toEqual({ valid: true });
-    expect(AuditCollector.verifyIntegrity(events)).toEqual({ valid: true });
+    expect(AuditCollector.verifyIntegrity(events, events[1].event_hash)).toEqual({ valid: true });
+  });
+
+  it("accepts a trusted expected head for valid suffix verification", () => {
+    audit.record("req1", "tool_call_requested", { session_id: "session-1" });
+    audit.record("req2", "guardian_decision", { decision: "allow" });
+    audit.record("req3", "tool_execution_started");
+
+    const events = audit.getEvents();
+    const expectedHead = events[2].event_hash;
+    expect(AuditCollector.verifyIntegrity(events, expectedHead)).toEqual({ valid: true });
+    expect(audit.verifyIntegrity(expectedHead)).toEqual({ valid: true });
+  });
+
+  it("rejects final-event deletion with head_hash_mismatch", () => {
+    audit.record("req1", "tool_call_requested", { session_id: "session-1" });
+    audit.record("req2", "guardian_decision", { decision: "allow" });
+    audit.record("req3", "tool_execution_started");
+
+    const events = audit.getEvents();
+    const expectedHead = events[2].event_hash;
+    events.splice(2, 1);
+
+    expect(AuditCollector.verifyIntegrity(events, expectedHead)).toEqual({
+      valid: false,
+      index: 1,
+      reason: "head_hash_mismatch"
+    });
+  });
+
+  it("rejects multiple trailing deletions with head_hash_mismatch", () => {
+    audit.record("req1", "tool_call_requested", { session_id: "session-1" });
+    audit.record("req2", "guardian_decision", { decision: "allow" });
+    audit.record("req3", "tool_execution_started");
+
+    const events = audit.getEvents();
+    const expectedHead = events[2].event_hash;
+    events.splice(1, 2);
+
+    expect(AuditCollector.verifyIntegrity(events, expectedHead)).toEqual({
+      valid: false,
+      index: 0,
+      reason: "head_hash_mismatch"
+    });
+  });
+
+  it("keeps structural prefix verification valid without an expected head", () => {
+    audit.record("req1", "tool_call_requested", { session_id: "session-1" });
+    audit.record("req2", "guardian_decision", { decision: "allow" });
+    audit.record("req3", "tool_execution_started");
+
+    const prefix = audit.getEvents().slice(0, 2);
+    expect(AuditCollector.verifyIntegrity(prefix)).toEqual({ valid: true });
   });
 
   it.each([
@@ -186,6 +239,22 @@ describe("Audit Collector invariants", () => {
       index,
       reason
     });
+  });
+
+  it("records detached metadata and returns detached request copies", () => {
+    const metadata = { session_id: "session-1", nested: { ok: true } };
+    audit.record("req-1", "tool_call_requested", metadata);
+
+    metadata.session_id = "mutated";
+    metadata.nested.ok = false;
+
+    const stored = audit.getEvents()[0];
+    expect(stored.metadata).toEqual({ session_id: "session-1", nested: { ok: true } });
+    expect(stored.metadata).not.toBe(metadata);
+
+    const requestEvents = audit.getEventsForRequest("req-1");
+    requestEvents[0].metadata = { session_id: "mutated" };
+    expect(audit.getEventsForRequest("req-1")[0].metadata).toEqual({ session_id: "session-1", nested: { ok: true } });
   });
 
   it("fail-closed assertion raises a dedicated integrity error", () => {

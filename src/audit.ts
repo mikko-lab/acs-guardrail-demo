@@ -13,7 +13,8 @@ export type AuditIntegrityResult =
         | "missing_hash"
         | "genesis_mismatch"
         | "previous_hash_mismatch"
-        | "event_hash_mismatch";
+        | "event_hash_mismatch"
+        | "head_hash_mismatch";
     };
 
 export class AuditIntegrityError extends Error {
@@ -30,11 +31,12 @@ export class AuditCollector {
   private events: AuditEvent[] = [];
 
   record(request_id: string, event_type: AuditEventType, metadata?: Record<string, unknown>) {
+    const snapshotMetadata = AuditCollector.cloneJsonCompatible(metadata);
     const eventWithoutHash: AuditEvent = {
       timestamp: new Date().toISOString(),
       request_id,
       event_type,
-      metadata
+      metadata: snapshotMetadata
     };
     const previous_hash = this.events.at(-1)?.event_hash ?? AUDIT_GENESIS_HASH;
     const event: AuditEvent = {
@@ -45,35 +47,39 @@ export class AuditCollector {
     this.events.push(event);
   }
 
+  getHeadHash(): string | undefined {
+    return this.events.at(-1)?.event_hash;
+  }
+
   getEvents(): AuditEvent[] {
-    return this.events.map(event => ({
-      ...event,
-      metadata: event.metadata === undefined
-        ? undefined
-        : JSON.parse(JSON.stringify(event.metadata)) as Record<string, unknown>
-    }));
+    return this.events.map(event => AuditCollector.cloneEvent(event));
   }
 
   getEventsForRequest(request_id: string): AuditEvent[] {
-    return this.events.filter(e => e.request_id === request_id);
+    return this.events
+      .filter(e => e.request_id === request_id)
+      .map(event => AuditCollector.cloneEvent(event));
   }
 
   clear() {
     this.events = [];
   }
 
-  verifyIntegrity(): AuditIntegrityResult {
-    return AuditCollector.verifyIntegrity(this.events);
+  verifyIntegrity(expectedHeadHash?: string): AuditIntegrityResult {
+    return AuditCollector.verifyIntegrity(this.events, expectedHeadHash);
   }
 
-  assertIntegrity(events: readonly AuditEvent[] = this.events): void {
-    const result = AuditCollector.verifyIntegrity(events);
+  assertIntegrity(events: readonly AuditEvent[] = this.events, expectedHeadHash?: string): void {
+    const result = AuditCollector.verifyIntegrity(events, expectedHeadHash);
     if (!result.valid) {
       throw new AuditIntegrityError(result);
     }
   }
 
-  static verifyIntegrity(events: readonly AuditEvent[]): AuditIntegrityResult {
+  static verifyIntegrity(
+    events: readonly AuditEvent[],
+    expectedHeadHash?: string
+  ): AuditIntegrityResult {
     let previous_hash = AUDIT_GENESIS_HASH;
     for (const [index, event] of events.entries()) {
       if (!event.previous_hash || !event.event_hash) {
@@ -92,7 +98,33 @@ export class AuditCollector {
       }
       previous_hash = event.event_hash;
     }
+
+    if (expectedHeadHash !== undefined) {
+      const actualHeadHash = events.at(-1)?.event_hash ?? undefined;
+      if (actualHeadHash !== expectedHeadHash) {
+        return {
+          valid: false,
+          index: Math.max(0, events.length - 1),
+          reason: "head_hash_mismatch"
+        };
+      }
+    }
+
     return { valid: true };
+  }
+
+  private static cloneJsonCompatible<T>(value: T): T {
+    if (value === undefined) {
+      return value;
+    }
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+
+  private static cloneEvent(event: AuditEvent): AuditEvent {
+    return {
+      ...event,
+      metadata: AuditCollector.cloneJsonCompatible(event.metadata)
+    };
   }
 
   private static computeHash(event: AuditEvent, previous_hash: string): string {
