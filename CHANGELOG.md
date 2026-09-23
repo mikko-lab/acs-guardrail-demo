@@ -4,7 +4,7 @@
 
 ### Added
 - **Tamper-evident audit chain:** Audit events now carry a deterministic SHA-256 `event_hash` linked through `previous_hash`, with an explicit `GENESIS` convention.
-- **Trusted head verification:** Added `getHeadHash()` and `verifyIntegrity(events, expectedHeadHash?)` / `assertIntegrity(events?, expectedHeadHash?)` so callers can combine linked validation with a trusted expected head for suffix-truncation detection.
+- **Trusted head verification:** Added the integrity API `audit.verifyIntegrity(expectedHeadHash?)`, `AuditCollector.verifyIntegrity(events, expectedHeadHash?)`, and `audit.assertIntegrity(events?, expectedHeadHash?)` so callers can combine linked validation with a trusted expected head for suffix-truncation detection.
 - **Fail-closed audit verification:** Added deterministic integrity results and `AuditIntegrityError` for callers that require verification to fail closed. Regression coverage includes payload mutation, deletion, reordering, hash tampering, trusted-head checks, and request-scoped reads.
 
 ### Trust model and limitations
