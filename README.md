@@ -151,7 +151,7 @@ Authority incident evidence preserves trusted request or pending-action context 
 
 Correlation failures emit `correlation_failed` evidence containing relevant request, session, reference, tool, disposition, and reason fields. Unknown and already-consumed references currently share the `unresolved_request_id_ref` reason at this layer.
 
-The audit collection is local and in memory. It is not a persistent or tamper-evident ledger, an immutable receipt chain, a SIEM integration, or proof of universal mediation.
+The audit collection is local and in memory, with a deterministic SHA-256 hash chain for detecting changes to the collected evidence. The first event uses the explicit `GENESIS` previous-hash value; each later event hashes its canonical content and the preceding event hash. The public integrity API is: instance `audit.verifyIntegrity(expectedHeadHash?)`; static `AuditCollector.verifyIntegrity(events, expectedHeadHash?)`; instance assertion `audit.assertIntegrity(events?, expectedHeadHash?)`. These provide two layers of trust: structural verification detects inconsistent modification within the linked stream, while a trusted expected head detects suffix truncation and different-head substitutions. Without a trusted expected head or external anchor, an attacker who rewrites the whole stream can recompute the chain and evade detection. This remains a local in-memory mechanism: it does not supply immutable storage, non-repudiation, external anchoring, restart persistence, or proof of universal mediation.
 
 ## Oversight Metrics
 
@@ -235,7 +235,7 @@ The crosswalk explicitly distinguishes between pinned normative requirements, un
 ## Limitations / Non-goals
 
 - This is a reference/demo implementation, not production infrastructure.
-- In-memory audit only; no persistent or tamper-evident audit backend or SIEM integration.
+- In-memory audit only; the linked hash chain is tamper-evident for the verified stream, but it is not durable across process restart, it does not provide immutable storage or non-repudiation, and it does not replace external anchoring or a SIEM integration.
 - No universal mediation proof or coverage proof.
 - No external IAM integration or independent workload-identity provider.
 - `agent_id` is an authenticated request claim in the local request-authentication model, not independent workload identity.
