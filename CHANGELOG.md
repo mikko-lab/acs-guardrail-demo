@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Tamper-evident audit chain:** Audit events now carry a deterministic SHA-256 `event_hash` linked through `previous_hash`, with an explicit `GENESIS` convention.
+- **Fail-closed audit verification:** Added deterministic integrity results and `AuditIntegrityError` for callers that require verification to fail closed. Regression coverage includes payload mutation, deletion, reordering, hash tampering, and request-scoped reads.
+
+### Limitations
+- The chain is in-memory and restart persistence is not provided. It detects tampering in the event stream supplied to verification, but does not replace durable append-only storage, external anchoring, or protection against a compromised live process.
+
 ## [v0.3.0] - 2026-09-22
 
 ### Added

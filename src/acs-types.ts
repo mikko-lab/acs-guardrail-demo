@@ -156,6 +156,10 @@ export interface AuditEvent {
   request_id: string;
   event_type: AuditEventType;
   metadata?: Record<string, unknown>;
+  /** Hash of the preceding event, or the genesis value for the first event. */
+  previous_hash?: string;
+  /** SHA-256 hash of this event's canonical content. */
+  event_hash?: string;
 }
 
 export interface AcsToolCallResultRequest {

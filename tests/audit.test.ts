@@ -5,7 +5,7 @@ import { ExecutionCorrelationStore } from "../src/execution-correlation";
 import { GuardedExecutor } from "../src/guarded-executor";
 import { ReplayGuard } from "../src/replay-guard";
 import { Guardian } from "../src/guardian";
-import { AuditCollector } from "../src/audit";
+import { AUDIT_GENESIS_HASH, AuditCollector, AuditIntegrityError } from "../src/audit";
 import type { AcsToolCallRequest } from "../src/acs-types";
 
 describe("Audit Collector invariants", () => {
@@ -144,5 +144,71 @@ describe("Audit Collector invariants", () => {
     expect(audit.getEvents().length).toBe(1);
     audit.clear();
     expect(audit.getEvents().length).toBe(0);
+  });
+
+  it("records and verifies a deterministic SHA-256 hash chain", () => {
+    audit.record("req1", "tool_call_requested", { session_id: "session-1" });
+    audit.record("req2", "guardian_decision", { decision: "allow" });
+
+    const events = audit.getEvents();
+    expect(events[0].previous_hash).toBe(AUDIT_GENESIS_HASH);
+    expect(events[0].event_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(events[1].previous_hash).toBe(events[0].event_hash);
+    expect(audit.verifyIntegrity()).toEqual({ valid: true });
+    expect(AuditCollector.verifyIntegrity(events)).toEqual({ valid: true });
+  });
+
+  it.each([
+    ["payload mutation", (events: ReturnType<AuditCollector["getEvents"]>) => {
+      events[0].metadata = { session_id: "mutated" };
+    }, 0, "event_hash_mismatch"],
+    ["middle deletion", (events: ReturnType<AuditCollector["getEvents"]>) => {
+      events.splice(1, 1);
+    }, 1, "previous_hash_mismatch"],
+    ["reorder", (events: ReturnType<AuditCollector["getEvents"]>) => {
+      events.reverse();
+    }, 0, "genesis_mismatch"],
+    ["previous_hash tampering", (events: ReturnType<AuditCollector["getEvents"]>) => {
+      events[1].previous_hash = AUDIT_GENESIS_HASH;
+    }, 1, "previous_hash_mismatch"],
+    ["event_hash tampering", (events: ReturnType<AuditCollector["getEvents"]>) => {
+      events[0].event_hash = "0".repeat(64);
+    }, 0, "event_hash_mismatch"]
+  ])("rejects %s", (_name, mutate, index, reason) => {
+    audit.record("req1", "tool_call_requested", { session_id: "session-1" });
+    audit.record("req2", "guardian_decision", { decision: "allow" });
+    audit.record("req3", "tool_execution_started");
+
+    const events = audit.getEvents();
+    mutate(events);
+    expect(AuditCollector.verifyIntegrity(events)).toEqual({
+      valid: false,
+      index,
+      reason
+    });
+  });
+
+  it("fail-closed assertion raises a dedicated integrity error", () => {
+    audit.record("req1", "tool_call_requested");
+    const event = audit.getEvents()[0];
+    event.event_hash = "0".repeat(64);
+
+    expect(() => audit.assertIntegrity([event])).toThrow(AuditIntegrityError);
+    try {
+      audit.assertIntegrity([event]);
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "AuditIntegrityError",
+        result: { valid: false, index: 0, reason: "event_hash_mismatch" }
+      });
+    }
+  });
+
+  it("keeps request-scoped reads while the chain remains globally verifiable", () => {
+    audit.record("req-1", "tool_call_requested", { session_id: "session-1" });
+    audit.record("req-2", "tool_call_requested", { session_id: "session-2" });
+
+    expect(audit.getEventsForRequest("req-1")).toHaveLength(1);
+    expect(audit.verifyIntegrity()).toEqual({ valid: true });
   });
 });
