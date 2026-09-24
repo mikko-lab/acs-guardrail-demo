@@ -7,9 +7,14 @@ This document maps the actual implementation of the ACS Guardrail Demo against t
 - This document reflects the CURRENT implemented state of the repository.
 - **It is not an ACS conformance claim.** The project explicitly scopes down features to focus on a minimal, high-assurance execution boundary.
 - **Crosswalk evaluated against pinned ACS schemas:**
-  - ACS version: v0.1.0
-  - Upstream Commit SHA: `dc265475139a922824f0c817e2ecc2a2ce31c06c`
+  - ACS wire/specification version: v0.1.0
+  - Upstream repository/project version at current review: 0.1.2
+  - Vendored source commit: `dc265475139a922824f0c817e2ecc2a2ce31c06c`
   - Vendored path: `schemas/`
+- The current upstream integration HEAD is `27799c2c27414a483a4a043b957bfd2997d53231`.
+  The upstream changes after the vendored commit do not modify any file under
+  `specification/v0.1.0/`, so the vendored schema pin remains valid for this
+  schema set.
 - Status mapping: `IMPLEMENTED`, `PARTIAL`, `NOT IMPLEMENTED`, `NOT CLAIMED`, `OUT OF SCOPE`, `UNDERSPECIFIED IN PINNED SPEC`.
 
 For exact test evidence of these claims, see `docs/invariants-evidence.md` and the referenced evaluation, runtime-authority, incident, correlation, and metrics test suites.
@@ -64,11 +69,12 @@ Known local-policy limitations include no external IAM, no independent workload 
 - **Status:** NOT IMPLEMENTED
 - **Limitations:** No OpenTelemetry or OCSF conformant event emission. Relies entirely on an in-memory custom `AuditCollector`.
 
-### Immutable Audit Ledger & Persistence
+### Audit Integrity, Persistence & External Integration
 - **Non-normative context:** Tamper-evident ledger, cryptographic receipt chain, SIEM integration.
 - **ACS profile:** ACS-Trace (Related capability)
-- **Status:** NOT IMPLEMENTED / OUT OF SCOPE
-- **Limitations:** The audit log is strictly in-memory for observability and metrics extraction. No persistent or tamper-evident features are claimed. Distributed state is out of scope.
+- **Status:** PARTIAL / OUT OF SCOPE
+- **Implementation:** The in-memory custom `AuditCollector` records detached metadata snapshots and returns detached event copies. It builds a deterministic SHA-256 hash chain using canonical serialization, with explicit `GENESIS`, `previous_hash`, and `event_hash` values. Structural verification checks the supplied chain; a separately trusted expected head detects suffix truncation or replacement of the final chain head. `AuditIntegrityError` provides the fail-closed assertion path for callers that require verification to succeed.
+- **Limitations:** This is tamper-evident runtime evidence, not an immutable ledger. There is no durable persistence, immutable storage, non-repudiation, external anchoring, SIEM integration, or distributed verification. Without a separately trusted head or external anchor, an attacker able to rewrite the entire stream can recompute the chain.
 
 ### Oversight Metrics & Coverage
 - **Repository target:** Derive oversight metrics from the event stream.

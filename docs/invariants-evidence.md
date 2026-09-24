@@ -2,7 +2,7 @@
 
 This document maps architectural security invariants to automated evidence across the repository, including evaluation, runtime-authority, incident, correlation, and metrics test suites.
 
-**Current verified baseline:** 378 automated tests, 22 Jest suites, TypeScript typecheck clean.
+**Current verified baseline:** 394 automated tests, 23 Jest suites, 0 snapshots, TypeScript typecheck clean.
 
 ## A. Request Policy
 - **ALLOW proceeds to execution**: `tests/evals/request-policy.test.ts` (`EVAL-A1`)

@@ -3,8 +3,9 @@
 The JSON schema files in this directory are vendored from the official Agent Control Standard (ACS) specification.
 
 - **Upstream Repository:** https://github.com/GenAI-Security-Project/agent-control-standard
-- **ACS Version:** v0.1.0
-- **Upstream Commit SHA:** dc265475139a922824f0c817e2ecc2a2ce31c06c
+- **Vendored wire schemas:** ACS v0.1.0
+- **Source repository version at current review:** 0.1.2
+- **Vendored source commit:** dc265475139a922824f0c817e2ecc2a2ce31c06c
 - **License:** Apache License 2.0 (as per the upstream repository)
 
 These files are used for runtime JSON Schema validation to ensure that incoming and outgoing envelopes conform strictly to the ACS wire format.

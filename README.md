@@ -146,8 +146,9 @@ For exact mappings from claims to implementation and tests, see:
 
 ## ACS provenance
 
-- **ACS version:** v0.1.0
-- **Upstream commit:** `dc265475139a922824f0c817e2ecc2a2ce31c06c`
+- **ACS wire/specification version:** v0.1.0
+- **Upstream repository/project version at current review:** 0.1.2
+- **Vendored source commit:** `dc265475139a922824f0c817e2ecc2a2ce31c06c`
 - **Vendored path:** `schemas/`
 
 The crosswalk distinguishes pinned normative requirements, underspecified pinned behavior, local implementation policy, and non-normative context.
