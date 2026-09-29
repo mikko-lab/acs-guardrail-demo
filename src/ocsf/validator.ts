@@ -19,6 +19,11 @@ import { OCSF_SCHEMA_VERSION, OcsfValidationIssue } from "./types";
  * - object constraints (at_least_one / just_one) of vendored objects;
  * - type_uid = class_uid * 100 + activity_id;
  * - enum sibling captions for ids other than 99 (Other);
+ * - exporter policy, stricter than OCSF: an integral enum id 99 whose sibling
+ *   equals the generic schema caption of 99 (e.g. type_name "Base Event: Other")
+ *   is rejected. OCSF Toolkit reports this only as the warning
+ *   validation_attribute_enum_sibling_suspicious_other; such an event is not
+ *   invalid OCSF in general, but this exporter must not produce it;
  * - metadata.version is 1.8.0.
  *
  * What it deliberately does not do:
@@ -211,7 +216,20 @@ export function validateOcsfEvent(event: unknown): OcsfValidationIssue[] {
     const id = e[idName];
     const caption = e[captionName];
     const enumeration = entry.record.attributes[idName]?.enum;
-    if (typeof id !== "number" || caption === undefined || !enumeration || id === 99 || idName === "type_uid" && id % 100 === 99) {
+    if (typeof id !== "number" || caption === undefined || !enumeration) {
+      continue;
+    }
+    if (id === 99) {
+      const generic = enumeration["99"];
+      if (generic !== undefined && caption === generic) {
+        issues.push({
+          path: `/${captionName}`,
+          message: `must carry a source-specific value for ${idName} 99, not the generic caption '${generic}' (exporter policy; OCSF Toolkit: validation_attribute_enum_sibling_suspicious_other warning)`,
+        });
+      }
+      continue;
+    }
+    if (idName === "type_uid" && id % 100 === 99) {
       continue;
     }
     const expected = enumeration[String(id)];

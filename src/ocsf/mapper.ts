@@ -137,7 +137,9 @@ export function mapAuditEventToOcsf(
     activity_id: 99,
     activity_name: event.event_type,
     type_uid: 99,
-    type_name: "Base Event: Other",
+    // type_uid 99 is "Other": its sibling carries the source-specific value
+    // (OCSF "class_name: activity_name"), not the generic caption.
+    type_name: `Base Event: ${event.event_type}`,
     // ACS audit events carry no severity; do not invent one.
     severity_id: 0,
     severity: "Unknown",

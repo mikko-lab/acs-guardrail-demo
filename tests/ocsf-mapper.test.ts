@@ -150,6 +150,66 @@ describe("OCSF mapping: class selection", () => {
   });
 });
 
+describe("OCSF mapping: Base Event type_name for type_uid 99 (Other)", () => {
+  it.each([
+    ["tool_call_requested", { session_id: "s-1", tool: "read_record" }],
+    ["guardian_decision", { session_id: "s-1", decision: "deny", reason_codes: ["X"] }],
+    ["tool_execution_completed", { status: "success" }],
+  ] as Array<[AuditEventType, Record<string, unknown>]>)(
+    "%s -> type_name 'Base Event: %s' with class/activity/type ids unchanged",
+    (type, metadata) => {
+      const e = exportOne(type, metadata);
+      expect(e.type_name).toBe(`Base Event: ${type}`);
+      expect(e.type_name).not.toBe("Base Event: Other");
+      expect(e.type_uid).toBe(99);
+      expect(e.activity_id).toBe(99);
+      expect(e.activity_name).toBe(type);
+      expect(e.class_uid).toBe(0);
+      expect(e.category_uid).toBe(0);
+      expect(e.severity_id).toBe(0);
+      expect(validateOcsfEvent(e)).toEqual([]);
+    }
+  );
+
+  it("every Base Event type_name embeds its ACS event type", () => {
+    const audit = new AuditCollector();
+    audit.record("req-1", "tool_call_requested", { tool: "t" });
+    audit.record("req-1", "approval_requested", { session_id: "s" });
+    audit.record("req-1", "tool_execution_started");
+    for (const e of exportAuditToOcsf(audit.getEvents()).events) {
+      expect(e.class_uid).toBe(0);
+      expect(e.type_name).toBe(`Base Event: ${e.unmapped.acs.event_type}`);
+    }
+  });
+
+  it("Detection Finding classification fields are unchanged", () => {
+    const e = exportOne("replay_rejected", { session_id: "s", reason_code: "REPLAY_DETECTED" });
+    expect({
+      class_uid: e.class_uid,
+      class_name: e.class_name,
+      category_uid: e.category_uid,
+      category_name: e.category_name,
+      activity_id: e.activity_id,
+      activity_name: e.activity_name,
+      type_uid: e.type_uid,
+      type_name: e.type_name,
+      severity_id: e.severity_id,
+      severity: e.severity,
+    }).toEqual({
+      class_uid: 2004,
+      class_name: "Detection Finding",
+      category_uid: 2,
+      category_name: "Findings",
+      activity_id: 1,
+      activity_name: "Create",
+      type_uid: 200401,
+      type_name: "Detection Finding: Create",
+      severity_id: 4,
+      severity: "High",
+    });
+  });
+});
+
 describe("OCSF mapping: no invented identity or endpoint data", () => {
   it("never emits actor/user/endpoint/device/tenant/API attributes, even when metadata has identity-like values", () => {
     const audit = new AuditCollector();

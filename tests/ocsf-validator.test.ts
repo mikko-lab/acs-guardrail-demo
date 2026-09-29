@@ -95,6 +95,32 @@ describe("OCSF 1.8.0 vendored-subset validation", () => {
     expect(m).toMatch(/\/severity must be 'High'/);
   });
 
+  it("exporter policy: rejects the generic caption as sibling of enum id 99 (type_name 'Base Event: Other')", () => {
+    // OCSF Toolkit only warns here (validation_attribute_enum_sibling_suspicious_other);
+    // the event is not invalid OCSF in general, but this exporter must not emit it.
+    const { base } = sample();
+    base.type_name = "Base Event: Other";
+    const issues = validateOcsfEvent(base);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].path).toBe("/type_name");
+    expect(issues[0].message).toMatch(/generic caption 'Base Event: Other'/);
+    expect(issues[0].message).toMatch(/validation_attribute_enum_sibling_suspicious_other/);
+  });
+
+  it("exporter policy: rejects activity_name 'Other' for activity_id 99", () => {
+    const { base } = sample();
+    base.activity_name = "Other";
+    expect(messages(base)).toMatch(/\/activity_name must carry a source-specific value for activity_id 99/);
+  });
+
+  it("accepts a source-specific sibling for enum id 99", () => {
+    const { base } = sample();
+    expect(base.type_uid).toBe(99);
+    expect(base.type_name).toBe("Base Event: guardian_decision");
+    expect(base.activity_name).toBe("guardian_decision");
+    expect(validateOcsfEvent(base)).toEqual([]);
+  });
+
   it("rejects a wrong OCSF metadata.version", () => {
     const { base } = sample();
     base.metadata.version = "1.7.0";
