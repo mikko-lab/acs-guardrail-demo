@@ -108,12 +108,24 @@ The post-hoc metrics layer derives decision counts and rates, escalation and lat
 
 `IncidentClassifier` deterministically derives selected security and boundary incidents from trusted audit evidence, including replay, freshness, correlation, result-policy, authority-authentication, and selected authority-boundary failures. Not every authorization or lifecycle outcome is promoted to a security incident.
 
+## OCSF audit export
+
+The demo can export verified ACS audit evidence as a derived OCSF 1.8.0 JSONL representation (`src/ocsf/`).
+
+The exporter verifies the ACS hash chain before conversion, refuses to export anything if verification fails, and keeps the original ACS `event_hash`, `previous_hash`, `request_id`, `event_type` and `timestamp` as provenance. Only events that `IncidentClassifier` derives an incident from become OCSF Detection Findings. Everything else, including Guardian `DENY` decisions, is exported as a generic OCSF Base Event. ACS metadata is exported only through an explicit per-event-type allowlist. No actor, user, endpoint or identity fields are invented.
+
+Without a trusted expected head hash, a structurally valid but truncated prefix of the stream still exports; supply `expectedHeadHash` (or `requireTrustedHead`) to detect truncation.
+
+Output is checked with local structural validation against a vendored subset of the official OCSF 1.8.0 schema. This is not the official OCSF validator.
+
+OCSF export does not replace the original audit evidence and does not provide immutable storage or a complete SIEM integration. See [docs/ocsf-export.md](docs/ocsf-export.md).
+
 ## Evaluation and test evidence
 
 `npm run verify` runs the TypeScript typecheck and Jest suite. The current verification result is:
 
-- **23 test suites passed**
-- **394 tests passed**
+- **26 test suites passed**
+- **471 tests passed**
 - **0 snapshots**
 
 The major tested categories are:
@@ -130,8 +142,9 @@ The major tested categories are:
 - audit evidence and detached reads;
 - tamper detection and trusted-head verification;
 - adversarial runtime cases and state-machine isolation;
-- oversight metrics; and
-- incident evidence and deterministic classification.
+- oversight metrics;
+- incident evidence and deterministic classification; and
+- verified OCSF 1.8.0 export (integrity gate, mapping, metadata allowlist, JSONL determinism).
 
 Relevant focused coverage includes `tests/runtime-authority.test.ts`, `tests/evals/authority-adversarial.test.ts`, `tests/evals/concurrent-authority.test.ts`, and `tests/audit.test.ts`.
 
@@ -141,6 +154,7 @@ For exact mappings from claims to implementation and tests, see:
 
 - [docs/invariants-evidence.md](docs/invariants-evidence.md)
 - [docs/acs-crosswalk.md](docs/acs-crosswalk.md)
+- [docs/ocsf-export.md](docs/ocsf-export.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [schemas/ATTRIBUTION.md](schemas/ATTRIBUTION.md)
 
@@ -164,6 +178,7 @@ The crosswalk distinguishes pinned normative requirements, underspecified pinned
 - There is no universal mediation proof or coverage proof.
 - There are no production SLA, high-availability, or distributed-state guarantees.
 - Metrics are observability, not enforcement.
+- The OCSF 1.8.0 export is a derived view. It is not a SIEM integration, not durable or immutable storage, and not validated by the official OCSF validator (local vendored-subset structural validation only). Without a trusted head, a truncated valid prefix exports successfully.
 - The local authority profile requires tool-bound `ApprovalGrantV2`; primitive `ApprovalGrantV1` remains available only for historical/backwards-compatible tests and is rejected by the authority-enabled runtime.
 - Approval `issued_at` freshness failures fail closed but do not emit a dedicated audit event.
 

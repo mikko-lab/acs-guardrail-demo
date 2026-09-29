@@ -13,6 +13,15 @@
 - Without a trusted expected head or external anchor, an attacker who rewrites the entire stream can recompute the chain and evade detection.
 - The chain is in-memory and restart persistence is not provided. It does not provide immutable storage, non-repudiation, external anchoring, or a durable audit backend.
 
+### Added: OCSF 1.8.0 audit export
+- **OCSF 1.8.0 audit export:** Added `src/ocsf/`. `exportAuditToOcsf(events, { expectedHeadHash?, requireTrustedHead? })` verifies the ACS hash chain with `AuditCollector.verifyIntegrity`, maps each event to an OCSF 1.8.0 Base Event or, where `IncidentClassifier` derives an incident, a Detection Finding, and validates each record. `serializeOcsfJsonl` writes deterministic JSONL. Any failure throws a typed error and nothing partial is returned. ACS hashes are carried in `unmapped.acs` as provenance. Event UIDs derive from the ACS `event_hash`. Metadata passes only through an explicit per-event-type allowlist.
+- **Vendored OCSF 1.8.0 subset:** `schemas/ocsf/1.8.0/` holds a subset of the official schema, compiled with `ocsf-lib`, plus the extraction script `scripts/ocsf/extract-subset.py`.
+
+### OCSF export limitations
+- Validation is local structural validation against the vendored subset, not the official OCSF validator.
+- Without a trusted expected head, a truncated but structurally valid prefix exports successfully.
+- The export is a derived view. It does not replace ACS evidence and does not provide SIEM integration, immutable storage or non-repudiation.
+
 ## [v0.3.0] - 2026-09-22
 
 ### Added
