@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## [v0.4.0] - 2026-09-29
+
+### Summary
+- Tamper-evident SHA-256 audit chain.
+- Trusted-head verification and a fail-closed integrity API.
+- OCSF 1.8.0 export of verified audit evidence as Base Event / Detection Finding.
+- Explicit metadata allowlist and deterministic JSONL output.
+- Official OCSF Toolkit cross-validation of a representative exporter corpus.
+- GitHub Actions verification on Node 22 and Node 24.
+
+### Limitations
+- The audit remains in memory.
+- No immutable storage, non-repudiation or external anchoring.
+- OCSF validation covers a representative corpus, not full OCSF validation or certification.
+- The OCSF Server validator was not run.
+- No SIEM integration.
+- No full ACS conformance or certification claim.
+
 ### Added
 - **Tamper-evident audit chain:** Audit events now carry a deterministic SHA-256 `event_hash` linked through `previous_hash`, with an explicit `GENESIS` convention.
 - **Trusted head verification:** Added the integrity API `audit.verifyIntegrity(expectedHeadHash?)`, `AuditCollector.verifyIntegrity(events, expectedHeadHash?)`, and `audit.assertIntegrity(events?, expectedHeadHash?)` so callers can combine linked validation with a trusted expected head for suffix-truncation detection.
@@ -26,6 +44,11 @@
 - Runtime validation is local structural validation against the vendored subset. Official OCSF Toolkit cross-validation covers a representative corpus only; the OCSF Server validator was not run.
 - Without a trusted expected head, a truncated but structurally valid prefix exports successfully.
 - The export is a derived view. It does not replace ACS evidence and does not provide SIEM integration, immutable storage or non-repudiation.
+
+### Added: CI
+- **GitHub Actions verification:** `.github/workflows/verify.yml` runs `npm ci` and `npm run verify` (typecheck and Jest) on a Node 22 and Node 24 matrix.
+- The workflow runs on `push` and `pull_request` triggers.
+- OCSF cross-validation is not part of CI; it remains a separate, local run through `scripts/ocsf/`.
 
 ## [v0.3.0] - 2026-09-22
 
