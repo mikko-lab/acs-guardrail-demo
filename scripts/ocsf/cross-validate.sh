@@ -4,12 +4,16 @@
 #   scripts/ocsf/setup-crossval-toolchain.sh   # once
 #   scripts/ocsf/cross-validate.sh
 #
-# Override the toolchain with OCSF_TOOLKIT=<binary> OCSF_SCHEMA=<compiled schema json>.
+# Override the toolchain with OCSF_TOOLKIT=<binary> OCSF_SCHEMA=<compiled schema json>;
+# the schema must still match the pinned SHA-256 in crossval-pins.sh.
 # Exit status is non-zero if the Toolkit reports any error, or any
 # validation_attribute_enum_sibling_suspicious_other warning, at default levels.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=crossval-pins.sh
+. "$SCRIPT_DIR/crossval-pins.sh"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BASE="${OCSF_CROSSVAL_DIR:-$ROOT/.ocsf-crossval}"
 TOOLKIT="${OCSF_TOOLKIT:-$BASE/toolchain/ocsf-toolkit}"
 SCHEMA="${OCSF_SCHEMA:-$BASE/toolchain/ocsf-schema-v1.8.0.json}"
@@ -18,6 +22,10 @@ OUT="$BASE/run"
 for f in "$TOOLKIT" "$SCHEMA"; do
   [ -e "$f" ] || { echo "error: $f not found; run scripts/ocsf/setup-crossval-toolchain.sh" >&2; exit 2; }
 done
+
+# Refuse to validate against any schema artifact other than the pinned one.
+schema_sha="$(verify_schema_sha "$SCHEMA")"
+echo "schema: $SCHEMA (sha256 $schema_sha, matches pin)"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"

@@ -158,7 +158,7 @@ Every mapped record is validated before being returned. This is **local structur
 
 Representative exporter output was cross-validated against the official OCSF 1.8.0 tooling. This is a check of a representative sample, not complete OCSF validation or certification.
 
-**Toolchain (pinned in `scripts/ocsf/setup-crossval-toolchain.sh`):**
+**Toolchain (pinned in `scripts/ocsf/crossval-pins.sh`):**
 
 | Component | Version |
 |---|---|
@@ -168,9 +168,15 @@ Representative exporter output was cross-validated against the official OCSF 1.8
 | Compiled schema | sha256 `1df1c2e9c023cc8767717844ab9b60f1071defa7d8994b89fc2c102b92f6fada` (also byte-identical when compiled on CPython 3.14.0rc2) |
 
 ```bash
-scripts/ocsf/setup-crossval-toolchain.sh   # needs git, go >= 1.25, uv; output in .ocsf-crossval/ (git-ignored)
+scripts/ocsf/setup-crossval-toolchain.sh   # needs git, go >= 1.25, uv, sha256sum or shasum; output in .ocsf-crossval/ (git-ignored)
 scripts/ocsf/cross-validate.sh             # non-zero exit on any Toolkit error or suspicious_other warning
 ```
+
+Both scripts fail closed on the toolchain:
+
+- `setup-crossval-toolchain.sh` checks the schema and Toolkit checkouts against the pinned commits. It verifies that `compiler-venv` really contains CPython 3.14.7 and `ocsf-schema-compiler` 1.1.1, and rebuilds it otherwise; if the rebuild cannot produce those versions, it exits non-zero. It prints the installed versions it read from the venv, not the pins.
+- Both scripts require the compiled schema to match the pinned SHA-256. On a mismatch they print the expected and actual hash and exit non-zero, so validation cannot silently run against another schema artifact. This also applies to a schema passed through `OCSF_SCHEMA`.
+- SHA-256 uses `sha256sum` (Linux) or `shasum -a 256` (macOS), and fails if neither is available.
 
 `cross-validate.sh` generates the corpus with `scripts/ocsf/generate-crossval-corpus.ts`: every event comes from `exportAuditToOcsf(...)` over an ACS audit stream (with a trusted head), none is written by hand. The corpus covers `tool_call_requested`, `guardian_decision` (deny, stays a Base Event), `tool_execution_completed` (success), `replay_rejected`, `capability_rejected` (`capability_agent_mismatch`), `result_guardian_decision` (deny), and the full audit stream of a real `GuardedExecutor` run (allow, replay, Guardian deny) through the existing test helpers. The Toolkit runs with `--validate` only, so events are not enriched or modified. All counts are computed from the Toolkit reports by `scripts/ocsf/summarize-crossval.py`.
 
