@@ -116,7 +116,7 @@ The exporter verifies the ACS hash chain before conversion, refuses to export an
 
 Without a trusted expected head hash, a structurally valid but truncated prefix of the stream still exports; supply `expectedHeadHash` (or `requireTrustedHead`) to detect truncation.
 
-Output is checked with local structural validation against a vendored subset of the official OCSF 1.8.0 schema. This is not the official OCSF validator.
+Every exported record is checked with local structural validation against a vendored subset of the official OCSF 1.8.0 schema. Separately, representative exporter output was cross-validated against the official OCSF 1.8.0 tooling (OCSF Toolkit v0.9.0 with a schema compiled by `ocsf-schema-compiler`): 0 errors and 0 warnings at default levels for 19 representative events. This is not complete OCSF validation or certification; see [Official cross-validation](docs/ocsf-export.md#official-cross-validation).
 
 OCSF export does not replace the original audit evidence and does not provide immutable storage or a complete SIEM integration. See [docs/ocsf-export.md](docs/ocsf-export.md).
 
@@ -125,7 +125,7 @@ OCSF export does not replace the original audit evidence and does not provide im
 `npm run verify` runs the TypeScript typecheck and Jest suite. The current verification result is:
 
 - **26 test suites passed**
-- **471 tests passed**
+- **479 tests passed**
 - **0 snapshots**
 
 The major tested categories are:
@@ -178,7 +178,7 @@ The crosswalk distinguishes pinned normative requirements, underspecified pinned
 - There is no universal mediation proof or coverage proof.
 - There are no production SLA, high-availability, or distributed-state guarantees.
 - Metrics are observability, not enforcement.
-- The OCSF 1.8.0 export is a derived view. It is not a SIEM integration, not durable or immutable storage, and not validated by the official OCSF validator (local vendored-subset structural validation only). Without a trusted head, a truncated valid prefix exports successfully.
+- The OCSF 1.8.0 export is a derived view. It is not a SIEM integration, not durable or immutable storage, and not fully validated or certified against OCSF: runtime validation is local vendored-subset structural validation, and official OCSF Toolkit cross-validation covers only a representative corpus of Base Events and Detection Findings. Without a trusted head, a truncated valid prefix exports successfully.
 - The local authority profile requires tool-bound `ApprovalGrantV2`; primitive `ApprovalGrantV1` remains available only for historical/backwards-compatible tests and is rejected by the authority-enabled runtime.
 - Approval `issued_at` freshness failures fail closed but do not emit a dedicated audit event.
 

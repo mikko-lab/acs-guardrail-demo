@@ -21,7 +21,7 @@ const jsonl = serializeOcsfJsonl(result.events);
 - Not an OpenShell integration.
 - Not a claim of universal runtime coverage. It exports only what `AuditCollector` recorded on the controlled runtime path.
 - Not a replacement for the ACS source evidence. The ACS events and hash chain remain the evidence; OCSF is a view derived from them.
-- Not complete OCSF schema validation (see [Validation](#validation)).
+- Not complete OCSF schema validation or OCSF certification (see [Validation](#validation) and [Official cross-validation](#official-cross-validation)).
 
 ## Integrity model
 
@@ -107,7 +107,7 @@ The Detection Finding rows are not a separate rule set. The exporter calls the e
 
 Each ACS event produces exactly one OCSF record, in source order.
 
-**Base Event (generic on purpose):** `class_uid 0`, `category_uid 0` ("Uncategorized"), `activity_id 99` ("Other") with `activity_name` = ACS event type, `type_uid 99`. `severity_id 0` ("Unknown"), because ACS audit events carry no severity and none is invented. `status_id` / `status` are set only for `tool_execution_completed`, from its recorded `status` (`success` → 1 Success, `error` → 2 Failure).
+**Base Event (generic on purpose):** `class_uid 0`, `category_uid 0` ("Uncategorized"), `activity_id 99` ("Other") with `activity_name` = ACS event type, `type_uid 99` with `type_name` = `"Base Event: <ACS event type>"` (e.g. `"Base Event: tool_call_requested"`). For enum id 99 OCSF expects the sibling to carry the source-specific value, following the `class_name: activity_name` convention; the generic caption `"Base Event: Other"` is not emitted. `severity_id 0` ("Unknown"), because ACS audit events carry no severity and none is invented. `status_id` / `status` are set only for `tool_execution_completed`, from its recorded `status` (`success` → 1 Success, `error` → 2 Failure).
 
 **Detection Finding:** `class_uid 2004`, `category_uid 2`, `activity_id 1` (Create), `type_uid 200401`. `severity_id` comes from the incident severity (low 2, medium 3, high 4, critical 5). `finding_info.uid` is the classifier's `incident_id`. `finding_info.title` and `types` come from the incident type. The incident's `disposition` and `requires_human_review` go in `unmapped.acs.incident`, not in OCSF `disposition_id`, because that attribute belongs to the `security_control` profile, which this export does not declare.
 
@@ -148,11 +148,51 @@ A new metadata key added to any runtime component will not appear in the export 
 Every mapped record is validated before being returned. This is **local structural validation against a vendored subset of OCSF 1.8.0**. It is not the official OCSF validator.
 
 - **Source:** the official `ocsf/ocsf-schema` repository at `v1.8.0` (commit `6fa6499a…`), compiled with the official `ocsf-lib` 0.10.4. The subset holds `base_event`, `detection_finding`, `metadata`, `product` and `finding_info`, plus all data types. See `schemas/ocsf/1.8.0/README.md`.
-- **Checks:** class is Base Event or Detection Finding; only attributes defined for the class/object (additional attributes rejected); required attributes; primitive types, arrays, type regex/range; enum ids; object `at_least_one` / `just_one` constraints; `type_uid = class_uid*100 + activity_id`; `_name` captions for non-Other enum ids; `metadata.version = "1.8.0"`.
+- **Checks:** class is Base Event or Detection Finding; only attributes defined for the class/object (additional attributes rejected); required attributes; primitive types, arrays, type regex/range; enum ids; object `at_least_one` / `just_one` constraints; `type_uid = class_uid*100 + activity_id`; `_name` captions for non-Other enum ids; `metadata.version = "1.8.0"`; exporter policy for enum id 99 (below).
+- **Exporter policy for enum id 99:** an integral enum id 99 whose sibling equals the generic schema caption of 99 (e.g. `type_uid 99` with `type_name "Base Event: Other"`) is rejected. This is stricter than OCSF: such an event is not invalid OCSF in general, and OCSF Toolkit reports it only as the warning `validation_attribute_enum_sibling_suspicious_other`. The exporter controls its output and must not produce it.
 - **Stricter than OCSF:** profile attributes (`actor`, `device`, `disposition_id` …) and attributes whose object type is not vendored are rejected, even though OCSF allows them.
 - **Not checked:** profiles, extensions, deprecations, observables, recommended attributes, and classes other than 0 and 2004.
-- **Why not the official tooling:** the OCSF Server (schema.ocsf.io), which provides the JSON Schema export and the event validation API, was not reachable from the build environment. `ocsf-lib` compiles the schema but does not validate events. Running a Phoenix/Elixir OCSF Server as a test dependency would be a disproportionate build burden for this demo. The JSON Schema used at runtime is generated from the vendored subset by `src/ocsf/validator.ts`. That translation is local code, so its correctness is a claim of this repository, not of OCSF.
-- **Open item:** the output has not been cross-checked against the OCSF Server's validator. Doing so is the recommended next step before calling the output validated by OCSF tooling.
+- **Local code:** the JSON Schema used at runtime is generated from the vendored subset by `src/ocsf/validator.ts`. That translation is local code, so its correctness is a claim of this repository, not of OCSF. The official tooling is not a runtime or `npm test` dependency; it is used for the separate cross-validation below.
+
+## Official cross-validation
+
+Representative exporter output was cross-validated against the official OCSF 1.8.0 tooling. This is a check of a representative sample, not complete OCSF validation or certification.
+
+**Toolchain (pinned in `scripts/ocsf/setup-crossval-toolchain.sh`):**
+
+| Component | Version |
+|---|---|
+| Validator | [`ocsf/ocsf-toolkit`](https://github.com/ocsf/ocsf-toolkit) `v0.9.0` (`a99619fcd148791a6a9fe5f82c1e0d839f658591`), built with Go 1.25.0 |
+| Schema | [`ocsf/ocsf-schema`](https://github.com/ocsf/ocsf-schema) `v1.8.0` (`6fa6499a0f8c9f449d342816e90e5f687c224b0a`) |
+| Schema compiler | `ocsf-schema-compiler` 1.1.1 (the compiler the Toolkit requires), default options, on CPython 3.14.7 |
+| Compiled schema | sha256 `1df1c2e9c023cc8767717844ab9b60f1071defa7d8994b89fc2c102b92f6fada` (also byte-identical when compiled on CPython 3.14.0rc2) |
+
+```bash
+scripts/ocsf/setup-crossval-toolchain.sh   # needs git, go >= 1.25, uv; output in .ocsf-crossval/ (git-ignored)
+scripts/ocsf/cross-validate.sh             # non-zero exit on any Toolkit error or suspicious_other warning
+```
+
+`cross-validate.sh` generates the corpus with `scripts/ocsf/generate-crossval-corpus.ts`: every event comes from `exportAuditToOcsf(...)` over an ACS audit stream (with a trusted head), none is written by hand. The corpus covers `tool_call_requested`, `guardian_decision` (deny, stays a Base Event), `tool_execution_completed` (success), `replay_rejected`, `capability_rejected` (`capability_agent_mismatch`), `result_guardian_decision` (deny), and the full audit stream of a real `GuardedExecutor` run (allow, replay, Guardian deny) through the existing test helpers. The Toolkit runs with `--validate` only, so events are not enriched or modified. All counts are computed from the Toolkit reports by `scripts/ocsf/summarize-crossval.py`.
+
+**Result (2026-09-29, local run; not a CI check):**
+
+| | Before `type_name` fix | After |
+|---|---|---|
+| Events | 19 (15 Base Event, 4 Detection Finding) | 19 (15 Base Event, 4 Detection Finding) |
+| Local validator failures | 0 | 0 |
+| Toolkit errors (default levels) | 0 | 0 |
+| Toolkit warnings (default levels) | 15 × `validation_attribute_enum_sibling_suspicious_other` on `type_name` | 0 |
+
+Informational only: with `validation_attribute_recommended_missing` enabled (default: ignored), the Toolkit lists missing recommended attributes such as `metadata.log_name`, `metadata.product.vendor_name`, `metadata.product.uid`, `metadata.reporter`, `metadata.tenant_uid`, `observables`, `status_code`, `status_detail`, `timezone_offset`, and on findings `finding_info.analytic`, `evidences`, `resources`, `confidence_id`, `is_alert`. They are intentionally absent: the ACS audit evidence has no trustworthy source for them, and they are not invented to silence the check.
+
+Negative controls (deliberately broken copies of corpus events, not exporter output) were rejected by the Toolkit with the expected codes: missing `time`, wrong `type_uid`, `actor` without its profile, `metadata.version 1.9.0`, an unknown attribute, missing `finding_info.uid`, and `activity_id 99` without `activity_name`.
+
+**Limits of this evidence:**
+
+- Only classes 0 and 2004 and only the representative corpus were validated.
+- The OCSF Server `/api/v2/validate` endpoint was not run (schema.ocsf.io was not reachable from the environment). OCSF Toolkit validation is based on that validator but has evolved independently with additional checks.
+- OCSF Toolkit is pre-1.0; its rules and default levels may change.
+- Corpus hashes and timestamps differ per run; the class and attribute shape does not.
 
 ## Known limitations and open questions
 
