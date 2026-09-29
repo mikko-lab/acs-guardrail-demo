@@ -24,3 +24,22 @@ dc265475139a922824f0c817e2ecc2a2ce31c06c
 
 This project is not affiliated with or endorsed by the OWASP Foundation,
 the OWASP GenAI Security Project, or the Agent Control Standard project.
+
+-------------------------------------------------------------------------------
+
+This project includes a derived subset of the Open Cybersecurity Schema
+Framework (OCSF) schema, version 1.8.0 (schemas/ocsf/1.8.0/), extracted from
+the official schema compiled with the official ocsf-lib compiler.
+
+Open Cybersecurity Schema Framework
+Copyright © OCSF a Series of LF Projects, LLC
+
+Licensed under the Apache License, Version 2.0.
+
+Source Repository:
+https://github.com/ocsf/ocsf-schema
+
+Pinned Source Tag / Commit:
+v1.8.0 / 6fa6499a0f8c9f449d342816e90e5f687c224b0a
+
+This project is not affiliated with or endorsed by the OCSF project.

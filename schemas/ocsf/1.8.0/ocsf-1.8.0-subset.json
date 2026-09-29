@@ -1,0 +1,1456 @@
+{
+  "ocsf_version": "1.8.0",
+  "source": {
+    "repository": "https://github.com/ocsf/ocsf-schema",
+    "tag": "v1.8.0",
+    "commit": "6fa6499a0f8c9f449d342816e90e5f687c224b0a",
+    "compiler": "ocsf-lib 0.10.4 (python -m ocsf.compile, default options)"
+  },
+  "note": "Vendored subset of the compiled OCSF 1.8.0 schema. Not the complete schema.",
+  "types": {
+    "boolean_t": {
+      "values": [
+        false,
+        true
+      ]
+    },
+    "bytestring_t": {
+      "type": "string_t",
+      "regex": "^(?:(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)|(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}==|[A-Za-z0-9_-]{3}=))?$"
+    },
+    "datetime_t": {
+      "type": "string_t",
+      "regex": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?([Zz]|[\\+-]\\d{2}:\\d{2})?$"
+    },
+    "email_t": {
+      "type": "string_t",
+      "regex": "^[a-zA-Z0-9!#$%&'*+-/=?^_`{|}~.]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$"
+    },
+    "file_hash_t": {
+      "type": "string_t"
+    },
+    "file_name_t": {
+      "type": "string_t"
+    },
+    "file_path_t": {
+      "type": "string_t"
+    },
+    "float_t": {},
+    "hostname_t": {
+      "type": "string_t"
+    },
+    "integer_t": {},
+    "ip_t": {
+      "type": "string_t",
+      "regex": "((^\\s*((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]).){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))\\s*$)|(^\\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:)))(%.+)?\\s*$))",
+      "max_len": 40
+    },
+    "json_t": {},
+    "long_t": {},
+    "mac_t": {
+      "type": "string_t",
+      "regex": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$",
+      "max_len": 32
+    },
+    "port_t": {
+      "type": "integer_t",
+      "range": [
+        0,
+        65535
+      ]
+    },
+    "process_name_t": {
+      "type": "string_t"
+    },
+    "reg_key_path_t": {
+      "type": "string_t"
+    },
+    "resource_uid_t": {
+      "type": "string_t"
+    },
+    "string_t": {},
+    "subnet_t": {
+      "type": "string_t",
+      "max_len": 42
+    },
+    "timestamp_t": {
+      "type": "long_t"
+    },
+    "url_t": {
+      "type": "string_t"
+    },
+    "username_t": {
+      "type": "string_t"
+    },
+    "uuid_t": {
+      "type": "string_t",
+      "regex": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    }
+  },
+  "classes": {
+    "base_event": {
+      "caption": "Base Event",
+      "uid": 0,
+      "profiles": [
+        "cloud",
+        "datetime",
+        "host",
+        "osint",
+        "security_control"
+      ],
+      "constraints": null,
+      "attributes": {
+        "action": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "action_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Unknown",
+            "1": "Allowed",
+            "2": "Denied",
+            "3": "Observed",
+            "4": "Modified",
+            "99": "Other"
+          }
+        },
+        "activity_id": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "0": "Unknown",
+            "99": "Other"
+          }
+        },
+        "activity_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "actor": {
+          "type": "actor",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "host"
+        },
+        "api": {
+          "type": "api",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "cloud"
+        },
+        "attacks": {
+          "type": "attack",
+          "requirement": "optional",
+          "is_array": true,
+          "profile": "security_control"
+        },
+        "authorizations": {
+          "type": "authorization",
+          "requirement": "optional",
+          "is_array": true,
+          "profile": "security_control"
+        },
+        "category_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "category_uid": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "0": "Uncategorized"
+          }
+        },
+        "class_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "class_uid": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "0": "Base Event"
+          }
+        },
+        "cloud": {
+          "type": "cloud",
+          "requirement": "required",
+          "is_array": false,
+          "profile": "cloud"
+        },
+        "confidence": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "confidence_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Unknown",
+            "1": "Low",
+            "2": "Medium",
+            "3": "High",
+            "99": "Other"
+          }
+        },
+        "confidence_score": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "count": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "device": {
+          "type": "device",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "host"
+        },
+        "disposition": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "disposition_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Unknown",
+            "1": "Allowed",
+            "2": "Blocked",
+            "3": "Quarantined",
+            "4": "Isolated",
+            "5": "Deleted",
+            "6": "Dropped",
+            "7": "Custom Action",
+            "8": "Approved",
+            "9": "Restored",
+            "10": "Exonerated",
+            "11": "Corrected",
+            "12": "Partially Corrected",
+            "13": "Uncorrected",
+            "14": "Delayed",
+            "15": "Detected",
+            "16": "No Action",
+            "17": "Logged",
+            "18": "Tagged",
+            "19": "Alert",
+            "20": "Count",
+            "21": "Reset",
+            "22": "Captcha",
+            "23": "Challenge",
+            "24": "Access Revoked",
+            "25": "Rejected",
+            "26": "Unauthorized",
+            "27": "Error",
+            "99": "Other"
+          }
+        },
+        "duration": {
+          "type": "long_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "end_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "end_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "enrichments": {
+          "type": "enrichment",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "firewall_rule": {
+          "type": "firewall_rule",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "is_alert": {
+          "type": "boolean_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "malware": {
+          "type": "malware",
+          "requirement": "optional",
+          "is_array": true,
+          "profile": "security_control"
+        },
+        "malware_scan_info": {
+          "type": "malware_scan_info",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "message": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "metadata": {
+          "type": "metadata",
+          "requirement": "required",
+          "is_array": false
+        },
+        "observables": {
+          "type": "observable",
+          "requirement": "recommended",
+          "is_array": true
+        },
+        "osint": {
+          "type": "osint",
+          "requirement": "required",
+          "is_array": true,
+          "profile": "osint"
+        },
+        "policy": {
+          "type": "policy",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "raw_data": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "raw_data_hash": {
+          "type": "fingerprint",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "raw_data_size": {
+          "type": "long_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "risk_details": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "risk_level": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "risk_level_id": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Info",
+            "1": "Low",
+            "2": "Medium",
+            "3": "High",
+            "4": "Critical",
+            "99": "Other"
+          }
+        },
+        "risk_score": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "severity": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "severity_id": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "0": "Unknown",
+            "1": "Informational",
+            "2": "Low",
+            "3": "Medium",
+            "4": "High",
+            "5": "Critical",
+            "6": "Fatal",
+            "99": "Other"
+          }
+        },
+        "start_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "start_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "status": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "status_code": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "status_detail": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "status_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "enum": {
+            "0": "Unknown",
+            "1": "Success",
+            "2": "Failure",
+            "99": "Other"
+          }
+        },
+        "time": {
+          "type": "timestamp_t",
+          "requirement": "required",
+          "is_array": false
+        },
+        "time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "timezone_offset": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "type_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "type_uid": {
+          "type": "long_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "0": "Base Event: Unknown",
+            "99": "Base Event: Other"
+          }
+        },
+        "unmapped": {
+          "type": "object",
+          "requirement": "optional",
+          "is_array": false
+        }
+      }
+    },
+    "detection_finding": {
+      "caption": "Detection Finding",
+      "uid": 2004,
+      "profiles": [
+        "cloud",
+        "datetime",
+        "host",
+        "incident",
+        "osint",
+        "security_control"
+      ],
+      "constraints": null,
+      "attributes": {
+        "action": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "action_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Unknown",
+            "1": "Allowed",
+            "2": "Denied",
+            "3": "Observed",
+            "4": "Modified",
+            "99": "Other"
+          }
+        },
+        "activity_id": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "0": "Unknown",
+            "1": "Create",
+            "2": "Update",
+            "3": "Close",
+            "99": "Other"
+          }
+        },
+        "activity_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "actor": {
+          "type": "actor",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "host"
+        },
+        "anomaly_analyses": {
+          "type": "anomaly_analysis",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "api": {
+          "type": "api",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "cloud"
+        },
+        "assignee": {
+          "type": "user",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "assignee_group": {
+          "type": "group",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "attacks": {
+          "type": "attack",
+          "requirement": "optional",
+          "is_array": true,
+          "profile": "security_control"
+        },
+        "authorizations": {
+          "type": "authorization",
+          "requirement": "optional",
+          "is_array": true,
+          "profile": "security_control"
+        },
+        "category_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "category_uid": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "2": "Findings"
+          }
+        },
+        "class_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "class_uid": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "2004": "Detection Finding"
+          }
+        },
+        "cloud": {
+          "type": "cloud",
+          "requirement": "required",
+          "is_array": false,
+          "profile": "cloud"
+        },
+        "comment": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "confidence": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "confidence_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Unknown",
+            "1": "Low",
+            "2": "Medium",
+            "3": "High",
+            "99": "Other"
+          }
+        },
+        "confidence_score": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "count": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "device": {
+          "type": "device",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "host"
+        },
+        "disposition": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "disposition_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Unknown",
+            "1": "Allowed",
+            "2": "Blocked",
+            "3": "Quarantined",
+            "4": "Isolated",
+            "5": "Deleted",
+            "6": "Dropped",
+            "7": "Custom Action",
+            "8": "Approved",
+            "9": "Restored",
+            "10": "Exonerated",
+            "11": "Corrected",
+            "12": "Partially Corrected",
+            "13": "Uncorrected",
+            "14": "Delayed",
+            "15": "Detected",
+            "16": "No Action",
+            "17": "Logged",
+            "18": "Tagged",
+            "19": "Alert",
+            "20": "Count",
+            "21": "Reset",
+            "22": "Captcha",
+            "23": "Challenge",
+            "24": "Access Revoked",
+            "25": "Rejected",
+            "26": "Unauthorized",
+            "27": "Error",
+            "99": "Other"
+          }
+        },
+        "duration": {
+          "type": "long_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "end_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "end_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "enrichments": {
+          "type": "enrichment",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "evidences": {
+          "type": "evidences",
+          "requirement": "recommended",
+          "is_array": true
+        },
+        "finding_info": {
+          "type": "finding_info",
+          "requirement": "required",
+          "is_array": false
+        },
+        "firewall_rule": {
+          "type": "firewall_rule",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "impact": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "impact_id": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident",
+          "enum": {
+            "0": "Unknown",
+            "1": "Low",
+            "2": "Medium",
+            "3": "High",
+            "4": "Critical",
+            "99": "Other"
+          }
+        },
+        "impact_score": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "is_alert": {
+          "type": "boolean_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "is_suspected_breach": {
+          "type": "boolean_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "malware": {
+          "type": "malware",
+          "requirement": "optional",
+          "is_array": true,
+          "profile": "security_control"
+        },
+        "malware_scan_info": {
+          "type": "malware_scan_info",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "message": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "metadata": {
+          "type": "metadata",
+          "requirement": "required",
+          "is_array": false
+        },
+        "observables": {
+          "type": "observable",
+          "requirement": "recommended",
+          "is_array": true
+        },
+        "osint": {
+          "type": "osint",
+          "requirement": "required",
+          "is_array": true,
+          "profile": "osint"
+        },
+        "policy": {
+          "type": "policy",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "priority": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "priority_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "incident",
+          "enum": {
+            "0": "Unknown",
+            "1": "Low",
+            "2": "Medium",
+            "3": "High",
+            "4": "Critical",
+            "99": "Other"
+          }
+        },
+        "raw_data": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "raw_data_hash": {
+          "type": "fingerprint",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "raw_data_size": {
+          "type": "long_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "remediation": {
+          "type": "remediation",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "resources": {
+          "type": "resource_details",
+          "requirement": "recommended",
+          "is_array": true
+        },
+        "risk_details": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "risk_level": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "risk_level_id": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control",
+          "enum": {
+            "0": "Info",
+            "1": "Low",
+            "2": "Medium",
+            "3": "High",
+            "4": "Critical",
+            "99": "Other"
+          }
+        },
+        "risk_score": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "security_control"
+        },
+        "severity": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "severity_id": {
+          "type": "integer_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "0": "Unknown",
+            "1": "Informational",
+            "2": "Low",
+            "3": "Medium",
+            "4": "High",
+            "5": "Critical",
+            "6": "Fatal",
+            "99": "Other"
+          }
+        },
+        "src_url": {
+          "type": "url_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "start_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "start_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "status": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "status_code": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "status_detail": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "status_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "enum": {
+            "0": "Unknown",
+            "1": "New",
+            "2": "In Progress",
+            "3": "Suppressed",
+            "4": "Resolved",
+            "5": "Archived",
+            "6": "Deleted",
+            "99": "Other"
+          }
+        },
+        "ticket": {
+          "type": "ticket",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "tickets": {
+          "type": "ticket",
+          "requirement": "optional",
+          "is_array": true,
+          "profile": "incident"
+        },
+        "time": {
+          "type": "timestamp_t",
+          "requirement": "required",
+          "is_array": false
+        },
+        "time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "timezone_offset": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "type_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "type_uid": {
+          "type": "long_t",
+          "requirement": "required",
+          "is_array": false,
+          "enum": {
+            "200400": "Detection Finding: Unknown",
+            "200401": "Detection Finding: Create",
+            "200402": "Detection Finding: Update",
+            "200403": "Detection Finding: Close",
+            "200499": "Detection Finding: Other"
+          }
+        },
+        "unmapped": {
+          "type": "object",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "vendor_attributes": {
+          "type": "vendor_attributes",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "verdict": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "incident"
+        },
+        "verdict_id": {
+          "type": "integer_t",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "incident",
+          "enum": {
+            "0": "Unknown",
+            "1": "False Positive",
+            "2": "True Positive",
+            "3": "Disregard",
+            "4": "Suspicious",
+            "5": "Benign",
+            "6": "Test",
+            "7": "Insufficient Data",
+            "8": "Security Risk",
+            "9": "Managed Externally",
+            "10": "Duplicate",
+            "99": "Other"
+          }
+        },
+        "vulnerabilities": {
+          "type": "vulnerability",
+          "requirement": "optional",
+          "is_array": true
+        }
+      }
+    }
+  },
+  "objects": {
+    "metadata": {
+      "caption": "Metadata",
+      "constraints": null,
+      "attributes": {
+        "correlation_uid": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "data_classification": {
+          "type": "data_classification",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "data_classification"
+        },
+        "data_classifications": {
+          "type": "data_classification",
+          "requirement": "recommended",
+          "is_array": true,
+          "profile": "data_classification"
+        },
+        "debug": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "event_code": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "extension": {
+          "type": "extension",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "extensions": {
+          "type": "extension",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "is_truncated": {
+          "type": "boolean_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "labels": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "log_format": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "log_level": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "log_name": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "log_provider": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "log_source": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "log_version": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "logged_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "logged_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "loggers": {
+          "type": "logger",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "modified_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "modified_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "original_event_uid": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "original_time": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "processed_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "processed_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "product": {
+          "type": "product",
+          "requirement": "required",
+          "is_array": false
+        },
+        "profiles": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "reporter": {
+          "type": "reporter",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "sequence": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "source": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "tags": {
+          "type": "key_value_object",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "tenant_uid": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "total_queued_duration": {
+          "type": "timespan",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "transformation_info_list": {
+          "type": "transformation_info",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "transmit_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "transmit_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "type": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "uid": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "untruncated_size": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "version": {
+          "type": "string_t",
+          "requirement": "required",
+          "is_array": false
+        }
+      }
+    },
+    "product": {
+      "caption": "Product",
+      "constraints": {
+        "at_least_one": [
+          "name",
+          "uid"
+        ]
+      },
+      "attributes": {
+        "cpe_name": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "data_classification": {
+          "type": "data_classification",
+          "requirement": "recommended",
+          "is_array": false,
+          "profile": "data_classification"
+        },
+        "data_classifications": {
+          "type": "data_classification",
+          "requirement": "recommended",
+          "is_array": true,
+          "profile": "data_classification"
+        },
+        "feature": {
+          "type": "feature",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "lang": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "name": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "path": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "uid": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "url_string": {
+          "type": "url_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "vendor_name": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "version": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        }
+      }
+    },
+    "finding_info": {
+      "caption": "Finding Information",
+      "constraints": null,
+      "attributes": {
+        "analytic": {
+          "type": "analytic",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "attack_graph": {
+          "type": "graph",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "attacks": {
+          "type": "attack",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "created_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "created_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "data_sources": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "desc": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "first_seen_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "first_seen_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "kill_chain": {
+          "type": "kill_chain_phase",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "last_seen_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "last_seen_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "modified_time": {
+          "type": "timestamp_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "modified_time_dt": {
+          "type": "datetime_t",
+          "requirement": "optional",
+          "is_array": false,
+          "profile": "datetime"
+        },
+        "product": {
+          "type": "product",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "product_uid": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "related_analytics": {
+          "type": "analytic",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "related_events": {
+          "type": "related_event",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "related_events_count": {
+          "type": "integer_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "src_url": {
+          "type": "url_t",
+          "requirement": "optional",
+          "is_array": false
+        },
+        "tags": {
+          "type": "key_value_object",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "title": {
+          "type": "string_t",
+          "requirement": "recommended",
+          "is_array": false
+        },
+        "traits": {
+          "type": "trait",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "types": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": true
+        },
+        "uid": {
+          "type": "string_t",
+          "requirement": "required",
+          "is_array": false
+        },
+        "uid_alt": {
+          "type": "string_t",
+          "requirement": "optional",
+          "is_array": false
+        }
+      }
+    }
+  }
+}
