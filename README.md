@@ -66,7 +66,7 @@ This is evidence about the controlled runtime path, not a proof that every possi
 
 ## Authority revocation
 
-`GuardedExecutor.revoke(target)` is a trusted-integrator API that revokes a capability (`capability_id`) or a session. Revocation is explicit, monotonic and idempotent, and `clearSession()` never removes it. Revoked authority is denied at the request, approval, start and delivery boundaries; approval additionally re-checks the original capability's current validity and that the provider still resolves a capability for the same context. A tool that is already running is not stopped and its side effects are not prevented: only its result delivery is withheld. The returned receipt names the target, its effective point, the covered pending approvals and in-flight executions, and states that in-flight side effects are not prevented. Revocation state is in memory for one executor instance and does not survive a restart. Tenant and delegated-authority scopes, cancellation, a commit fence and terminal evidence are not provided. See [docs/authority-revocation.md](docs/authority-revocation.md).
+`GuardedExecutor.revoke(target)` is a trusted-integrator API that revokes a capability (`capability_id`) or a session. Revocation is explicit, monotonic and idempotent, and `clearSession()` never removes it. Revoked authority is denied at the request, approval, start and delivery boundaries (start is effective at the tool function call, delivery at the fulfilment of the public API promise); approval additionally re-checks the original capability's current validity and that the provider still resolves a capability for the same context. A tool that is already running is not stopped and its side effects are not prevented: only its result delivery is withheld. The returned receipt names the target, its effective point, the covered pending approvals and in-flight executions, and states that in-flight side effects are not prevented. Revocation state is in memory for one executor instance and does not survive a restart. Tenant and delegated-authority scopes, cancellation, a commit fence and terminal evidence are not provided. See [docs/authority-revocation.md](docs/authority-revocation.md).
 
 ## Concurrent authority isolation
 
@@ -129,7 +129,7 @@ OCSF export does not replace the original audit evidence and does not provide im
 `npm run verify` runs the TypeScript typecheck and Jest suite. The current verification result is:
 
 - **27 test suites passed**
-- **504 tests passed**
+- **514 tests passed**
 - **0 snapshots**
 
 The major tested categories are:

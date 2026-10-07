@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Revocation effective points:** start is enforced immediately before the tool function call (after the `tool_execution_started` audit record, via an optional `beforeInvoke` guard on `ExecutionGate.execute()`), and delivery at the fulfilment of the public `process()` / `resolveApproval()` promise, so revocations from synchronous callbacks or Promise transitions on the path are honoured.
 - **Authority revocation (A1):** `GuardedExecutor.revoke({ scope: "capability", capability_id } | { scope: "session", session_id })` records an explicit, monotonic, idempotent revocation and returns a `RevocationReceiptV1`. Revoked authority is denied at the request, approval, start and delivery boundaries (`AuthorityRevokedError`, `authority_revocation_enforced`, `tool_result_withheld` with a revocation reason). New audit event types `authority_revoked` and `authority_revocation_enforced` with explicit OCSF metadata allowlists. See `docs/authority-revocation.md`.
 
 ### Changed

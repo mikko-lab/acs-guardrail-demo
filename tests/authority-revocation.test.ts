@@ -6,6 +6,7 @@ import { RevocationTargetError } from "../src/authority-revocation";
 import type { AuditEvent, AuditEventType } from "../src/acs-types";
 import { exportAuditToOcsf, validateOcsfEvent } from "../src/ocsf";
 import { IncidentClassifier } from "../src/incident-evidence";
+import { inspect } from "node:util";
 
 type Ctx = ReturnType<typeof setup>;
 type Deferred = { promise: Promise<void>; resolve: () => void };
@@ -383,5 +384,120 @@ describe("Approval-time capability validity versus the pending timeout boundary"
     expect(types(ctx)).not.toContain("tool_execution_started");
     expect(types(ctx)).not.toContain("approval_expired");
     expect(eventsOf(ctx, "capability_rejected").map(e => [e.metadata!.reason, e.metadata!.stage])).toEqual([["capability_expired", "approval"]]);
+  });
+});
+
+/**
+ * Re-entrancy at the start and delivery effective points. The audit hook only revokes (as any synchronous
+ * callback on the path could); it never blocks or filters. Start tests count real tool invocations; delivery
+ * tests inspect what the public API returns.
+ */
+describe("Authority revocation: effective points under synchronous re-entrancy and Promise transitions", () => {
+  /** Calls `after` once, synchronously, right after the runtime records an audit event of `type`. */
+  function onAudit(ctx: Ctx, type: AuditEventType, after: () => void) {
+    const recordOriginal = AuditCollector.prototype.record;
+    let fired = false;
+    jest.spyOn(ctx.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
+      recordOriginal.call(this, id, t, meta);
+      if (t === type && !fired) { fired = true; after(); }
+    });
+  }
+  const capabilityOf = (ctx: Ctx, requestId: string) => capabilityOfAsk(ctx, requestId);
+  const raw = (x: unknown) => JSON.stringify(x).includes("tool-output");
+  const targets = (ctx: Ctx, req: ReturnType<typeof makeRequest>) => ({
+    session: () => ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) }),
+    capability: () => ctx.executor.revoke({ scope: "capability", capability_id: capabilityOf(ctx, req.params.request_id) }),
+  });
+
+  for (const scope of ["session", "capability"] as const) {
+    it(`REV-14 ${scope} revoke from the tool_execution_started audit hook: the tool function is never called`, async () => {
+      const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "read_record");
+      const req = makeRequest({ tool: "read_record", sessionId: `rev-14-${scope}`, requestId: `rev-14-${scope}-a` }, ctx.clock);
+      onAudit(ctx, "tool_execution_started", targets(ctx, req)[scope]);
+      await expect(ctx.executor.process(req)).rejects.toMatchObject({ code: "AUTHORITY_REVOKED", stage: "start" });
+      expect(log).toEqual([]);
+      expect(types(ctx)).not.toContain("tool_execution_completed");
+      expect(types(ctx)).not.toContain("tool_result_delivered");
+    });
+
+    it(`REV-15 ${scope} revoke from the tool_result_delivered audit hook: no raw output is returned`, async () => {
+      const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "read_record");
+      const req = makeRequest({ tool: "read_record", sessionId: `rev-15-${scope}`, requestId: `rev-15-${scope}-a` }, ctx.clock);
+      onAudit(ctx, "tool_result_delivered", targets(ctx, req)[scope]);
+      const out = await ctx.executor.process(req);
+      expect(raw(out)).toBe(false);
+      expect((out as { result: { exit_status: string; outputs: unknown[] } }).result).toMatchObject({ exit_status: "blocked", outputs: [{ value: { code: `${scope}_revoked` } }] });
+      expect(log).toEqual(["read_record:executed"]); // the side effect happened; only the hand-over is withheld
+      expect(eventsOf(ctx, "authority_revocation_enforced").map(e => [e.metadata!.stage, e.metadata!.boundary])).toEqual([["delivery", "api_return"]]);
+    });
+  }
+
+  it("REV-16 approval path: a revoke from the tool_execution_started audit hook prevents the tool call", async () => {
+    const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "update_record");
+    const req = makeRequest({ tool: "update_record", sessionId: "rev-16", requestId: "rev-16-a" }, ctx.clock);
+    await ctx.executor.process(req);
+    onAudit(ctx, "tool_execution_started", targets(ctx, req).session);
+    await expect(ctx.executor.resolveApproval(approve(ctx, req))).rejects.toMatchObject({ code: "AUTHORITY_REVOKED", stage: "start" });
+    expect(log).toEqual([]);
+  });
+
+  it("REV-16b approval path: a revoke from the tool_result_delivered audit hook withholds the raw output", async () => {
+    const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "update_record");
+    const req = makeRequest({ tool: "update_record", sessionId: "rev-16b", requestId: "rev-16b-a" }, ctx.clock);
+    await ctx.executor.process(req);
+    onAudit(ctx, "tool_result_delivered", targets(ctx, req).session);
+    const out = await ctx.executor.resolveApproval(approve(ctx, req));
+    expect(raw(out)).toBe(false);
+    expect(out).toMatchObject({ exit_status: "blocked", outputs: [{ value: { code: "session_revoked" } }] });
+    expect(log).toEqual(["update_record:executed"]);
+  });
+
+  for (const hook of ["tool_execution_started", "tool_result_delivered"] as const) {
+    it(`REV-17 untargeted revocations from the ${hook} audit hook: the allowed execution and its output succeed`, async () => {
+      const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "read_record");
+      const req = makeRequest({ tool: "read_record", sessionId: "rev-17", requestId: `rev-17-${hook}` }, ctx.clock);
+      onAudit(ctx, hook, () => {
+        ctx.executor.revoke({ scope: "session", session_id: sessionOf(makeRequest({ sessionId: "rev-17-other" })) });
+        ctx.executor.revoke({ scope: "capability", capability_id: "unrelated-capability" });
+      });
+      const out = await ctx.executor.process(req);
+      expect(raw(out)).toBe(true);
+      expect((out as { result: { exit_status: string } }).result.exit_status).toBe("success");
+      expect(log).toEqual(["read_record:executed"]);
+      expect(types(ctx)).not.toContain("authority_revocation_enforced");
+    });
+  }
+
+  it("REV-18 a revocation after the public call has returned does not recall the result", async () => {
+    const ctx = setup(Date.now()); countingTool([], "read_record");
+    const req = makeRequest({ tool: "read_record", sessionId: "rev-18", requestId: "rev-18-a" }, ctx.clock);
+    const p = ctx.executor.process(req);
+    const out = await p.then(value => { ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) }); return value; });
+    expect(raw(out)).toBe(true);
+    expect(types(ctx)).not.toContain("authority_revocation_enforced");
+  });
+
+  it("REV-19 Promise transitions: a revocation is honoured iff it lands before the public promise is fulfilled", async () => {
+    // Sweep: the tool returns, then a revocation is issued after N further microtasks. The public promise's own
+    // state (inspected synchronously at revocation time) is the reference for the delivery effective point.
+    const outcomes: { n: number; pendingAtRevoke: boolean; rawReturned: boolean }[] = [];
+    for (let n = 0; n <= 40; n++) {
+      const ctx = setup(Date.now());
+      let p!: Promise<unknown>; let pendingAtRevoke = false;
+      tools.read_record = async () => {
+        let chain = Promise.resolve();
+        for (let i = 0; i < n; i++) chain = chain.then(() => undefined);
+        void chain.then(() => { pendingAtRevoke = inspect(p).includes("<pending>"); ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) }); });
+        return { status: "success", data: "tool-output" };
+      };
+      const req = makeRequest({ tool: "read_record", sessionId: `rev-19-${n}`, requestId: `rev-19-${n}-a` }, ctx.clock);
+      p = ctx.executor.process(req);
+      const out = await p;
+      outcomes.push({ n, pendingAtRevoke, rawReturned: raw(out) });
+    }
+    for (const o of outcomes) expect({ n: o.n, rawReturned: o.rawReturned }).toEqual({ n: o.n, rawReturned: !o.pendingAtRevoke });
+    // The sweep covers both sides of the effective point.
+    expect(outcomes.some(o => o.pendingAtRevoke)).toBe(true);
+    expect(outcomes.some(o => !o.pendingAtRevoke)).toBe(true);
   });
 });

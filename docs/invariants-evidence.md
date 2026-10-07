@@ -66,6 +66,9 @@ Specification: [authority-revocation.md](authority-revocation.md). Evidence: `te
 - **Unrevoked clearSession/replay behaviour unchanged; audit failure does not re-open access; receipt content**: `REV-11`, `REV-12`, `REV-receipt`
 - **Pending timeout boundary versus approval-time capability validity**: `REV-13a` (approved at exactly the timeout while the capability is valid), `REV-13b` (rejected past the timeout), `REV-13c` (rejected at exactly `expires_at` while the pending action is valid); no tool start on rejection
 - **Revocation evidence exports as validated OCSF Base Events and is not an incident**: `REV-ocsf`
+- **Start effective point is the tool function call: a revocation from the `tool_execution_started` audit callback prevents the call (session and capability, ALLOW and approval paths)**: `REV-14`, `REV-16`
+- **Delivery effective point is the fulfilment of the public promise: a revocation from the `tool_result_delivered` audit callback withholds the raw output; a revocation in any Promise transition before fulfilment is honoured, after it is not**: `REV-15`, `REV-16b`, `REV-19`, `REV-18`
+- **Untargeted revocations from the same callbacks do not affect the execution or its output**: `REV-17`
 
 ## H. Audit Evidence
 - **H1 DENY evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A2`)

@@ -28,8 +28,10 @@
  *   revoke(target) is a trusted-integrator API, not reachable from agent requests.
  *   It records a monotonic, in-memory revocation of a capability or a session.
  *   Revoked authority is denied at the request, approval, start and delivery
- *   boundaries. A tool that is already running is NOT stopped and its side
- *   effects are NOT prevented; only its result delivery is withheld.
+ *   boundaries. The start effective point is the tool function call; the
+ *   delivery effective point is the fulfilment of the public process() /
+ *   resolveApproval() promise. A tool that is already running is NOT stopped
+ *   and its side effects are NOT prevented; only its result delivery is withheld.
  *   clearSession() releases session state and never removes a revocation.
  */
 
@@ -70,6 +72,11 @@ interface PendingAction {
   agentId: string;
   capability: CapabilityGrantV1;
 }
+
+/** Result of internal result processing, before the public hand-over check. */
+type ResultOutcome =
+  | { delivered: false; result: AcsToolCallResult }
+  | { delivered: true; result: AcsToolCallResult; resultRequestId: string; requestIdRef: string; authority: { sessionId: string; capabilityId: string } };
 
 /** Boundary at which revoked authority was enforced. */
 export type RevocationStage = "request" | "approval" | "start" | "delivery";
@@ -374,12 +381,13 @@ export class GuardedExecutor {
     }
 
     // decision === "allow"
-    const result = await this.executeAndProcessResult(request, response, verifiedCapability.capability_id);
-    return { status: "executed", result };
+    const outcome = await this.executeAndProcessResult(request, response, verifiedCapability.capability_id);
+    // Nothing may run between the hand-over check and the return that fulfils the public promise.
+    return { status: "executed", result: this.#handOver(outcome) };
   }
 
 
-  private async processResultRequest(signedResultRequest: import("./acs-types").AcsToolCallResultRequest, authority: { sessionId: string; capabilityId: string }): Promise<import("./acs-types").AcsToolCallResult> {
+  private async processResultRequest(signedResultRequest: import("./acs-types").AcsToolCallResultRequest, authority: { sessionId: string; capabilityId: string }): Promise<ResultOutcome> {
     let request: import("./acs-types").AcsToolCallResultRequest;
     try {
       const validated = this.schemaValidator.validateRequest(signedResultRequest);
@@ -431,47 +439,68 @@ export class GuardedExecutor {
     if (response.result.decision === "deny") {
       this.audit.record(params.request_id, "tool_result_withheld", { tool: payload.tool.name });
       return {
-        tool: payload.tool,
-        request_id_ref: requestIdRef,
-        exit_status: "blocked",
-        outputs: [{ value: { error: "Output withheld by policy." } }]
+        delivered: false,
+        result: {
+          tool: payload.tool,
+          request_id_ref: requestIdRef,
+          exit_status: "blocked",
+          outputs: [{ value: { error: "Output withheld by policy." } }]
+        }
       };
     }
 
-    // Delivery fence: the authority bound to the execution is checked synchronously immediately before
-    // the result is handed back to the caller of process()/resolveApproval(). The tool's side effects
-    // have already happened and are not undone.
+    // Early delivery check in result processing. The binding check is #handOver() at the public API return.
+    const outcome: ResultOutcome = { delivered: true, result: payload, resultRequestId: params.request_id, requestIdRef, authority };
     const revoked = this.#revocationAt("delivery", params.request_id, {
       session_id: authority.sessionId,
       capability_id: authority.capabilityId,
       tool: payload.tool.name,
-    }, { request_id_ref: requestIdRef });
-    if (revoked) {
-      try {
-        this.audit.record(params.request_id, "tool_result_withheld", { tool: payload.tool.name, reason: revoked.reason });
-      } catch {
-        // Audit failure must not turn a withheld result into a delivery.
-      }
-      return {
-        tool: payload.tool,
-        request_id_ref: requestIdRef,
-        exit_status: "blocked",
-        outputs: [{ value: { error: "Output withheld: authority revoked.", code: revoked.reason } }]
-      };
-    }
+    }, { request_id_ref: requestIdRef, boundary: "result_processing" });
+    if (revoked) return { delivered: false, result: this.#withheldForRevocation(outcome, revoked) };
 
+    // Records the runtime's delivery decision. It is decision evidence, not proof of hand-over: a revocation
+    // that takes effect after this record (including from within it) is still enforced by #handOver().
     this.audit.record(params.request_id, "tool_result_delivered", { tool: payload.tool.name });
-    return payload;
+    return outcome;
   }
 
-  private async executeAndProcessResult(request: import("./acs-types").AcsToolCallRequest, response: import("./acs-types").AcsResponseEnvelope, capabilityId: string): Promise<import("./acs-types").AcsToolCallResult> {
+  /**
+   * Delivery effective point. Called synchronously by process() and resolveApproval() after their last await,
+   * directly in their return statement, so the check is the last runtime action before the public promise is
+   * fulfilled with the result. No callback or Promise transition remains between this check and the hand-over.
+   */
+  #handOver(outcome: ResultOutcome): import("./acs-types").AcsToolCallResult {
+    if (!outcome.delivered) return outcome.result;
+    const revoked = this.#revocationAt("delivery", outcome.resultRequestId, {
+      session_id: outcome.authority.sessionId,
+      capability_id: outcome.authority.capabilityId,
+      tool: outcome.result.tool.name,
+    }, { request_id_ref: outcome.requestIdRef, boundary: "api_return" });
+    return revoked ? this.#withheldForRevocation(outcome, revoked) : outcome.result;
+  }
+
+  #withheldForRevocation(outcome: Extract<ResultOutcome, { delivered: true }>, revoked: RevocationMatch): import("./acs-types").AcsToolCallResult {
+    try {
+      this.audit.record(outcome.resultRequestId, "tool_result_withheld", { tool: outcome.result.tool.name, reason: revoked.reason });
+    } catch {
+      // Audit failure must not turn a withheld result into a delivery.
+    }
+    return {
+      tool: outcome.result.tool,
+      request_id_ref: outcome.requestIdRef,
+      exit_status: "blocked",
+      outputs: [{ value: { error: "Output withheld: authority revoked.", code: revoked.reason } }]
+    };
+  }
+
+  private async executeAndProcessResult(request: import("./acs-types").AcsToolCallRequest, response: import("./acs-types").AcsResponseEnvelope, capabilityId: string): Promise<ResultOutcome> {
     const { params } = request;
     const sessionId = params.metadata.session_id;
     const toolName = params.payload.tool.name;
     const originalRequestId = params.request_id;
 
-    // Start fence: the last check before the permit is minted and the tool is invoked. From here to the
-    // tool invocation there is no asynchronous boundary, so a revocation cannot slip in between.
+    // Early start check, before correlation and permit state are created. The binding start check runs inside
+    // ExecutionGate.execute() immediately before the tool function call (see #runAndProcessResult).
     this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tool: toolName });
     const flight = ++this.#inFlightSeq;
     this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId });
@@ -482,7 +511,7 @@ export class GuardedExecutor {
     }
   }
 
-  async #runAndProcessResult(request: import("./acs-types").AcsToolCallRequest, capabilityId: string): Promise<import("./acs-types").AcsToolCallResult> {
+  async #runAndProcessResult(request: import("./acs-types").AcsToolCallRequest, capabilityId: string): Promise<ResultOutcome> {
     const { params } = request;
     const sessionId = params.metadata.session_id;
     const toolName = params.payload.tool.name;
@@ -494,11 +523,16 @@ export class GuardedExecutor {
       this.correlation.registerExecution(sessionId, originalRequestId, toolName);
 
       const permit = this.#gate.mintPermit(this.#permitAuthority, sessionId, originalRequestId, toolName);
-      const result = await this.#gate.execute(request, permit);
+      // Start effective point: the tool function call. The guard runs after every callback on the start path
+      // (including the tool_execution_started audit record) and immediately before the call.
+      const result = await this.#gate.execute(request, permit, () =>
+        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tool: toolName }));
 
       outputs = result.outputs || [{ value: result }];
       exitStatus = result.exit_status || "success";
     } catch (error: unknown) {
+      // A start-fence denial is a decision, not a tool failure: it must not be turned into a result.
+      if (error instanceof AuthorityRevokedError) throw error;
       exitStatus = "failure";
       outputs = [{ value: { error: "Tool execution failed", code: "tool_execution_failed" } }];
       this.audit.record(originalRequestId, "tool_execution_blocked", { error: "failed" });
@@ -649,7 +683,9 @@ export class GuardedExecutor {
       session_id: grant.session_id,
       request_id: grant.request_id
     });
-    return this.executeAndProcessResult(pending.request, pending.response, capabilityId);
+    const outcome = await this.executeAndProcessResult(pending.request, pending.response, capabilityId);
+    // Nothing may run between the hand-over check and the return that fulfils the public promise.
+    return this.#handOver(outcome);
   }
 
   /**
