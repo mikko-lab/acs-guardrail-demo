@@ -47,6 +47,8 @@ export const OCSF_METADATA_ALLOWLIST: Readonly<Record<AuditEventType, readonly s
   replay_rejected: ["session_id", "reason_code"],
   timestamp_rejected: ["session_id", "reason_code", "delta_ms", "skew_window_ms"],
   correlation_failed: ["session_id", "request_id_ref", "tool", "disposition", "reason"],
+  authority_revoked: ["revocation_id", "scope", "session_id", "capability_id", "status", "effective_sequence", "effective_at", "pending_approvals", "in_flight_executions"],
+  authority_revocation_enforced: ["stage", "decision", "reason", "revocation_id", "session_id", "capability_id", "tool", "request_id_ref"],
 });
 
 /** ACS request_id sentinel used when the request identity is not known. */

@@ -149,7 +149,10 @@ export type AuditEventType =
   | "replay_rejected"
   | "timestamp_rejected"
   // WP-01 — unresolved correlation evidence
-  | "correlation_failed";
+  | "correlation_failed"
+  // A1 — authority revocation (in-memory, single runtime instance)
+  | "authority_revoked"
+  | "authority_revocation_enforced";
 
 export interface AuditEvent {
   timestamp: string;

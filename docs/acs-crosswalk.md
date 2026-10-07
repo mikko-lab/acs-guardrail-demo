@@ -28,8 +28,9 @@ The following controls are repository-local security policy layered around the s
 - The authority-enabled `GuardedExecutor` path requires a valid scoped capability before Guardian evaluation and requires `ApprovalGrantV2` when Guardian returns `ASK`.
 - A valid capability is necessary authority context but is not sufficient execution authorization; Guardian and Result Guardian remain independent controls.
 - `ApprovalGrantV1` remains available at primitive level but is rejected by the authority-enabled runtime path.
+- `GuardedExecutor.revoke()`: explicit, monotonic, in-memory revocation of a capability (`capability_id`) or a session, enforced at the request, approval, start and delivery boundaries ([authority-revocation.md](authority-revocation.md)). It does not stop running tools or fence their side effects.
 
-Known local-policy limitations include no external IAM, no independent workload identity, no capability revocation, and no distributed authority-state store.
+Known local-policy limitations include no external IAM, no independent workload identity, no persistent, distributed or cross-process revocation, no tenant or delegated-authority revocation, and no distributed authority-state store.
 
 ## ACS-Core
 

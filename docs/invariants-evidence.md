@@ -51,6 +51,20 @@ This document maps architectural security invariants to automated evidence acros
 - **Result decision does not alter request metrics**: `tests/evals/result-gate-evals.test.ts` (`EVAL-F4`)
 - **Result DENY does not mutate original request event**: `tests/evals/result-gate-evals.test.ts` (`EVAL-F5`)
 
+## G. Authority Revocation (A1)
+Specification: [authority-revocation.md](authority-revocation.md). Evidence: `tests/authority-revocation.test.ts`.
+- **Pending approval cannot execute after capability or session revocation**: `REV-01`, `REV-02`, `REV-03c`
+- **Approval re-checks provider withdrawal and the original capability's current validity**: `REV-03`, `REV-03b`
+- **Revoked capability or session denies fresh-ID requests and replays; clearSession does not lift a revocation**: `REV-04`, `REV-05`, `REV-06`
+- **Duplicate revocation is idempotent; revocation is monotonic**: `REV-07`
+- **Untargeted capabilities and sessions continue**: `REV-08`
+- **Start fence after the request-time check, on the ALLOW and approval paths**: `REV-start`, `REV-start-approval`
+- **Delivery withheld with an explicit revocation reason; earlier commit retained**: `REV-09`, `REV-10`
+- **Documented limitation: a running tool still commits after revocation**: `REV-limit`
+- **Delivery boundary: a returned result is not recalled**: `REV-delivery-boundary`
+- **Trusted-integrator API, unsupported targets rejected; capability_id bound to one grant**: `REV-api`, `REV-id`
+- **Unrevoked clearSession/replay behaviour unchanged; audit failure does not re-open access; receipt content**: `REV-11`, `REV-12`, `REV-receipt`
+
 ## H. Audit Evidence
 - **H1 DENY evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A2`)
 - **H2 ASK evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A3`)
