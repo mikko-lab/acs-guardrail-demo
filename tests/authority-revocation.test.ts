@@ -345,3 +345,43 @@ describe("Authority revocation: compatibility and audit failure", () => {
     expect(IncidentClassifier.fromAudit(events).filter((i: { source_event_type: string }) => i.source_event_type.startsWith("authority_"))).toEqual([]);
   });
 });
+
+describe("Approval-time capability validity versus the pending timeout boundary", () => {
+  const TIMEOUT_MS = 300 * 1000; // Guardian ask_details.timeout_seconds for update_record
+
+  it("REV-13a pending approved exactly at the timeout boundary while the capability is still valid", async () => {
+    const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "update_record");
+    ctx.capabilityProvider.tamperCapability = cap => ({ ...cap, expires_at: fresh(ctx.clock.nowMs(), 2 * TIMEOUT_MS) });
+    const req = makeRequest({ tool: "update_record", sessionId: "rev-13a", requestId: "rev-13a-r" }, ctx.clock);
+    await ctx.executor.process(req);
+    ctx.clock.currentMs += TIMEOUT_MS; // elapsed == timeout: still within the strict `elapsed > timeout` rule
+    await expect(ctx.executor.resolveApproval(approve(ctx, req))).resolves.toMatchObject({ exit_status: "success" });
+    expect(log).toEqual(["update_record:executed"]);
+  });
+
+  it("REV-13b pending rejected once the timeout boundary is exceeded, without starting the tool", async () => {
+    const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "update_record");
+    ctx.capabilityProvider.tamperCapability = cap => ({ ...cap, expires_at: fresh(ctx.clock.nowMs(), 2 * TIMEOUT_MS) });
+    const req = makeRequest({ tool: "update_record", sessionId: "rev-13b", requestId: "rev-13b-r" }, ctx.clock);
+    await ctx.executor.process(req);
+    ctx.clock.currentMs += TIMEOUT_MS + 1;
+    await expect(ctx.executor.resolveApproval(approve(ctx, req))).rejects.toThrow(/pending action has expired/);
+    expect(log).toEqual([]);
+    expect(types(ctx)).not.toContain("tool_execution_started");
+  });
+
+  it("REV-13c capability rejected exactly at expires_at while the pending action is still valid, without starting the tool", async () => {
+    const ctx = setup(Date.now()); const log: string[] = []; countingTool(log, "update_record");
+    const lifetime = 100 * 1000; // shorter than the pending timeout
+    ctx.capabilityProvider.tamperCapability = cap => ({ ...cap, expires_at: fresh(ctx.clock.nowMs(), lifetime) });
+    const req = makeRequest({ tool: "update_record", sessionId: "rev-13c", requestId: "rev-13c-r" }, ctx.clock);
+    await ctx.executor.process(req);
+    ctx.capabilityProvider.tamperCapability = undefined; // the provider would issue a fresh, valid grant now
+    ctx.clock.currentMs += lifetime; // now == expires_at; pending elapsed (100 s) < timeout (300 s)
+    await expect(ctx.executor.resolveApproval(approve(ctx, req))).rejects.toThrow(/capability has expired/);
+    expect(log).toEqual([]);
+    expect(types(ctx)).not.toContain("tool_execution_started");
+    expect(types(ctx)).not.toContain("approval_expired");
+    expect(eventsOf(ctx, "capability_rejected").map(e => [e.metadata!.reason, e.metadata!.stage])).toEqual([["capability_expired", "approval"]]);
+  });
+});

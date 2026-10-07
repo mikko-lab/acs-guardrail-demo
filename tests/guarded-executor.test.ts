@@ -630,7 +630,10 @@ describe("M-01/M-02: Final Hardening", () => {
   describe("EXPIRY", () => {
     it("expiry strict > semantics", async () => {
       const now = Date.now();
-      const { executor, clock } = setup(now);
+      const { executor, clock, capabilityProvider } = setup(now);
+      // The capability must outlive the pending window, so that this test isolates the pending-timeout
+      // boundary; approval re-checks the capability's own validity (see tests/authority-revocation.test.ts).
+      capabilityProvider.tamperCapability = cap => ({ ...cap, expires_at: fresh(clock.nowMs(), 600 * 1000) });
       const req = makeRequest({ tool: "update_record", sessionId: sess1, requestId: req1 });
       await executor.process(req);
 

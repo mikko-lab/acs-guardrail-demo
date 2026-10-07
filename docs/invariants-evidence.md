@@ -64,6 +64,8 @@ Specification: [authority-revocation.md](authority-revocation.md). Evidence: `te
 - **Delivery boundary: a returned result is not recalled**: `REV-delivery-boundary`
 - **Trusted-integrator API, unsupported targets rejected; capability_id bound to one grant**: `REV-api`, `REV-id`
 - **Unrevoked clearSession/replay behaviour unchanged; audit failure does not re-open access; receipt content**: `REV-11`, `REV-12`, `REV-receipt`
+- **Pending timeout boundary versus approval-time capability validity**: `REV-13a` (approved at exactly the timeout while the capability is valid), `REV-13b` (rejected past the timeout), `REV-13c` (rejected at exactly `expires_at` while the pending action is valid); no tool start on rejection
+- **Revocation evidence exports as validated OCSF Base Events and is not an incident**: `REV-ocsf`
 
 ## H. Audit Evidence
 - **H1 DENY evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A2`)

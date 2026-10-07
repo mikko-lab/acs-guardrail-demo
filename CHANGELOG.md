@@ -9,6 +9,8 @@
 - **Approval re-checks authority:** `resolveApproval()` now re-checks the original pending request's authority before execution: runtime revocation, the original capability's current validity, and that the provider still resolves a valid capability for the same context. An approval whose original capability expired or whose provider withdrew the capability no longer executes.
 - **Capability id binding:** a `capability_id` is bound to the content of the first verified grant seen with it; a different grant with the same id is rejected with `capability_rejected` reason `capability_id_conflict`.
 - **Capability verification audit order:** `capability_verified` is recorded only after the revocation and id-binding checks pass.
+- **Test fixture:** `tests/guarded-executor.test.ts` › EXPIRY › "expiry strict > semantics" now gives its capability a lifetime longer than the pending window, so that capability expiry no longer coincides with (and masks) the pending-timeout boundary it tests; its assertions are unchanged. The previous fixture expired the capability at exactly the pending timeout, which the approval re-check now rejects.
+- **Audit event enumeration:** the OCSF allowlist completeness test lists the two new event types.
 
 ### Limitations
 - Revocation does not stop a running tool, cancel it, or prevent its side effects; only result delivery is withheld. No commit fence or terminal evidence.

@@ -42,7 +42,7 @@ There is no asynchronous boundary between the start check and the tool invocatio
 
 The pending action is consumed before these checks, so an authority failure at approval is final for that pending action.
 
-**Behaviour change.** Before A1, an approval executed on the strength of the request-time capability check alone. Now an approval whose original capability has expired by the time of approval, or whose provider no longer resolves a capability, does not execute.
+**Behaviour change.** Before A1, an approval executed on the strength of the request-time capability check alone. Now an approval whose original capability has expired by the time of approval, or whose provider no longer resolves a capability, does not execute. The pending timeout keeps its strict `elapsed > timeout` rule; the capability keeps the verifier's `now >= expires_at` rule. The two boundaries are independent: an approval at exactly the pending timeout executes if the capability is still valid, and an approval at exactly `expires_at` is rejected even though the pending action is still valid.
 
 ## Receipt
 
