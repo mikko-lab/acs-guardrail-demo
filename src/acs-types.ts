@@ -152,7 +152,14 @@ export type AuditEventType =
   | "correlation_failed"
   // A1 — authority revocation (in-memory, single runtime instance)
   | "authority_revoked"
-  | "authority_revocation_enforced";
+  | "authority_revocation_enforced"
+  // A2 — cooperative containment (managed executions)
+  | "execution_cancellation_requested"
+  | "execution_cancellation_acknowledged"
+  | "tool_commit_requested"
+  | "tool_commit_applied"
+  | "tool_commit_blocked"
+  | "execution_terminal";
 
 export interface AuditEvent {
   timestamp: string;

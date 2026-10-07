@@ -1,4 +1,7 @@
-export type ToolImplementation = (args: Record<string, unknown>) => Promise<unknown>;
+import type { ExecutionContext } from "./managed-execution";
+
+/** A tool receives an ExecutionContext when run by GuardedExecutor; tools that ignore it are not controlled by A2. */
+export type ToolImplementation = (args: Record<string, unknown>, ctx?: ExecutionContext) => Promise<unknown>;
 
 export const executionCounters: Record<string, number> = {
   read_record: 0,

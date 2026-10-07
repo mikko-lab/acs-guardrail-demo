@@ -1,5 +1,8 @@
 import { AcsToolCallRequest, AcsToolCallResult } from "./acs-types";
-import { tools, unknownToolMock } from "./tools";
+import { tools, unknownToolMock, ToolImplementation } from "./tools";
+
+/** Invokes the tool function on behalf of the runtime (A2: with a managed execution context). */
+export type ToolInvoker = (toolFn: ToolImplementation, args: Record<string, unknown>) => Promise<unknown>;
 import { AuditCollector } from "./audit";
 
 export interface ExecutionPermit {
@@ -36,12 +39,13 @@ export class ExecutionGate {
   /**
    * @param beforeInvoke Optional runtime guard. It runs after every other step of this method, including the
    *   `tool_execution_started` audit record, and immediately before the tool function is called, with no callback
-   *   or asynchronous boundary in between. If it throws, the tool function is not called.
+   *   or asynchronous boundary in between. If it throws, the tool function is not called. It may return a
+   *   ToolInvoker, which then calls the tool function instead of this gate.
    */
   async execute(
     request: AcsToolCallRequest,
     permit: ExecutionPermit,
-    beforeInvoke?: () => void
+    beforeInvoke?: () => void | ToolInvoker
   ): Promise<AcsToolCallResult> {
     const { params } = request;
     const toolName = params.payload.tool.name;
@@ -74,10 +78,10 @@ export class ExecutionGate {
       unwrappedArgs[k] = v.value;
     }
 
-    beforeInvoke?.();
+    const invoker = beforeInvoke?.();
 
     try {
-      const rawResult = await toolFn(unwrappedArgs);
+      const rawResult = await (invoker ? invoker(toolFn, unwrappedArgs) : toolFn(unwrappedArgs));
       this.audit.record(params.request_id, "tool_execution_completed", {
         status: "success",
       });

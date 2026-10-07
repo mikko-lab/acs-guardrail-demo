@@ -1,0 +1,420 @@
+/**
+ * A2 cooperative containment corpus. Tool doubles are harness-owned and driven by latches and explicit events:
+ * they never decide or block anything. Commits are observed through the runtime-managed state itself
+ * (executor.managedState), tool behaviour through the doubles' own logs; audit events are decision evidence only.
+ */
+import { setup, makeRequest, fresh } from "./evals/eval-setup";
+import { tools } from "../src/tools";
+import { AuditCollector } from "../src/audit";
+import { AuthorityRevokedError } from "../src/guarded-executor";
+import { CancellationError, CommitRejectedError, ExecutionContext } from "../src/managed-execution";
+import type { AuditEvent, AuditEventType } from "../src/acs-types";
+
+type Ctx = ReturnType<typeof setup>;
+type Deferred<T = void> = { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void };
+function deferred<T = void>(): Deferred<T> {
+  let resolve!: (v: T) => void, reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+const original = { ...tools };
+afterEach(() => { for (const k of Object.keys(tools)) delete tools[k]; Object.assign(tools, original); });
+
+const sessionOf = (req: ReturnType<typeof makeRequest>) => req.params.metadata.session_id;
+const eventsOf = (ctx: Ctx, type: AuditEventType) => ctx.audit.getEvents().filter((e: AuditEvent) => e.event_type === type);
+const capabilityOf = (ctx: Ctx, requestId: string) =>
+  ctx.audit.getEvents().find((e: AuditEvent) => e.event_type === "capability_verified" && e.request_id === requestId)!.metadata!.capability_id as string;
+const approve = (ctx: Ctx, req: ReturnType<typeof makeRequest>) => ctx.testSigner.sign({
+  version: 2, tool: req.params.payload.tool.name, decision: "approve", session_id: req.params.metadata.session_id,
+  request_id: req.params.request_id, approver: { type: "human", id: "demo-operator" }, issued_at: fresh(ctx.clock.nowMs()),
+});
+
+/**
+ * A scripted cooperative tool double. `steps` runs inside the tool with its context; the harness drives it
+ * through the returned latches. Everything it observes is pushed to `log`.
+ */
+function scriptedTool(name: string, steps: (ctx: ExecutionContext, h: Harness) => Promise<unknown>) {
+  const h: Harness = { log: [], started: deferred(), ctx: undefined as unknown as ExecutionContext, calls: 0 };
+  tools[name] = async (_args, ctx) => {
+    h.calls++; h.ctx = ctx!; h.log.push("start"); h.started.resolve();
+    return steps(ctx!, h);
+  };
+  return h;
+}
+interface Harness { log: string[]; started: Deferred; ctx: ExecutionContext; calls: number }
+const tryCommit = (h: Harness, key: string, value: unknown) => {
+  try { h.ctx.commit(key, value); h.log.push(`commit:${key}:ok`); return true; }
+  catch (e) { h.log.push(`commit:${key}:${e instanceof CommitRejectedError ? e.reason : String(e)}`); return false; }
+};
+
+describe("A2 commit fence", () => {
+  it("C01 revoke before start: no tool call, no execution, no terminal", async () => {
+    const ctx = setup(Date.now());
+    const h = scriptedTool("read_record", async c => { c.commit("k", 1); return { status: "ok" }; });
+    const req = makeRequest({ tool: "read_record", sessionId: "c01", requestId: "c01-a" }, ctx.clock);
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    await expect(ctx.executor.process(req)).rejects.toThrow(AuthorityRevokedError);
+    expect(h.calls).toBe(0);
+    expect(ctx.executor.managedState.keys()).toEqual([]);
+    expect(ctx.executor.getExecution("exec-1")).toBeUndefined();
+    expect(ctx.executor.terminals()).toEqual([]);
+  });
+
+  it("C02 revoke after start, before commit: the commit is denied and the managed state is unchanged", async () => {
+    const ctx = setup(Date.now()); const gate = deferred();
+    const h = scriptedTool("read_record", async (_c, h) => { await gate.promise; tryCommit(h, "balance", 100); return { status: "ok" }; });
+    const req = makeRequest({ tool: "read_record", sessionId: "c02", requestId: "c02-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    gate.resolve();
+    await run;
+    expect(h.log).toEqual(["start", "commit:balance:session_revoked"]);
+    expect(ctx.executor.managedState.has("balance")).toBe(false);
+    expect(ctx.executor.managedState.version).toBe(0);
+    expect(eventsOf(ctx, "tool_commit_blocked").map(e => [e.metadata!.reason, e.metadata!.decision])).toEqual([["session_revoked", "deny"]]);
+  });
+
+  it("C03 commit before revocation stays a historical effect", async () => {
+    const ctx = setup(Date.now()); const gate = deferred();
+    const h = scriptedTool("read_record", async (c, h) => { tryCommit(h, "balance", 100); await gate.promise; tryCommit(h, "balance", 200); return { status: "ok" }; });
+    const req = makeRequest({ tool: "read_record", sessionId: "c03", requestId: "c03-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "capability", capability_id: capabilityOf(ctx, req.params.request_id) });
+    gate.resolve();
+    await run;
+    expect(h.log).toEqual(["start", "commit:balance:ok", "commit:balance:capability_revoked"]);
+    expect(ctx.executor.managedState.get("balance")).toBe(100);
+  });
+
+  it("C04 revoke after commit, before delivery: the response is withheld and the commit stays", async () => {
+    const ctx = setup(Date.now()); const gate = deferred();
+    const h = scriptedTool("read_record", async (c, h) => { tryCommit(h, "order", { id: 7 }); await gate.promise; return { status: "ok", data: "tool-output" }; });
+    const req = makeRequest({ tool: "read_record", sessionId: "c04", requestId: "c04-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    gate.resolve();
+    const out = await run;
+    expect(JSON.stringify(out)).not.toContain("tool-output");
+    expect(ctx.executor.managedState.get("order")).toEqual({ id: 7 });
+  });
+
+  it("C11a revocation from the tool_commit_requested audit callback: the commit is denied", async () => {
+    const ctx = setup(Date.now());
+    const h = scriptedTool("read_record", async (_c, h) => { tryCommit(h, "k", 1); return { status: "ok" }; });
+    const req = makeRequest({ tool: "read_record", sessionId: "c11a", requestId: "c11a-a" }, ctx.clock);
+    const recordOriginal = AuditCollector.prototype.record;
+    jest.spyOn(ctx.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
+      recordOriginal.call(this, id, t, meta);
+      if (t === "tool_commit_requested") ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    });
+    await ctx.executor.process(req);
+    expect(h.log).toEqual(["start", "commit:k:session_revoked"]);
+    expect(ctx.executor.managedState.has("k")).toBe(false);
+  });
+
+  it("C11b revocation from value serialization (toJSON) on the commit path: the commit is denied", async () => {
+    const ctx = setup(Date.now()); let reqRef!: ReturnType<typeof makeRequest>;
+    const h = scriptedTool("read_record", async (_c, h) => {
+      tryCommit(h, "k", { toJSON: () => { ctx.executor.revoke({ scope: "session", session_id: sessionOf(reqRef) }); return "v"; } });
+      return { status: "ok" };
+    });
+    reqRef = makeRequest({ tool: "read_record", sessionId: "c11b", requestId: "c11b-a" }, ctx.clock);
+    await ctx.executor.process(reqRef);
+    expect(h.log).toEqual(["start", "commit:k:session_revoked"]);
+    expect(ctx.executor.managedState.has("k")).toBe(false);
+  });
+
+  it("C13 a commit requested after the terminal is denied", async () => {
+    const ctx = setup(Date.now());
+    const h = scriptedTool("read_record", async () => ({ status: "ok" }));
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c13", requestId: "c13-a" }, ctx.clock));
+    await ctx.executor.whenTerminal(h.ctx.execution_id);
+    expect(tryCommit(h, "late", 1)).toBe(false);
+    expect(h.log).toEqual(["start", "commit:late:execution_terminal"]);
+    expect(ctx.executor.managedState.has("late")).toBe(false);
+    expect(() => h.ctx.track(Promise.resolve())).toThrow(/terminal/);
+  });
+
+  it("C16 audit failure on the commit path never opens the effect", async () => {
+    const ctx = setup(Date.now());
+    const h = scriptedTool("read_record", async (_c, h) => { tryCommit(h, "k", 1); return { status: "ok" }; });
+    const recordOriginal = AuditCollector.prototype.record;
+    jest.spyOn(ctx.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
+      if (t === "tool_commit_requested" || t === "tool_commit_blocked") throw new Error("audit sink unavailable");
+      return recordOriginal.call(this, id, t, meta);
+    });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c16", requestId: "c16-a" }, ctx.clock));
+    expect(h.log).toEqual(["start", "commit:k:audit_unavailable"]);
+    expect(ctx.executor.managedState.has("k")).toBe(false);
+  });
+
+  it("C16b a lost tool_commit_applied record does not undo the applied write", async () => {
+    const ctx = setup(Date.now());
+    const h = scriptedTool("read_record", async (_c, h) => { tryCommit(h, "k", 1); return { status: "ok" }; });
+    const recordOriginal = AuditCollector.prototype.record;
+    jest.spyOn(ctx.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
+      if (t === "tool_commit_applied") throw new Error("audit sink unavailable");
+      return recordOriginal.call(this, id, t, meta);
+    });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c16b", requestId: "c16b-a" }, ctx.clock));
+    expect(h.log).toEqual(["start", "commit:k:ok"]);
+    expect(ctx.executor.managedState.get("k")).toBe(1);
+  });
+
+  it("C08 natural completion without revocation: commit applied, terminal 'completed'", async () => {
+    const ctx = setup(Date.now());
+    const h = scriptedTool("read_record", async (_c, h) => { tryCommit(h, "k", "v"); return { status: "ok" }; });
+    const req = makeRequest({ tool: "read_record", sessionId: "c08", requestId: "c08-a" }, ctx.clock);
+    await ctx.executor.process(req);
+    const terminal = await ctx.executor.whenTerminal(h.ctx.execution_id);
+    expect(ctx.executor.managedState.get("k")).toBe("v");
+    expect(terminal).toMatchObject({ outcome: "completed", cancellation_requested: false, cancellation_acknowledged: false, request_id: req.params.request_id, session_id: sessionOf(req), capability_id: capabilityOf(ctx, req.params.request_id) });
+    expect(ctx.executor.terminals()).toHaveLength(1);
+  });
+});
+
+describe("A2 cancellation and terminal", () => {
+  it("C05 acknowledgement without ending: no terminal until the managed work actually settles", async () => {
+    const ctx = setup(Date.now()); const finish = deferred(); const acked = deferred();
+    const h = scriptedTool("read_record", async (c, h) => {
+      c.cancellation.onCancel(() => { h.log.push(`ack:${c.acknowledgeCancellation()}`); acked.resolve(); });
+      await finish.promise; h.log.push("end"); return { status: "ok" };
+    });
+    const req = makeRequest({ tool: "read_record", sessionId: "c05", requestId: "c05-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    await acked.promise; await flush();
+    expect(h.log).toEqual(["start", "ack:true"]);
+    expect(ctx.executor.getExecution(h.ctx.execution_id)).toMatchObject({ state: "running", cancellation_requested: true, cancellation_acknowledged: true });
+    expect(ctx.executor.terminals()).toEqual([]);
+    finish.resolve(); await run;
+    const terminal = await ctx.executor.whenTerminal(h.ctx.execution_id);
+    expect(terminal).toMatchObject({ outcome: "completed", cancellation_requested: true, cancellation_acknowledged: true });
+  });
+
+  it("C06 a tool that ignores the signal: no false terminal, its commit is still denied, outcome is not 'cancelled'", async () => {
+    const ctx = setup(Date.now()); const gate = deferred();
+    const h = scriptedTool("read_record", async (_c, h) => { await gate.promise; tryCommit(h, "k", 1); return { status: "ok" }; });
+    const req = makeRequest({ tool: "read_record", sessionId: "c06", requestId: "c06-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    await flush();
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.state).toBe("running");
+    expect(ctx.executor.terminals()).toEqual([]);
+    gate.resolve(); await run;
+    const terminal = await ctx.executor.whenTerminal(h.ctx.execution_id);
+    expect(h.log).toEqual(["start", "commit:k:session_revoked"]);
+    expect(terminal).toMatchObject({ outcome: "completed", cancellation_requested: true, cancellation_acknowledged: false });
+    expect(ctx.executor.managedState.has("k")).toBe(false);
+  });
+
+  it("C07 a tool that reacts to cancellation: registered work ends, one terminal 'cancelled'", async () => {
+    const ctx = setup(Date.now()); const workDone = deferred();
+    const h = scriptedTool("read_record", (c, h) => new Promise((_resolve, reject) => {
+      const work = c.track(workDone.promise.then(() => { h.log.push("work:end"); }));
+      c.cancellation.onCancel(reason => {
+        h.log.push(`ack:${c.acknowledgeCancellation()}`);
+        workDone.resolve();
+        work.then(() => reject(reason));
+      });
+    }));
+    const req = makeRequest({ tool: "read_record", sessionId: "c07", requestId: "c07-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    await run;
+    const terminal = await ctx.executor.whenTerminal(h.ctx.execution_id);
+    await flush();
+    expect(h.log).toEqual(["start", "ack:true", "work:end"]);
+    expect(terminal).toMatchObject({ outcome: "cancelled", cancellation_requested: true, cancellation_acknowledged: true, tracked_registered: 1, tracked_fulfilled: 1, tracked_rejected: 0 });
+    expect(ctx.executor.terminals()).toHaveLength(1);
+    expect(ctx.executor.terminals()[0]).toMatchObject({ execution_id: h.ctx.execution_id, outcome: "cancelled" });
+  });
+
+  it("C20 'cancelled' requires this execution's own CancellationError", async () => {
+    const ctx = setup(Date.now());
+    const other = new CancellationError("exec-999", "session:x");
+    const h = scriptedTool("read_record", c => new Promise((_res, reject) => { c.cancellation.onCancel(() => reject(other)); }));
+    const req = makeRequest({ tool: "read_record", sessionId: "c20", requestId: "c20-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    await run;
+    expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ outcome: "failed", cancellation_requested: true });
+  });
+
+  it("C09 duplicate revoke does not signal again; repeated acknowledgement is idempotent", async () => {
+    const ctx = setup(Date.now()); const gate = deferred(); let signals = 0; const acks: boolean[] = [];
+    const h = scriptedTool("read_record", async (c) => {
+      c.cancellation.onCancel(() => { signals++; acks.push(c.acknowledgeCancellation()); acks.push(c.acknowledgeCancellation()); });
+      await gate.promise; acks.push(c.acknowledgeCancellation()); return { status: "ok" };
+    });
+    const req = makeRequest({ tool: "read_record", sessionId: "c09", requestId: "c09-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    const dup = ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    ctx.executor.revoke({ scope: "capability", capability_id: capabilityOf(ctx, req.params.request_id) });
+    gate.resolve(); await run;
+    expect(dup.status).toBe("already_revoked");
+    expect(signals).toBe(1);
+    expect(acks).toEqual([true, false, false]);
+    expect(eventsOf(ctx, "execution_cancellation_requested")).toHaveLength(1);
+    expect(eventsOf(ctx, "execution_cancellation_acknowledged")).toHaveLength(1);
+  });
+
+  it("C10 untargeted capability/session and parallel executions are unaffected", async () => {
+    const ctx = setup(Date.now()); const gate = deferred(); const signalled: string[] = [];
+    tools.read_record = async (args, c) => {
+      c!.cancellation.onCancel(() => signalled.push(String(args.who)));
+      await gate.promise;
+      try { c!.commit(`k-${args.who}`, 1); } catch { /* denied */ }
+      return { status: "ok", data: `out-${args.who}` };
+    };
+    const a = makeRequest({ tool: "read_record", sessionId: "c10-a", requestId: "c10-a1", args: { who: { value: "a" } } }, ctx.clock);
+    const b = makeRequest({ tool: "read_record", sessionId: "c10-b", requestId: "c10-b1", args: { who: { value: "b" } } }, ctx.clock);
+    const runA = ctx.executor.process(a); const runB = ctx.executor.process(b);
+    await flush();
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(a) });
+    ctx.executor.revoke({ scope: "capability", capability_id: "unrelated-capability" });
+    gate.resolve();
+    const [outA, outB] = await Promise.all([runA, runB]);
+    expect(signalled).toEqual(["a"]);
+    expect(ctx.executor.managedState.keys()).toEqual(["k-b"]);
+    expect(JSON.stringify(outA)).not.toContain("out-a");
+    expect(JSON.stringify(outB)).toContain("out-b");
+  });
+
+  it("C12 listener exceptions and re-entrancy cannot undo revocation, open the fence or stop other cancellations", async () => {
+    const ctx = setup(Date.now()); const gate = deferred(); const log: string[] = [];
+    let otherReq!: ReturnType<typeof makeRequest>;
+    tools.read_record = async (args, c) => {
+      const who = String(args.who);
+      if (who === "a") {
+        c!.cancellation.onCancel(() => { log.push("a:l1"); throw new Error("listener boom"); });
+        c!.cancellation.onCancel(() => {
+          log.push("a:l2");
+          ctx.executor.revoke({ scope: "session", session_id: sessionOf(makeRequest({ sessionId: "c12-a" })) }); // duplicate
+          try { c!.commit("from-listener", 1); log.push("a:commit:ok"); } catch (e) { log.push(`a:commit:${(e as CommitRejectedError).reason}`); }
+          ctx.executor.revoke({ scope: "session", session_id: sessionOf(otherReq) }); // re-entrant revoke of another target
+        });
+        c!.cancellation.onCancel(() => { log.push("a:l3"); });
+      } else {
+        c!.cancellation.onCancel(() => { log.push(`${who}:signalled`); });
+      }
+      await gate.promise;
+      return { status: "ok" };
+    };
+    const a = makeRequest({ tool: "read_record", sessionId: "c12-a", requestId: "c12-a1", args: { who: { value: "a" } } }, ctx.clock);
+    otherReq = makeRequest({ tool: "read_record", sessionId: "c12-o", requestId: "c12-o1", args: { who: { value: "o" } } }, ctx.clock);
+    const runA = ctx.executor.process(a); const runO = ctx.executor.process(otherReq);
+    await flush();
+    const receipt = ctx.executor.revoke({ scope: "session", session_id: sessionOf(a) });
+    expect(receipt.status).toBe("revoked");
+    expect(log).toEqual(["a:l1", "a:l2", "a:commit:session_revoked", "o:signalled", "a:l3"]);
+    expect(ctx.executor.managedState.has("from-listener")).toBe(false);
+    gate.resolve();
+    await Promise.all([runA, runO]);
+    await expect(ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c12-a", requestId: "c12-a2" }, ctx.clock))).rejects.toThrow(AuthorityRevokedError);
+    const execA = ctx.executor.getExecution("exec-1")!;
+    expect(execA.session_id).toBe(sessionOf(a));
+    expect((await ctx.executor.whenTerminal("exec-1")).listener_errors).toBe(1);
+  });
+
+  it("C14 registered background work: the terminal waits for it; it may commit until then", async () => {
+    const ctx = setup(Date.now()); const bg = deferred(); let execId = "";
+    const h = scriptedTool("read_record", async (c, h) => {
+      execId = c.execution_id;
+      c.track(bg.promise.then(() => { tryCommit(h, "bg", 1); }));
+      return { status: "ok" };
+    });
+    const out = await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c14", requestId: "c14-a" }, ctx.clock));
+    expect((out as { result: { exit_status: string } }).result.exit_status).toBe("success");
+    await flush();
+    expect(ctx.executor.getExecution(execId)!.state).toBe("draining");
+    expect(ctx.executor.terminals()).toEqual([]);
+    bg.resolve();
+    const terminal = await ctx.executor.whenTerminal(execId);
+    expect(h.log).toEqual(["start", "commit:bg:ok"]);
+    expect(terminal).toMatchObject({ outcome: "completed", tracked_registered: 1, tracked_fulfilled: 1 });
+    expect(ctx.executor.managedState.get("bg")).toBe(1);
+  });
+
+  it("C15 unregistered detached work: the terminal does not wait for it, and its later commit is denied", async () => {
+    const ctx = setup(Date.now()); const detached = deferred(); const done = deferred();
+    const h = scriptedTool("read_record", async (_c, h) => {
+      void detached.promise.then(() => { tryCommit(h, "detached", 1); done.resolve(); });
+      return { status: "ok" };
+    });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c15", requestId: "c15-a" }, ctx.clock));
+    const terminal = await ctx.executor.whenTerminal(h.ctx.execution_id);
+    expect(terminal.tracked_registered).toBe(0);
+    detached.resolve(); await done.promise;
+    expect(h.log).toEqual(["start", "commit:detached:execution_terminal"]);
+    expect(ctx.executor.managedState.has("detached")).toBe(false);
+  });
+
+  it("C17 exactly one terminal whichever of the tool function and registered work settles last", async () => {
+    for (const order of ["main-last", "work-last"] as const) {
+      const ctx = setup(Date.now()); const main = deferred(); const work = deferred();
+      const h = scriptedTool("read_record", async c => { c.track(work.promise); await main.promise; return { status: "ok" }; });
+      const run = ctx.executor.process(makeRequest({ tool: "read_record", sessionId: `c17-${order}`, requestId: `c17-${order}-a` }, ctx.clock));
+      await h.started.promise;
+      if (order === "main-last") { work.resolve(); await flush(); expect(ctx.executor.terminals()).toEqual([]); main.resolve(); }
+      else { main.resolve(); await run; await flush(); expect(ctx.executor.terminals()).toEqual([]); work.resolve(); }
+      await run; await ctx.executor.whenTerminal(h.ctx.execution_id); await flush();
+      expect(ctx.executor.terminals()).toHaveLength(1);
+    }
+  });
+
+  it("C18 execution identity: each real invocation gets its own id bound to request, session and capability", async () => {
+    const ctx = setup(Date.now()); const ids: string[] = [];
+    tools.read_record = async (_a, c) => { ids.push(c!.execution_id); return { status: "ok" }; };
+    const req = makeRequest({ tool: "read_record", sessionId: "c18", requestId: "c18-a" }, ctx.clock);
+    await ctx.executor.process(req);
+    ctx.executor.clearSession(sessionOf(req));
+    await ctx.executor.process(req);
+    expect(new Set(ids).size).toBe(2);
+    const caps = ctx.audit.getEvents().filter((e: AuditEvent) => e.event_type === "capability_verified").map(e => e.metadata!.capability_id);
+    ids.forEach((id, i) => expect(ctx.executor.getExecution(id)).toMatchObject({ request_id: req.params.request_id, session_id: sessionOf(req), capability_id: caps[i] }));
+  });
+
+  it("C19 approval path: the approved execution is managed; a revoke cancels it and fences its commit", async () => {
+    const ctx = setup(Date.now()); const gate = deferred(); let signalled = false;
+    const h = scriptedTool("update_record", async (c, h) => { c.cancellation.onCancel(() => { signalled = true; }); await gate.promise; tryCommit(h, "k", 1); return { status: "ok" }; });
+    const req = makeRequest({ tool: "update_record", sessionId: "c19", requestId: "c19-a" }, ctx.clock);
+    await ctx.executor.process(req);
+    const run = ctx.executor.resolveApproval(approve(ctx, req));
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    gate.resolve(); await run;
+    expect(signalled).toBe(true);
+    expect(h.log).toEqual(["start", "commit:k:session_revoked"]);
+    expect(ctx.executor.managedState.has("k")).toBe(false);
+  });
+
+  it("C21 a listener registered after the request is called immediately; state is read-only for tools", async () => {
+    const ctx = setup(Date.now()); const gate = deferred(); const seen: string[] = [];
+    const h = scriptedTool("read_record", async c => {
+      await gate.promise;
+      c.cancellation.onCancel(reason => seen.push(reason.execution_id));
+      expect(() => c.cancellation.throwIfRequested()).toThrow(CancellationError);
+      return { status: "ok" };
+    });
+    const req = makeRequest({ tool: "read_record", sessionId: "c21", requestId: "c21-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    gate.resolve(); await run;
+    expect(seen).toEqual([h.ctx.execution_id]);
+    expect((ctx.executor.managedState as unknown as { issueWriter?: unknown }).issueWriter).toBeUndefined();
+    expect(Object.isFrozen(h.ctx)).toBe(true);
+  });
+});

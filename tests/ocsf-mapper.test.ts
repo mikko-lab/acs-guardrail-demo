@@ -313,6 +313,8 @@ describe("OCSF mapping: metadata allowlist", () => {
       "guardian_decision", "human_approval", "human_rejection", "approval_requested", "approval_expired",
       "tool_execution_started", "tool_execution_completed", "tool_execution_blocked", "replay_rejected",
       "timestamp_rejected", "correlation_failed", "authority_revoked", "authority_revocation_enforced",
+      "execution_cancellation_requested", "execution_cancellation_acknowledged", "tool_commit_requested",
+      "tool_commit_applied", "tool_commit_blocked", "execution_terminal",
     ];
     expect(Object.keys(OCSF_METADATA_ALLOWLIST).sort()).toEqual([...types].sort());
     expect(Object.isFrozen(OCSF_METADATA_ALLOWLIST)).toBe(true);
