@@ -1,6 +1,6 @@
 # Authority revocation (A1)
 
-This document specifies the explicit authority revocation added to `GuardedExecutor`. It covers revocation of an authority and its enforcement at the **request, approval, start and delivery** boundaries. It does **not** stop a running tool, fence a tool's in-flight side effects (commit), provide cancellation, or report terminal evidence; [cooperative containment (A2)](cooperative-containment.md) adds those for cooperating tools and runtime-mediated effects.
+This document specifies the explicit authority revocation added to `GuardedExecutor`. It covers revocation of an authority and its enforcement at the **request, approval, start and delivery** boundaries. It does **not** stop a running tool, fence a tool's in-flight side effects (commit), provide cancellation, or report terminal evidence; [cooperative containment (A2)](cooperative-containment.md) adds cancellation requests, a commit fence for runtime-mediated effects and terminal evidence for cooperating tools; it does not forcibly stop running code.
 
 ## Targets and identity
 
@@ -35,7 +35,7 @@ A revocation takes effect when `revoke()` records it in the registry, before it 
 
 **Audit events record decisions, not effects.** `tool_execution_started` records that the runtime is about to call the tool; it does not prove the call happened. `tool_result_delivered` records the runtime's delivery decision; it does not prove the hand-over, nor that an external consumer received the result. If a revocation takes effect during or after either record but before the effective point, the record is followed by `authority_revocation_enforced` (stage `start`, or stage `delivery` with `boundary: "api_return"`) and, for delivery, `tool_result_withheld`; the effect did not happen.
 
-**In-flight executions.** A tool that is already running when the revocation takes effect keeps running. Its side effects (including a commit after the revocation) are not prevented and remain historical facts; only its result delivery is withheld. The receipt lists such executions and states `in_flight_side_effects: "not_prevented"`. With A2, a commit through the runtime commit fence (`ctx.commit()`) after the revocation is denied and a cooperating tool receives a cancellation request; `not_prevented` continues to describe every effect a tool performs outside the commit fence, and the receipt shape is unchanged.
+**In-flight executions.** A1 itself does not stop a tool that is already running when the revocation takes effect: it keeps running, A1 prevents none of its side effects, and those remain historical facts; A1 only withholds its result delivery. A2 adds a cancellation request and denies the tool's later commits through `ctx.commit()`; effects outside that commit fence are still not prevented. The receipt lists such executions and states `in_flight_side_effects: "not_prevented"`. With A2, a commit through the runtime commit fence (`ctx.commit()`) after the revocation is denied and a cooperating tool receives a cancellation request; `not_prevented` continues to describe every effect a tool performs outside the commit fence, and the receipt shape is unchanged.
 
 ## Approval re-check
 

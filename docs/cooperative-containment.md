@@ -13,7 +13,7 @@ The guarantees are limited to managed executions of one `GuardedExecutor` instan
 | Cancellation acknowledgement | The tool states that it received the request. It does not mean the tool stopped. | `execution_cancellation_acknowledged` |
 | Commit decision | The runtime decides whether one runtime-mediated effect may happen. | `tool_commit_requested`, then `tool_commit_applied` or `tool_commit_blocked` |
 | Commit effect | The change of the runtime-managed state itself (`executor.managedState`). | The state, not the audit stream |
-| Terminal | The managed tool function and all of its registered work have settled. Exactly one per execution. | `execution_terminal`; `executor.getExecution()`, `executor.whenTerminal()` |
+| Terminal | The managed tool function and all of its registered work have settled. Exactly one per execution. | The execution record (`executor.getExecution()`, `executor.whenTerminal()`, `executor.terminals()`); `execution_terminal` when the audit sink records it |
 | Delivery | A1's binding check at the fulfilment of the public `process()` / `resolveApproval()` promise. Unchanged. | A1 delivery evidence |
 
 ## Execution identity
@@ -30,7 +30,7 @@ interface ExecutionContext {
   readonly cancellation: CancellationSignal;
   acknowledgeCancellation(): boolean;
   commit(key: string, value: unknown): CommitReceipt;
-  track<T>(work: PromiseLike<T>): Promise<T>;
+  track<T>(work: Promise<T>): Promise<T>;
 }
 interface CancellationSignal {
   readonly requested: boolean;
@@ -71,9 +71,17 @@ The guarantee covers only this synchronous, runtime-managed state change. It doe
 
 ## Registered work and terminal
 
-`ctx.track(work)` registers a promise as part of the execution and returns a promise for its result. Registration is possible until the execution is terminal; afterwards `track()` throws.
+`ctx.track(work)` registers a promise as part of the execution and returns the same promise. Registration is possible until the execution is terminal; afterwards `track()` throws.
 
-The execution is **terminal** when the tool function's promise has settled **and** every registered promise has settled. The runtime then records one `execution_terminal` and resolves `executor.whenTerminal(execution_id)`; it never records a second one. The terminal's `outcome` describes how the tool function itself ended:
+**Observing settlement.** The runtime observes a settlement only through a native Promise's internal state (it `await`s the Promise), never through the object's own `then`:
+
+- `track()` accepts only an **unmodified native Promise**: a native Promise whose prototype is `Promise.prototype` and that has no own `constructor` other than a data property equal to `Promise`. Anything else (a thenable, a Promise subclass, a Promise with an accessor or a different own `constructor`) is refused with `TypeError` before anything is registered. The check runs no code of the object, so a refused registration leaves no pending entry behind.
+- The tool function's return value is observed the same way when it is an unmodified native Promise; an own `then` on it is ignored. A **modified** native Promise (as above) is refused: the call fails with `TypeError`, the outcome is `failed`, and the work behind that Promise is detached work. A synchronous value counts as settled at once.
+- A non-native thenable returned by the tool function is the trust boundary: its settlement is whatever it reports. The runtime cannot compare that report with work the tool hides behind it, exactly as for detached work.
+
+The runtime does not defend against modification of the JavaScript environment itself (for example replacing `Promise.prototype` methods).
+
+The execution is **terminal** when the tool function's promise has settled **and** every registered promise has settled. The runtime then marks the execution terminal, appends the terminal record to the executor's terminal log, attempts to record one `execution_terminal` audit event and resolves `executor.whenTerminal(execution_id)`; it never does any of this a second time. The terminal's `outcome` describes how the tool function itself ended:
 
 | Outcome | Rule |
 |---|---|
@@ -81,7 +89,9 @@ The execution is **terminal** when the tool function's promise has settled **and
 | `cancelled` | A cancellation was requested for this execution, and the tool function rejected with **this execution's** `CancellationError` (from `ctx.cancellation.throwIfRequested()` or `ctx.cancellation.reason`). |
 | `failed` | The tool function threw or rejected with anything else, including another execution's `CancellationError`. |
 
-A cancellation request alone never makes an outcome `cancelled`. Registered-work results are reported separately (`tracked_registered`, `tracked_fulfilled`, `tracked_rejected`) and do not change the outcome. The terminal also reports `cancellation_requested`, `cancellation_acknowledged` and `listener_errors`.
+A cancellation request alone never makes an outcome `cancelled`. Registered-work results are reported separately (`tracked_registered`, `tracked_fulfilled`, `tracked_rejected`) and do not change the outcome. The terminal also reports `cancellation_requested`, `cancellation_acknowledged`, `listener_errors` and `audit_recorded`.
+
+**Terminal and audit failure.** The terminal is the execution's own state; it never depends on the audit sink. If `execution_terminal` cannot be recorded, the execution is still terminal, the local record (`getExecution()`, `whenTerminal()`, `terminals()`) is authoritative and reports `audit_recorded: false`, and the audit stream has no terminal event for that execution. The record is not retried.
 
 Terminal is independent of delivery: `process()` / `resolveApproval()` return when the result has been processed, which may be before registered work has settled; the terminal is recorded later. The existing `tool_execution_completed` event still means only that the tool function settled; it is not a terminal. For a tool without registered work the terminal is observed when the tool function's promise settles, so `execution_terminal` precedes `tool_execution_completed` in the audit stream.
 
@@ -95,7 +105,7 @@ A1's delivery fence is unchanged and remains binding. A cancelled or still-runni
 
 - `executor.managedState`: read-only view of the managed state store (`get`, `has`, `keys`, `version`); values are returned as copies.
 - `executor.getExecution(execution_id)`: snapshot with identity bindings, `state` (`running`, `draining` when only registered work remains, `terminal`), cancellation flags and the terminal record.
-- `executor.whenTerminal(execution_id)`: resolves with the terminal record.
+- `executor.whenTerminal(execution_id)`: resolves with the terminal record (including `audit_recorded`).
 - `executor.terminals()`: every terminal record of the executor, in the order the executions became terminal (copies).
 
 ## Audit events
@@ -109,8 +119,8 @@ A1's delivery fence is unchanged and remains binding. A cancelled or still-runni
 | `tool_commit_blocked` | `execution_id`, `session_id`, `capability_id`, `key`, `decision: "deny"`, `reason`, `revocation_id` when revoked |
 | `execution_terminal` | `execution_id`, `session_id`, `capability_id`, `outcome`, `cancellation_requested`, `cancellation_acknowledged`, `listener_errors`, `tracked_registered`, `tracked_fulfilled`, `tracked_rejected` |
 
-All are recorded with the execution's `request_id`. Every managed execution records `execution_terminal`, including executions of tools that ignore `ctx`; the normal ALLOW and approval audit sequences therefore contain one more event than before A2. Commit values are never written to the audit log. The audit stream is the runtime's own report: tests observe commits through the managed state and tool behaviour through harness-owned doubles. All six events export to OCSF as generic Base Events and are not incidents.
+All are recorded with the execution's `request_id`. The runtime attempts `execution_terminal` for every managed execution, including executions of tools that ignore `ctx`; the normal ALLOW and approval audit sequences therefore contain one more event than before A2. A missing `execution_terminal` (audit failure) is reported by the local terminal's `audit_recorded: false`; `audit_recorded` itself is not part of the audit metadata. Commit values are never written to the audit log. The audit stream is the runtime's own report: tests observe commits through the managed state and tool behaviour through harness-owned doubles. All six events export to OCSF as generic Base Events and are not incidents.
 
 ## State and limits
 
-Execution records, the managed state and cancellation state live in the memory of one executor instance; they are not persistent, distributed or shared, and are lost on restart. Not provided: stopping non-cooperating code, fencing effects outside `ctx.commit()`, asynchronous or external commit targets, a DOM `AbortSignal`, tenant, agent or ancestor scopes, a network endpoint or UI, and conformance to the `agent-control-evals` revocation-0.3.0 contract.
+Execution records, the managed state and cancellation state live in the memory of one executor instance; they are not persistent, distributed or shared, and are lost on restart. Not provided: stopping non-cooperating code, fencing effects outside `ctx.commit()`, asynchronous or external commit targets, observing work behind non-native thenables, protection against modification of the JavaScript environment, a DOM `AbortSignal`, tenant, agent or ancestor scopes, a network endpoint or UI, and conformance to the `agent-control-evals` revocation-0.3.0 contract.

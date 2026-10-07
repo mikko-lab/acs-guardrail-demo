@@ -84,6 +84,11 @@ Specification: [cooperative-containment.md](cooperative-containment.md). Evidenc
 - **Tombstone before callbacks; listener exceptions and re-entrancy cannot undo revocation, open the fence or stop other cancellations; late listener called immediately**: `C12`, `C21`
 - **Terminal waits for registered work; exactly one terminal in either settlement order**: `C14`, `C17`
 - **Execution identity per real invocation, bound to request, session and capability**: `C18`
+- **Settlement is observed through the Promise's internal state: a tool's own `then` on its returned or registered Promise cannot produce an early terminal; a modified native Promise is not observable and fails the call**: `C22`, `C22b`, `C23`
+- **Unobservable work is refused before registration and leaves no phantom pending entry**: `C24`
+- **A lost `execution_terminal` audit record leaves the local terminal intact (`audit_recorded: false`)**: `C25`
+- **The managed state writer is issued once; the view cannot write and returns copies**: `C26`
+- **Commit values never reach the audit log**: `C27`
 
 ## H. Audit Evidence
 - **H1 DENY evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A2`)

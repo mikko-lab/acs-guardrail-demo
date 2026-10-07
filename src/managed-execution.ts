@@ -10,7 +10,24 @@
  * Only cooperating code and effects performed through ctx.commit() are controlled. Arbitrary tool code,
  * effects outside ctx.commit() and unregistered background work are not.
  */
+import { types } from "node:util";
 import type { AuditCollector } from "./audit";
+
+// Captured at load: the runtime does not defend against later modification of the JavaScript environment itself.
+const NativePromise = Promise;
+const NativePromisePrototype = Promise.prototype;
+const getPrototypeOf = Object.getPrototypeOf;
+const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+
+/**
+ * An unmodified native Promise: `await` observes its settlement through the Promise's internal state, without
+ * reading its own `then` or running any code of the object. Checking this runs no code of the object either.
+ */
+function isObservablePromise(value: unknown): value is Promise<unknown> {
+  if (!types.isPromise(value) || getPrototypeOf(value) !== NativePromisePrototype) return false;
+  const ownConstructor = getOwnPropertyDescriptor(value, "constructor");
+  return ownConstructor === undefined || ("value" in ownConstructor && ownConstructor.value === NativePromise);
+}
 
 export class CancellationError extends Error {
   readonly code = "EXECUTION_CANCELLED";
@@ -53,8 +70,11 @@ export interface ExecutionContext {
   acknowledgeCancellation(): boolean;
   /** Runtime-mediated synchronous state change; throws CommitRejectedError if denied. */
   commit(key: string, value: unknown): CommitReceipt;
-  /** Registers work that must settle before the execution is terminal. */
-  track<T>(work: PromiseLike<T>): Promise<T>;
+  /**
+   * Registers work that must settle before the execution is terminal. Accepts only an unmodified native Promise
+   * (otherwise TypeError, nothing registered) and returns the same Promise.
+   */
+  track<T>(work: Promise<T>): Promise<T>;
 }
 
 export type TerminalOutcome = "completed" | "cancelled" | "failed";
@@ -71,6 +91,8 @@ export interface ExecutionTerminal {
   tracked_registered: number;
   tracked_fulfilled: number;
   tracked_rejected: number;
+  /** Whether the execution_terminal audit event was recorded. The terminal itself does not depend on it. */
+  audit_recorded: boolean;
 }
 
 export interface ExecutionSnapshot {
@@ -174,7 +196,7 @@ export class ManagedExecution {
       cancellation,
       acknowledgeCancellation: () => this.#acknowledge(),
       commit: (key: string, value: unknown) => this.#commit(key, value),
-      track: <T>(work: PromiseLike<T>) => this.#track(work),
+      track: <T>(work: Promise<T>) => this.#track(work),
     });
   }
 
@@ -194,19 +216,38 @@ export class ManagedExecution {
     };
   }
 
-  /** Calls the tool function with this execution's context and observes its settlement. */
+  /**
+   * Calls the tool function with this execution's context and observes its settlement. The returned promise is
+   * runtime-owned and settles only after the execution has recorded how the tool function ended.
+   */
   invoke(toolFn: ToolFn, args: Record<string, unknown>): Promise<unknown> {
-    let pending: Promise<unknown>;
+    return this.#run(toolFn, args);
+  }
+
+  async #run(toolFn: ToolFn, args: Record<string, unknown>): Promise<unknown> {
+    let returned: unknown;
     try {
-      pending = Promise.resolve(toolFn(args, this.context));
+      returned = toolFn(args, this.context);
+      if (types.isPromise(returned) && !isObservablePromise(returned)) {
+        throw new TypeError("Tool returned a modified native Promise; its settlement cannot be observed");
+      }
     } catch (e) {
-      pending = Promise.reject(e);
+      this.#settleMain(this.#outcomeOf(e));
+      throw e;
     }
-    pending.then(
-      () => this.#settleMain("completed"),
-      (e: unknown) => this.#settleMain(e === this.#cancellation && e !== undefined ? "cancelled" : "failed")
-    );
-    return pending;
+    // A native Promise is observed through its internal state. Any other thenable reports its own settlement.
+    try {
+      const value = await returned;
+      this.#settleMain("completed");
+      return value;
+    } catch (e) {
+      this.#settleMain(this.#outcomeOf(e));
+      throw e;
+    }
+  }
+
+  #outcomeOf(error: unknown): TerminalOutcome {
+    return error === this.#cancellation && error !== undefined ? "cancelled" : "failed";
   }
 
   /** Called by revoke() after the tombstone exists. Idempotent per execution. */
@@ -303,17 +344,25 @@ export class ManagedExecution {
     return { commit_id, execution_id: this.id, key, sequence };
   }
 
-  #track<T>(work: PromiseLike<T>): Promise<T> {
+  #track<T>(work: Promise<T>): Promise<T> {
     if (this.#state === "terminal") throw new Error(`Execution ${this.id} is terminal; work can no longer be registered`);
-    if (!work || typeof (work as PromiseLike<T>).then !== "function") throw new TypeError("track() requires a promise");
+    // Validated before anything is counted; the validation runs no code of the object.
+    if (!isObservablePromise(work)) throw new TypeError("track() requires an unmodified native Promise");
     this.#tracked.registered++;
     this.#tracked.pending++;
-    const tracked = Promise.resolve(work);
-    tracked.then(
-      () => { this.#tracked.fulfilled++; this.#settleTracked(); },
-      () => { this.#tracked.rejected++; this.#settleTracked(); }
-    );
-    return tracked;
+    void this.#observeTracked(work);
+    return work;
+  }
+
+  /** Never rejects: awaiting an observable Promise runs no code of the object. */
+  async #observeTracked(work: Promise<unknown>): Promise<void> {
+    try {
+      await work;
+      this.#tracked.fulfilled++;
+    } catch {
+      this.#tracked.rejected++;
+    }
+    this.#settleTracked();
   }
 
   #settleMain(outcome: TerminalOutcome): void {
@@ -344,14 +393,16 @@ export class ManagedExecution {
       tracked_registered: this.#tracked.registered,
       tracked_fulfilled: this.#tracked.fulfilled,
       tracked_rejected: this.#tracked.rejected,
+      audit_recorded: false,
     };
     this.#terminal = terminal;
     this.#listeners.clear();
     try {
-      const { request_id: _request_id, ...metadata } = terminal;
+      const { request_id: _request_id, audit_recorded: _audit_recorded, ...metadata } = terminal;
       this.deps.audit.record(this.requestId, "execution_terminal", metadata);
+      terminal.audit_recorded = true;
     } catch {
-      // The terminal state is recorded in the execution regardless.
+      // The terminal is recorded in the execution and the executor's terminal log regardless.
     }
     this.deps.onTerminal(terminal);
     this.#resolveTerminal({ ...terminal });

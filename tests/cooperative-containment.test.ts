@@ -7,7 +7,7 @@ import { setup, makeRequest, fresh } from "./evals/eval-setup";
 import { tools } from "../src/tools";
 import { AuditCollector } from "../src/audit";
 import { AuthorityRevokedError } from "../src/guarded-executor";
-import { CancellationError, CommitRejectedError, ExecutionContext } from "../src/managed-execution";
+import { CancellationError, CommitRejectedError, ExecutionContext, ManagedStateStore } from "../src/managed-execution";
 import type { AuditEvent, AuditEventType } from "../src/acs-types";
 
 type Ctx = ReturnType<typeof setup>;
@@ -416,5 +416,127 @@ describe("A2 cancellation and terminal", () => {
     expect(seen).toEqual([h.ctx.execution_id]);
     expect((ctx.executor.managedState as unknown as { issueWriter?: unknown }).issueWriter).toBeUndefined();
     expect(Object.isFrozen(h.ctx)).toBe(true);
+  });
+});
+
+describe("A2 settlement observation, registration and evidence", () => {
+  /** A native Promise whose own `then` claims fulfilment immediately, although the Promise itself is still pending. */
+  function lyingPromise<T>(claimed: T) {
+    const real = deferred<T>();
+    Object.defineProperty(real.promise, "then", {
+      value: (onFulfilled?: (v: T) => unknown) => { onFulfilled?.(claimed); return Promise.resolve(); },
+    });
+    return real;
+  }
+
+  it("C22 a tool's Promise with its own `then` cannot produce a terminal before the Promise settles", async () => {
+    const ctx = setup(Date.now()); const main = lyingPromise({ status: "ok" }); let c!: ExecutionContext;
+    tools.read_record = (_a, ctxArg) => { c = ctxArg!; return main.promise; };
+    const run = ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c22", requestId: "c22-a" }, ctx.clock));
+    await flush();
+    expect(ctx.executor.getExecution(c.execution_id)!.state).toBe("running");
+    expect(ctx.executor.terminals()).toEqual([]);
+    c.commit("k", 1);
+    expect(ctx.executor.managedState.get("k")).toBe(1);
+    main.resolve({ status: "ok" });
+    await run;
+    expect(await ctx.executor.whenTerminal(c.execution_id)).toMatchObject({ outcome: "completed" });
+    expect(ctx.executor.terminals()).toHaveLength(1);
+  });
+
+  it("C22b a modified native Promise returned by the tool is not observable: the call fails and its later work is detached", async () => {
+    const ctx = setup(Date.now()); const real = deferred<unknown>(); let c!: ExecutionContext; const log: string[] = [];
+    Object.defineProperty(real.promise, "constructor", { get: () => Promise });
+    tools.read_record = (_a, ctxArg) => { c = ctxArg!; return real.promise; };
+    const req = makeRequest({ tool: "read_record", sessionId: "c22b", requestId: "c22b-a" }, ctx.clock);
+    await ctx.executor.process(req);
+    expect(ctx.executor.getExecution(c.execution_id)!.terminal).toMatchObject({ outcome: "failed" });
+    expect(eventsOf(ctx, "tool_execution_completed").find(e => e.request_id === req.params.request_id)!.metadata!.status).toBe("error");
+    try { c.commit("late", 1); } catch (e) { log.push((e as CommitRejectedError).reason); }
+    expect(log).toEqual(["execution_terminal"]);
+    expect(ctx.executor.managedState.has("late")).toBe(false);
+    real.resolve({ status: "ok" });
+  });
+
+  it("C23 registered work with its own `then` keeps the execution draining until the work really settles", async () => {
+    const ctx = setup(Date.now()); const work = lyingPromise("done");
+    const h = scriptedTool("read_record", async c => { c.track(work.promise); return { status: "ok" }; });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c23", requestId: "c23-a" }, ctx.clock));
+    await flush();
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.state).toBe("draining");
+    expect(ctx.executor.terminals()).toEqual([]);
+    work.resolve("done");
+    expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ tracked_registered: 1, tracked_fulfilled: 1 });
+  });
+
+  it("C24 work that cannot be observed is refused before registration and never leaves a phantom pending entry", async () => {
+    const ctx = setup(Date.now()); const errors: string[] = [];
+    const throwingConstructor = Promise.resolve("already settled");
+    Object.defineProperty(throwingConstructor, "constructor", { get() { throw new Error("constructor getter"); } });
+    class SubPromise<T> extends Promise<T> {}
+    const candidates: unknown[] = [throwingConstructor, { then: (f: (v: unknown) => void) => f(1) }, SubPromise.resolve(1), 42];
+    const h = scriptedTool("read_record", async c => {
+      for (const w of candidates) {
+        try { c.track(w as Promise<unknown>); errors.push("registered"); } catch (e) { errors.push((e as Error).name); }
+      }
+      return { status: "ok" };
+    });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c24", requestId: "c24-a" }, ctx.clock));
+    expect(errors).toEqual(["TypeError", "TypeError", "TypeError", "TypeError"]);
+    expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ outcome: "completed", tracked_registered: 0 });
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.state).toBe("terminal");
+  });
+
+  it("C25 a lost execution_terminal record leaves the local terminal intact and says so", async () => {
+    const ok = setup(Date.now());
+    const h1 = scriptedTool("read_record", async () => ({ status: "ok" }));
+    await ok.executor.process(makeRequest({ tool: "read_record", sessionId: "c25-ok", requestId: "c25-ok-a" }, ok.clock));
+    expect(await ok.executor.whenTerminal(h1.ctx.execution_id)).toMatchObject({ audit_recorded: true });
+    expect(eventsOf(ok, "execution_terminal")[0].metadata).not.toHaveProperty("audit_recorded");
+
+    const ctx = setup(Date.now());
+    const h = scriptedTool("read_record", async () => ({ status: "ok" }));
+    const recordOriginal = AuditCollector.prototype.record;
+    jest.spyOn(ctx.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
+      if (t === "execution_terminal") throw new Error("audit sink unavailable");
+      return recordOriginal.call(this, id, t, meta);
+    });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c25", requestId: "c25-a" }, ctx.clock));
+    expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ outcome: "completed", audit_recorded: false });
+    expect(ctx.executor.terminals()).toEqual([expect.objectContaining({ execution_id: h.ctx.execution_id, audit_recorded: false })]);
+    expect(eventsOf(ctx, "execution_terminal")).toEqual([]);
+  });
+
+  it("C26 the managed state store issues its writer once; the view cannot write and returns copies", () => {
+    const store = new ManagedStateStore();
+    const write = store.issueWriter();
+    expect(() => store.issueWriter()).toThrow(/already issued/);
+    expect(write("k", JSON.stringify({ a: 1 }))).toBe(1);
+    const view = store.view();
+    expect((view as unknown as { issueWriter?: unknown }).issueWriter).toBeUndefined();
+    expect(Object.isFrozen(view)).toBe(true);
+    (view.get("k") as { a: number }).a = 2;
+    expect(view.get("k")).toEqual({ a: 1 });
+    expect(view.version).toBe(1);
+  });
+
+  it("C27 commit values never reach the audit log, whether the commit is applied or blocked", async () => {
+    const ctx = setup(Date.now()); const gate = deferred();
+    const h = scriptedTool("read_record", async (_c, h) => {
+      tryCommit(h, "applied-key", { secret: "VALUE-MARKER-APPLIED" });
+      await gate.promise;
+      tryCommit(h, "blocked-key", { secret: "VALUE-MARKER-BLOCKED" });
+      return { status: "ok" };
+    });
+    const req = makeRequest({ tool: "read_record", sessionId: "c27", requestId: "c27-a" }, ctx.clock);
+    const run = ctx.executor.process(req);
+    await h.started.promise;
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    gate.resolve(); await run;
+    expect(h.log).toEqual(["start", "commit:applied-key:ok", "commit:blocked-key:session_revoked"]);
+    const serialized = JSON.stringify(ctx.audit.getEvents());
+    expect(serialized).toContain("applied-key");
+    expect(serialized).toContain("blocked-key");
+    expect(serialized).not.toContain("VALUE-MARKER");
   });
 });
