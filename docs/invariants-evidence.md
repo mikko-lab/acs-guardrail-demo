@@ -70,6 +70,21 @@ Specification: [authority-revocation.md](authority-revocation.md). Evidence: `te
 - **Delivery effective point is the fulfilment of the public promise: a revocation from the `tool_result_delivered` audit callback withholds the raw output; a revocation in any Promise transition before fulfilment is honoured, after it is not**: `REV-15`, `REV-16b`, `REV-19`, `REV-18`
 - **Untargeted revocations from the same callbacks do not affect the execution or its output**: `REV-17`
 
+## G2. Cooperative Containment (A2)
+Specification: [cooperative-containment.md](cooperative-containment.md). Evidence: `tests/cooperative-containment.test.ts`. Commits are observed through `executor.managedState`, tool behaviour through harness-owned doubles.
+- **Revoke before start: no tool call, no execution, no terminal**: `C01`
+- **Commit fence: a commit after revocation is denied and the managed state is unchanged; an earlier commit stays; delivery still withheld**: `C02`, `C03`, `C04`, `C19`
+- **Revocation from a callback on the commit path (audit callback, `toJSON`) is seen by the binding check**: `C11a`, `C11b`
+- **Commit after the terminal and from detached work is denied**: `C13`, `C15`
+- **Audit failure never opens the effect; a lost applied record does not undo the write**: `C16`, `C16b`
+- **Acknowledgement is not termination; ignoring the signal gives no false terminal and no `cancelled` outcome**: `C05`, `C06`
+- **Reacting tool ends with one `cancelled` terminal; `cancelled` requires this execution's own CancellationError; natural completion is `completed`**: `C07`, `C20`, `C08`
+- **Duplicate revoke does not signal again; repeated acknowledgement is idempotent**: `C09`
+- **Untargeted and parallel executions are unaffected**: `C10`
+- **Tombstone before callbacks; listener exceptions and re-entrancy cannot undo revocation, open the fence or stop other cancellations; late listener called immediately**: `C12`, `C21`
+- **Terminal waits for registered work; exactly one terminal in either settlement order**: `C14`, `C17`
+- **Execution identity per real invocation, bound to request, session and capability**: `C18`
+
 ## H. Audit Evidence
 - **H1 DENY evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A2`)
 - **H2 ASK evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A3`)

@@ -66,7 +66,11 @@ This is evidence about the controlled runtime path, not a proof that every possi
 
 ## Authority revocation
 
-`GuardedExecutor.revoke(target)` is a trusted-integrator API that revokes a capability (`capability_id`) or a session. Revocation is explicit, monotonic and idempotent, and `clearSession()` never removes it. Revoked authority is denied at the request, approval, start and delivery boundaries (start is effective at the tool function call, delivery at the fulfilment of the public API promise); approval additionally re-checks the original capability's current validity and that the provider still resolves a capability for the same context. A tool that is already running is not stopped and its side effects are not prevented: only its result delivery is withheld. The returned receipt names the target, its effective point, the covered pending approvals and in-flight executions, and states that in-flight side effects are not prevented. Revocation state is in memory for one executor instance and does not survive a restart. Tenant and delegated-authority scopes, cancellation, a commit fence and terminal evidence are not provided. See [docs/authority-revocation.md](docs/authority-revocation.md).
+`GuardedExecutor.revoke(target)` is a trusted-integrator API that revokes a capability (`capability_id`) or a session. Revocation is explicit, monotonic and idempotent, and `clearSession()` never removes it. Revoked authority is denied at the request, approval, start and delivery boundaries (start is effective at the tool function call, delivery at the fulfilment of the public API promise); approval additionally re-checks the original capability's current validity and that the provider still resolves a capability for the same context. A tool that is already running is not stopped and its side effects are not prevented: only its result delivery is withheld. The returned receipt names the target, its effective point, the covered pending approvals and in-flight executions, and states that in-flight side effects are not prevented. Revocation state is in memory for one executor instance and does not survive a restart. Tenant and delegated-authority scopes are not provided. See [docs/authority-revocation.md](docs/authority-revocation.md).
+
+## Cooperative containment
+
+Every tool call that passes the start fence becomes a managed execution with its own `execution_id`, bound to the request, session and original capability. The tool receives an execution context (`tool(args, ctx)`) with a runtime-owned cancellation signal, a commit fence (`ctx.commit(key, value)`) over a runtime-managed state store, and `ctx.track()` for registering background work. A targeted `revoke()` records the tombstone first and then requests cancellation of the covered executions; listener exceptions and re-entrant calls are contained. A commit is effective at the store write and is denied after revocation or after the execution's terminal; earlier commits stay. Acknowledging a cancellation does not end an execution: it is terminal only when the tool function and all registered work have settled, with exactly one terminal (`completed`, `cancelled` or `failed`). The guarantees cover cooperating tools of one executor instance and runtime-mediated effects only: non-cooperating code, effects outside `ctx.commit()` and unregistered background work are not stopped. See [docs/cooperative-containment.md](docs/cooperative-containment.md).
 
 ## Concurrent authority isolation
 
@@ -128,8 +132,8 @@ OCSF export does not replace the original audit evidence and does not provide im
 
 `npm run verify` runs the TypeScript typecheck and Jest suite. The current verification result is:
 
-- **27 test suites passed**
-- **514 tests passed**
+- **28 test suites passed**
+- **537 tests passed**
 - **0 snapshots**
 
 The major tested categories are:
@@ -139,6 +143,7 @@ The major tested categories are:
 - replay protection;
 - capability authority and fail-closed scope checks;
 - explicit authority revocation at the request, approval, start and delivery boundaries;
+- cooperative containment: cancellation requests, the commit fence and terminal evidence of managed executions;
 - human approval binding and lifecycle behavior;
 - execution permits;
 - concurrent authority isolation;
@@ -151,7 +156,7 @@ The major tested categories are:
 - incident evidence and deterministic classification; and
 - verified OCSF 1.8.0 export (integrity gate, mapping, metadata allowlist, JSONL determinism).
 
-Relevant focused coverage includes `tests/runtime-authority.test.ts`, `tests/evals/authority-adversarial.test.ts`, `tests/evals/concurrent-authority.test.ts`, `tests/authority-revocation.test.ts`, and `tests/audit.test.ts`.
+Relevant focused coverage includes `tests/runtime-authority.test.ts`, `tests/evals/authority-adversarial.test.ts`, `tests/evals/concurrent-authority.test.ts`, `tests/authority-revocation.test.ts`, `tests/cooperative-containment.test.ts`, and `tests/audit.test.ts`.
 
 ## Evidence links
 
@@ -159,6 +164,7 @@ For exact mappings from claims to implementation and tests, see:
 
 - [docs/invariants-evidence.md](docs/invariants-evidence.md)
 - [docs/authority-revocation.md](docs/authority-revocation.md)
+- [docs/cooperative-containment.md](docs/cooperative-containment.md)
 - [docs/acs-crosswalk.md](docs/acs-crosswalk.md)
 - [docs/ocsf-export.md](docs/ocsf-export.md)
 - [CHANGELOG.md](CHANGELOG.md)
@@ -180,7 +186,7 @@ The crosswalk distinguishes pinned normative requirements, underspecified pinned
 - Runtime, replay, correlation, pending-action, and audit state are in memory; there is no durable persistence across process restart.
 - The audit hash chain is tamper-evident for the supplied verified stream, but there is no immutable storage, durable append-only backend, non-repudiation, external anchoring, SIEM integration, or distributed verification.
 - There is no external identity provider, independent workload-identity provider, institutional identity proof, or physical-human identity/intent proof.
-- Authority revocation covers capability and session scopes in the memory of one executor instance only; there is no persistent, distributed or cross-process revocation, no tenant or delegated-authority revocation, and no distributed capability store. Revocation does not stop running tools, cancel them or fence their side effects (no commit fence, no terminal evidence).
+- Authority revocation covers capability and session scopes in the memory of one executor instance only; there is no persistent, distributed or cross-process revocation, no tenant or delegated-authority revocation, and no distributed capability store. Revocation does not stop running tools. Cooperative containment fences only effects performed through `ctx.commit()` on the in-memory managed state of one executor; it does not stop non-cooperating code, fence network requests, external transactions or other effects outside the commit fence, or track unregistered background work.
 - There is no universal mediation proof or coverage proof.
 - There are no production SLA, high-availability, or distributed-state guarantees.
 - Metrics are observability, not enforcement.

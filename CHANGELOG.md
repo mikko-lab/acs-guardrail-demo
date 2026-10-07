@@ -3,18 +3,21 @@
 ## Unreleased
 
 ### Added
+- **Cooperative containment (A2):** every tool call that passes the start fence becomes a managed execution (`exec-<n>`) bound to its request, session and original capability. Tools receive an `ExecutionContext` (`tool(args, ctx)`) with a runtime-owned `CancellationSignal`, `acknowledgeCancellation()`, a commit fence `commit(key, value)` over a runtime-managed state store (`executor.managedState`, read-only) and `track()` for registered work. `revoke()` requests cancellation of covered executions after recording the tombstone. Exactly one terminal per execution (`completed` / `cancelled` / `failed`), observable through `getExecution()`, `whenTerminal()` and `terminals()`. New audit events `execution_cancellation_requested`, `execution_cancellation_acknowledged`, `tool_commit_requested`, `tool_commit_applied`, `tool_commit_blocked` and `execution_terminal` with OCSF metadata allowlists. See `docs/cooperative-containment.md`.
 - **Revocation effective points:** start is enforced immediately before the tool function call (after the `tool_execution_started` audit record, via an optional `beforeInvoke` guard on `ExecutionGate.execute()`), and delivery at the fulfilment of the public `process()` / `resolveApproval()` promise, so revocations from synchronous callbacks or Promise transitions on the path are honoured.
 - **Authority revocation (A1):** `GuardedExecutor.revoke({ scope: "capability", capability_id } | { scope: "session", session_id })` records an explicit, monotonic, idempotent revocation and returns a `RevocationReceiptV1`. Revoked authority is denied at the request, approval, start and delivery boundaries (`AuthorityRevokedError`, `authority_revocation_enforced`, `tool_result_withheld` with a revocation reason). New audit event types `authority_revoked` and `authority_revocation_enforced` with explicit OCSF metadata allowlists. See `docs/authority-revocation.md`.
 
 ### Changed
+- **Audit sequence (A2):** every managed execution records `execution_terminal`, so the normal ALLOW and approval audit sequences contain one more event. `tests/audit.test.ts` › "NORMAL ALLOW exact event sequence with no duplicates" lists it (between `tool_execution_started` and `tool_execution_completed`); its other expectations are unchanged.
+- **Tool signature:** `ToolImplementation` takes an optional second argument, the execution context; existing tools are unaffected. `ExecutionGate.execute()`'s `beforeInvoke` guard may return a tool invoker.
 - **Approval re-checks authority:** `resolveApproval()` now re-checks the original pending request's authority before execution: runtime revocation, the original capability's current validity, and that the provider still resolves a valid capability for the same context. An approval whose original capability expired or whose provider withdrew the capability no longer executes.
 - **Capability id binding:** a `capability_id` is bound to the content of the first verified grant seen with it; a different grant with the same id is rejected with `capability_rejected` reason `capability_id_conflict`.
 - **Capability verification audit order:** `capability_verified` is recorded only after the revocation and id-binding checks pass.
 - **Test fixture:** `tests/guarded-executor.test.ts` › EXPIRY › "expiry strict > semantics" now gives its capability a lifetime longer than the pending window, so that capability expiry no longer coincides with (and masks) the pending-timeout boundary it tests; its assertions are unchanged. The previous fixture expired the capability at exactly the pending timeout, which the approval re-check now rejects.
-- **Audit event enumeration:** the OCSF allowlist completeness test lists the two new event types.
+- **Audit event enumeration:** the OCSF allowlist completeness test lists the two A1 and the six A2 event types.
 
 ### Limitations
-- Revocation does not stop a running tool, cancel it, or prevent its side effects; only result delivery is withheld. No commit fence or terminal evidence.
+- Revocation does not stop a running tool. A2 cancellation is cooperative; the commit fence covers only `ctx.commit()` on the in-memory managed state; effects outside it, non-cooperating code and unregistered background work are not controlled.
 - Revocation state is in memory for one executor instance: not persistent, not distributed, not shared between processes, and lost on restart.
 - Only capability and session scopes; no tenant, agent or delegated-authority scope; no regrant.
 

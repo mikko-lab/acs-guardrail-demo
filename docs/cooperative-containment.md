@@ -83,7 +83,7 @@ The execution is **terminal** when the tool function's promise has settled **and
 
 A cancellation request alone never makes an outcome `cancelled`. Registered-work results are reported separately (`tracked_registered`, `tracked_fulfilled`, `tracked_rejected`) and do not change the outcome. The terminal also reports `cancellation_requested`, `cancellation_acknowledged` and `listener_errors`.
 
-Terminal is independent of delivery: `process()` / `resolveApproval()` return when the result has been processed, which may be before registered work has settled; the terminal is recorded later. The existing `tool_execution_completed` event still means only that the tool function settled; it is not a terminal.
+Terminal is independent of delivery: `process()` / `resolveApproval()` return when the result has been processed, which may be before registered work has settled; the terminal is recorded later. The existing `tool_execution_completed` event still means only that the tool function settled; it is not a terminal. For a tool without registered work the terminal is observed when the tool function's promise settles, so `execution_terminal` precedes `tool_execution_completed` in the audit stream.
 
 **Detached work.** Work a tool starts without `ctx.track()` is invisible to the runtime. A terminal does not prove that such work has ended. Its runtime-mediated commits after the terminal are denied (`execution_terminal`); its other effects are not controlled.
 
@@ -96,6 +96,7 @@ A1's delivery fence is unchanged and remains binding. A cancelled or still-runni
 - `executor.managedState`: read-only view of the managed state store (`get`, `has`, `keys`, `version`); values are returned as copies.
 - `executor.getExecution(execution_id)`: snapshot with identity bindings, `state` (`running`, `draining` when only registered work remains, `terminal`), cancellation flags and the terminal record.
 - `executor.whenTerminal(execution_id)`: resolves with the terminal record.
+- `executor.terminals()`: every terminal record of the executor, in the order the executions became terminal (copies).
 
 ## Audit events
 
@@ -108,7 +109,7 @@ A1's delivery fence is unchanged and remains binding. A cancelled or still-runni
 | `tool_commit_blocked` | `execution_id`, `session_id`, `capability_id`, `key`, `decision: "deny"`, `reason`, `revocation_id` when revoked |
 | `execution_terminal` | `execution_id`, `session_id`, `capability_id`, `outcome`, `cancellation_requested`, `cancellation_acknowledged`, `listener_errors`, `tracked_registered`, `tracked_fulfilled`, `tracked_rejected` |
 
-All are recorded with the execution's `request_id`. Commit values are never written to the audit log. The audit stream is the runtime's own report: tests observe commits through the managed state and tool behaviour through harness-owned doubles. All six events export to OCSF as generic Base Events and are not incidents.
+All are recorded with the execution's `request_id`. Every managed execution records `execution_terminal`, including executions of tools that ignore `ctx`; the normal ALLOW and approval audit sequences therefore contain one more event than before A2. Commit values are never written to the audit log. The audit stream is the runtime's own report: tests observe commits through the managed state and tool behaviour through harness-owned doubles. All six events export to OCSF as generic Base Events and are not incidents.
 
 ## State and limits
 

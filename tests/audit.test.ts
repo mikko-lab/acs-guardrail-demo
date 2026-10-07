@@ -88,6 +88,8 @@ describe("Audit Collector invariants", () => {
       "capability_verified",
       "guardian_decision",
       "tool_execution_started",
+      // A2: the managed execution becomes terminal when the tool function settles (it registered no work).
+      "execution_terminal",
       "tool_execution_completed",
       "tool_result_created",
       "result_guardian_decision",
