@@ -14,18 +14,59 @@ import { types } from "node:util";
 import type { AuditCollector } from "./audit";
 
 // Captured at load: the runtime does not defend against later modification of the JavaScript environment itself.
+const NativePromise = Promise;
 const nativeThen = Promise.prototype.then;
+const intrinsicSpeciesGetter = Object.getOwnPropertyDescriptor(Promise, Symbol.species)?.get;
+const { defineProperty, getOwnPropertyDescriptor, getPrototypeOf, isExtensible } = Object;
+const deleteProperty = Reflect.deleteProperty;
 
 type Settlement = { ok: true; value: unknown } | { ok: false; error: unknown };
 
+/** Whether the `constructor` the intrinsic `then` would read resolves to the intrinsic Promise. Reads descriptors only. */
+function constructorIsIntrinsic(promise: Promise<unknown>): boolean {
+  for (let o: object | null = promise; o !== null; o = getPrototypeOf(o)) {
+    if (types.isProxy(o)) return false;
+    const own = getOwnPropertyDescriptor(o, "constructor");
+    if (own) return "value" in own && own.value === NativePromise;
+  }
+  return true; // No constructor at all: the intrinsic `then` uses the intrinsic Promise.
+}
+
 /**
- * Observes a native Promise through its internal state: the intrinsic Promise.prototype.then registers the
- * reactions on the Promise itself, so the object's own `then` is never called, the reactions run only when the
- * Promise really settles, and its rejection counts as handled. The intrinsic `then` looks up the Promise's
- * species (`constructor`); if that lookup throws, nothing is registered and this throws.
+ * Observes a native Promise (including subclasses) through its internal state without running any code of the
+ * object. The intrinsic Promise.prototype.then registers the reactions on the Promise itself, so the object's own
+ * `then` is never called, the reactions run only when the Promise really settles, and its rejection counts as
+ * handled. The intrinsic `then` also creates a derived Promise with the species of `constructor`; to keep that
+ * from running the object's code (an accessor, a subclass or custom species constructor, which could also reject
+ * the derived Promise), the species must resolve to the intrinsic Promise. If the object's own `constructor` chain
+ * does not, an own `constructor` data property equal to Promise is defined for the duration of the call and the
+ * original state is restored right after; no code of the object runs in between. The derived Promise is then an
+ * intrinsic Promise that fulfils with the reaction's result and never rejects (the reactions do not throw).
+ *
+ * Throws TypeError, registering nothing, when this is impossible: a non-extensible Promise or a non-configurable
+ * own `constructor` whose chain does not resolve to Promise, or a modified Promise[Symbol.species].
  */
 function observeNative(promise: Promise<unknown>, onSettled: (s: Settlement) => void): void {
-  nativeThen.call(promise, value => onSettled({ ok: true, value }), error => onSettled({ ok: false, error }));
+  if (getOwnPropertyDescriptor(NativePromise, Symbol.species)?.get !== intrinsicSpeciesGetter) {
+    throw new TypeError("Promise[Symbol.species] has been modified; settlement cannot be observed");
+  }
+  const onFulfilled = (value: unknown) => onSettled({ ok: true, value });
+  const onRejected = (error: unknown) => onSettled({ ok: false, error });
+  if (constructorIsIntrinsic(promise)) {
+    nativeThen.call(promise, onFulfilled, onRejected);
+    return;
+  }
+  const own = getOwnPropertyDescriptor(promise, "constructor");
+  if (own ? !own.configurable : !isExtensible(promise)) {
+    throw new TypeError("The Promise's constructor cannot be pinned; settlement cannot be observed without running its code");
+  }
+  defineProperty(promise, "constructor", { value: NativePromise, writable: true, enumerable: false, configurable: true });
+  try {
+    nativeThen.call(promise, onFulfilled, onRejected);
+  } finally {
+    if (own) defineProperty(promise, "constructor", own);
+    else deleteProperty(promise, "constructor");
+  }
 }
 
 export class CancellationError extends Error {
@@ -249,7 +290,7 @@ export class ManagedExecution {
     try {
       settlement = await new Promise<Settlement>(resolve => observeNative(returned as Promise<unknown>, resolve));
     } catch (e) {
-      // The species lookup threw: the Promise cannot be observed and the work behind it is detached.
+      // The Promise cannot be observed without running its code: the call fails and the work behind it is detached.
       this.#settleMain("failed");
       throw new TypeError("Tool returned a native Promise whose settlement cannot be observed", { cause: e });
     }

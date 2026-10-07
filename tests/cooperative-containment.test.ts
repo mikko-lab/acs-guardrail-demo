@@ -424,6 +424,12 @@ describe("A2 cancellation and terminal", () => {
   });
 });
 
+const runFixture = (scenario: string) => spawnSync(process.execPath, ["-r", "ts-node/register", path.join(__dirname, "fixtures", "rejected-subclass-tool.ts"), scenario], {
+  cwd: path.join(__dirname, ".."),
+  env: { ...process.env, TS_NODE_TRANSPILE_ONLY: "true", TS_NODE_PROJECT: path.join(__dirname, "..", "tsconfig.json") },
+  encoding: "utf8",
+});
+
 describe("A2 settlement observation, registration and evidence", () => {
   /** A native Promise whose own `then` claims fulfilment immediately, although the Promise itself is still pending. */
   function lyingPromise<T>(claimed: T) {
@@ -449,21 +455,24 @@ describe("A2 settlement observation, registration and evidence", () => {
     expect(ctx.executor.terminals()).toHaveLength(1);
   });
 
-  it("C22b a native Promise with a changed `constructor` is observed through its real settlement; one whose species lookup throws fails the call", async () => {
+  it("C22b a changed `constructor` never runs: a configurable one is pinned and restored, a non-configurable one makes the Promise unobservable", async () => {
     const ctx = setup(Date.now());
-    // Accessor constructor that yields Promise: observable, so the execution runs until the Promise settles.
-    const real = deferred<unknown>(); let c!: ExecutionContext;
-    Object.defineProperty(real.promise, "constructor", { get: () => Promise });
+    // Configurable accessor: the runtime pins Promise for the duration of the intrinsic `then` and restores it.
+    const real = deferred<unknown>(); let c!: ExecutionContext; let getterCalls = 0;
+    const getter = () => { getterCalls++; throw new Error("constructor getter must not run"); };
+    Object.defineProperty(real.promise, "constructor", { get: getter, configurable: true });
     tools.read_record = (_a, ctxArg) => { c = ctxArg!; return real.promise; };
     const run = ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c22b", requestId: "c22b-a" }, ctx.clock));
     await flush();
     expect(ctx.executor.getExecution(c.execution_id)!.state).toBe("running");
+    expect(Object.getOwnPropertyDescriptor(real.promise, "constructor")).toEqual({ get: getter, set: undefined, enumerable: false, configurable: true });
     real.resolve({ status: "ok" }); await run;
     expect(await ctx.executor.whenTerminal(c.execution_id)).toMatchObject({ outcome: "completed" });
+    expect(getterCalls).toBe(0);
 
-    // Species lookup throws: nothing can be observed; the call fails and the work behind the Promise is detached.
+    // Non-configurable accessor: cannot be pinned, so the call fails and the work behind the Promise is detached.
     const hidden = deferred<unknown>(); let d!: ExecutionContext; const log: string[] = [];
-    Object.defineProperty(hidden.promise, "constructor", { get() { throw new Error("constructor getter"); } });
+    Object.defineProperty(hidden.promise, "constructor", { get: getter });
     tools.read_record = (_a, ctxArg) => { d = ctxArg!; return hidden.promise; };
     const req = makeRequest({ tool: "read_record", sessionId: "c22b2", requestId: "c22b2-a" }, ctx.clock);
     await ctx.executor.process(req);
@@ -472,6 +481,7 @@ describe("A2 settlement observation, registration and evidence", () => {
     try { d.commit("late", 1); } catch (e) { log.push((e as CommitRejectedError).reason); }
     expect(log).toEqual(["execution_terminal"]);
     expect(ctx.executor.managedState.has("late")).toBe(false);
+    expect(getterCalls).toBe(0);
     hidden.resolve({ status: "ok" });
   });
 
@@ -517,14 +527,73 @@ describe("A2 settlement observation, registration and evidence", () => {
   });
 
   it("C28b process-level: a tool returning a rejected Promise subclass leaves no unhandled rejection; the process exits normally", () => {
-    const result = spawnSync(process.execPath, ["-r", "ts-node/register", path.join(__dirname, "fixtures", "rejected-subclass-tool.ts")], {
-      cwd: path.join(__dirname, ".."),
-      env: { ...process.env, TS_NODE_TRANSPILE_ONLY: "true", TS_NODE_PROJECT: path.join(__dirname, "..", "tsconfig.json") },
-      encoding: "utf8",
-    });
-    expect(result.stderr).not.toContain("SUBCLASS_REJECTION_MARKER");
+    const result = runFixture("rejected-subclass");
     expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("SUBCLASS_REJECTION_MARKER");
     expect(JSON.parse(result.stdout.trim().split("\n").pop()!)).toEqual({ outcome: "failed", delivered: true });
+  }, 60_000);
+
+  it("C29 the runtime never runs a species constructor: subclass and custom-species Promises are observed through a pinned intrinsic species", async () => {
+    const ctx = setup(Date.now());
+    let constructed = 0;
+    class CountingSpecies<T> extends Promise<T> {
+      constructor(executor: (resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: unknown) => void) => void) {
+        constructed++;
+        super(executor);
+      }
+    }
+    // (a) A plain native Promise whose own `constructor` data property is a custom species.
+    const custom = Promise.resolve({ status: "ok" });
+    Object.defineProperty(custom, "constructor", { value: CountingSpecies, writable: true, configurable: true });
+    let c!: ExecutionContext;
+    tools.read_record = (_a, ctxArg) => { c = ctxArg!; return custom; };
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c29a", requestId: "c29a-a" }, ctx.clock));
+    expect(await ctx.executor.whenTerminal(c.execution_id)).toMatchObject({ outcome: "completed" });
+    expect(Object.getOwnPropertyDescriptor(custom, "constructor")).toEqual({ value: CountingSpecies, writable: true, enumerable: false, configurable: true });
+
+    // (b) A subclass instance returned by the tool and (c) one registered with track().
+    const returned = CountingSpecies.resolve({ status: "ok" }); const tracked = CountingSpecies.resolve("work");
+    const before = constructed;
+    tools.read_record = (_a, ctxArg) => { c = ctxArg!; c.track(tracked); return returned; };
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c29b", requestId: "c29b-a" }, ctx.clock));
+    expect(await ctx.executor.whenTerminal(c.execution_id)).toMatchObject({ outcome: "completed", tracked_registered: 1, tracked_fulfilled: 1 });
+    expect(Object.prototype.hasOwnProperty.call(returned, "constructor")).toBe(false);
+    expect(constructed).toBe(before);
+
+    // (d) A frozen subclass instance cannot be pinned: track() refuses it, a returned one fails the call.
+    const frozen = Object.freeze(CountingSpecies.resolve("frozen")); const errors: string[] = [];
+    const frozenBefore = constructed;
+    tools.read_record = (_a, ctxArg) => {
+      c = ctxArg!;
+      try { c.track(frozen); } catch (e) { errors.push((e as Error).name); }
+      return frozen as Promise<unknown>;
+    };
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c29d", requestId: "c29d-a" }, ctx.clock));
+    expect(errors).toEqual(["TypeError"]);
+    expect(ctx.executor.getExecution(c.execution_id)!.terminal).toMatchObject({ outcome: "failed", tracked_registered: 0 });
+    expect(constructed).toBe(frozenBefore);
+  });
+
+  it("C29c a modified Promise[Symbol.species] makes native Promises unobservable instead of running it", async () => {
+    const ctx = setup(Date.now()); const errors: string[] = []; let speciesCalls = 0;
+    const original = Object.getOwnPropertyDescriptor(Promise, Symbol.species)!;
+    const h = scriptedTool("read_record", async c => {
+      Object.defineProperty(Promise, Symbol.species, { get() { speciesCalls++; return Promise; }, configurable: true });
+      try { c.track(Promise.resolve("work")); } catch (e) { errors.push((e as Error).name); }
+      finally { Object.defineProperty(Promise, Symbol.species, original); }
+      return { status: "ok" };
+    });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c29c", requestId: "c29c-a" }, ctx.clock));
+    expect(errors).toEqual(["TypeError"]);
+    expect(speciesCalls).toBe(0);
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.terminal).toMatchObject({ outcome: "completed", tracked_registered: 0 });
+  });
+
+  it("C29b process-level: a species constructor that would reject the derived Promise is never run; the process exits normally", () => {
+    const result = runFixture("rejecting-species");
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("DERIVED_SPECIES_REJECTION");
+    expect(JSON.parse(result.stdout.trim().split("\n").pop()!)).toEqual({ outcome: "completed", delivered: true });
   }, 60_000);
 
   it("C25 a failed execution_terminal record call leaves the local terminal intact and marks the recording unconfirmed", async () => {
