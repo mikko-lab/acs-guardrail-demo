@@ -33,9 +33,15 @@ export class ExecutionGate {
     return permit;
   }
 
+  /**
+   * @param beforeInvoke Optional runtime guard. It runs after every other step of this method, including the
+   *   `tool_execution_started` audit record, and immediately before the tool function is called, with no callback
+   *   or asynchronous boundary in between. If it throws, the tool function is not called.
+   */
   async execute(
     request: AcsToolCallRequest,
-    permit: ExecutionPermit
+    permit: ExecutionPermit,
+    beforeInvoke?: () => void
   ): Promise<AcsToolCallResult> {
     const { params } = request;
     const toolName = params.payload.tool.name;
@@ -67,6 +73,8 @@ export class ExecutionGate {
     for (const [k, v] of Object.entries(params.payload.arguments)) {
       unwrappedArgs[k] = v.value;
     }
+
+    beforeInvoke?.();
 
     try {
       const rawResult = await toolFn(unwrappedArgs);

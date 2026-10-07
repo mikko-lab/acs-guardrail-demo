@@ -101,7 +101,7 @@ No `exported_at` or other export-time value is emitted.
 | `capability_rejected` with reason `capability_agent_mismatch` / `capability_session_mismatch` / `capability_scope_mismatch` | Detection Finding (2004), incident `authority_boundary_violation` |
 | `approval_verification_failed` with reason `invalid_signature` | Detection Finding (2004), incident `authority_authentication_failure` |
 | `approval_verification_failed` with reason `tool_binding_mismatch` / `wrong_approver_identity` | Detection Finding (2004), incident `authority_boundary_violation` |
-| every other event, including `guardian_decision` (allow, ask **and deny**), `approval_requested`, `human_approval`, `human_rejection`, `approval_expired`, `tool_execution_blocked`, other `capability_rejected` / `approval_verification_failed` reasons | **Base Event (0)**, generic |
+| every other event, including `guardian_decision` (allow, ask **and deny**), `approval_requested`, `human_approval`, `human_rejection`, `approval_expired`, `tool_execution_blocked`, `authority_revoked`, `authority_revocation_enforced`, other `capability_rejected` / `approval_verification_failed` reasons | **Base Event (0)**, generic |
 
 The Detection Finding rows are not a separate rule set. The exporter calls the existing `IncidentClassifier.fromAudit` and emits a Detection Finding only for an event the classifier derives an incident from. If the classifier changes, the mapping follows it. A Guardian `deny` is a policy decision working as intended, not a detection, and stays a Base Event.
 
