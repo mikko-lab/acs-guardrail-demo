@@ -70,7 +70,7 @@ This is evidence about the controlled runtime path, not a proof that every possi
 
 ## Cooperative containment
 
-Every tool call that passes the start fence becomes a managed execution with its own `execution_id`, bound to the request, session and original capability. The tool receives an execution context (`tool(args, ctx)`) with a runtime-owned cancellation signal, a commit fence (`ctx.commit(key, value)`) over a runtime-managed state store, and `ctx.track()` for registering background work (unmodified native Promises only; settlement is observed through the Promise's internal state, not its own `then`). A targeted `revoke()` records the tombstone first and then requests cancellation of the covered executions; listener exceptions and re-entrant calls are contained. A commit is effective at the store write and is denied after revocation or after the execution's terminal; earlier commits stay. Acknowledging a cancellation does not end an execution: it is terminal only when the tool function and all registered work have settled, with exactly one terminal (`completed`, `cancelled` or `failed`). The terminal is local execution state; the `execution_terminal` audit event is a recording attempt, and `audit_recorded` reports whether it succeeded. The guarantees cover cooperating tools of one executor instance and runtime-mediated effects only: non-cooperating code, effects outside `ctx.commit()` and unregistered background work are not stopped. See [docs/cooperative-containment.md](docs/cooperative-containment.md).
+Every tool call that passes the start fence becomes a managed execution with its own `execution_id`, bound to the request, session and original capability. The tool receives an execution context (`tool(args, ctx)`) with a runtime-owned cancellation signal, a commit fence (`ctx.commit(key, value)`) over a runtime-managed state store, and `ctx.track()` for registering background work (native Promises only; settlement is observed through the Promise's internal state with the intrinsic `then`, never the object's own `then`). A targeted `revoke()` records the tombstone first and then requests cancellation of the covered executions; listener exceptions and re-entrant calls are contained. A commit is effective at the store write and is denied after revocation or after the execution's terminal; earlier commits stay. Acknowledging a cancellation does not end an execution: it is terminal only when the tool function and all registered work have settled, with exactly one terminal (`completed`, `cancelled` or `failed`). The terminal is local execution state; the `execution_terminal` audit event is a recording attempt, and `audit_recorded` reports whether the record call returned normally (`false` means unconfirmed, not necessarily absent). The guarantees cover cooperating tools of one executor instance and runtime-mediated effects only: non-cooperating code, effects outside `ctx.commit()` and unregistered background work are not stopped. See [docs/cooperative-containment.md](docs/cooperative-containment.md).
 
 ## Concurrent authority isolation
 
@@ -133,7 +133,7 @@ OCSF export does not replace the original audit evidence and does not provide im
 `npm run verify` runs the TypeScript typecheck and Jest suite. The current verification result is:
 
 - **28 test suites passed**
-- **544 tests passed**
+- **546 tests passed**
 - **0 snapshots**
 
 The major tested categories are:

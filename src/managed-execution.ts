@@ -14,19 +14,18 @@ import { types } from "node:util";
 import type { AuditCollector } from "./audit";
 
 // Captured at load: the runtime does not defend against later modification of the JavaScript environment itself.
-const NativePromise = Promise;
-const NativePromisePrototype = Promise.prototype;
-const getPrototypeOf = Object.getPrototypeOf;
-const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const nativeThen = Promise.prototype.then;
+
+type Settlement = { ok: true; value: unknown } | { ok: false; error: unknown };
 
 /**
- * An unmodified native Promise: `await` observes its settlement through the Promise's internal state, without
- * reading its own `then` or running any code of the object. Checking this runs no code of the object either.
+ * Observes a native Promise through its internal state: the intrinsic Promise.prototype.then registers the
+ * reactions on the Promise itself, so the object's own `then` is never called, the reactions run only when the
+ * Promise really settles, and its rejection counts as handled. The intrinsic `then` looks up the Promise's
+ * species (`constructor`); if that lookup throws, nothing is registered and this throws.
  */
-function isObservablePromise(value: unknown): value is Promise<unknown> {
-  if (!types.isPromise(value) || getPrototypeOf(value) !== NativePromisePrototype) return false;
-  const ownConstructor = getOwnPropertyDescriptor(value, "constructor");
-  return ownConstructor === undefined || ("value" in ownConstructor && ownConstructor.value === NativePromise);
+function observeNative(promise: Promise<unknown>, onSettled: (s: Settlement) => void): void {
+  nativeThen.call(promise, value => onSettled({ ok: true, value }), error => onSettled({ ok: false, error }));
 }
 
 export class CancellationError extends Error {
@@ -71,8 +70,8 @@ export interface ExecutionContext {
   /** Runtime-mediated synchronous state change; throws CommitRejectedError if denied. */
   commit(key: string, value: unknown): CommitReceipt;
   /**
-   * Registers work that must settle before the execution is terminal. Accepts only an unmodified native Promise
-   * (otherwise TypeError, nothing registered) and returns the same Promise.
+   * Registers work that must settle before the execution is terminal. Accepts only a native Promise whose
+   * settlement the runtime can observe (otherwise TypeError, nothing registered) and returns the same Promise.
    */
   track<T>(work: Promise<T>): Promise<T>;
 }
@@ -91,7 +90,10 @@ export interface ExecutionTerminal {
   tracked_registered: number;
   tracked_fulfilled: number;
   tracked_rejected: number;
-  /** Whether the execution_terminal audit event was recorded. The terminal itself does not depend on it. */
+  /**
+   * Whether the execution_terminal record call returned normally. false means unconfirmed: the event may be absent or,
+   * with a sink that writes and then throws, present. The terminal itself does not depend on it.
+   */
   audit_recorded: boolean;
 }
 
@@ -228,22 +230,35 @@ export class ManagedExecution {
     let returned: unknown;
     try {
       returned = toolFn(args, this.context);
-      if (types.isPromise(returned) && !isObservablePromise(returned)) {
-        throw new TypeError("Tool returned a modified native Promise; its settlement cannot be observed");
+    } catch (e) {
+      this.#settleMain(this.#outcomeOf(e));
+      throw e;
+    }
+    if (!types.isPromise(returned)) {
+      // A synchronous value is settled at once; a non-native thenable reports its own settlement (trust boundary).
+      try {
+        const value = await returned;
+        this.#settleMain("completed");
+        return value;
+      } catch (e) {
+        this.#settleMain(this.#outcomeOf(e));
+        throw e;
       }
-    } catch (e) {
-      this.#settleMain(this.#outcomeOf(e));
-      throw e;
     }
-    // A native Promise is observed through its internal state. Any other thenable reports its own settlement.
+    let settlement: Settlement;
     try {
-      const value = await returned;
-      this.#settleMain("completed");
-      return value;
+      settlement = await new Promise<Settlement>(resolve => observeNative(returned as Promise<unknown>, resolve));
     } catch (e) {
-      this.#settleMain(this.#outcomeOf(e));
-      throw e;
+      // The species lookup threw: the Promise cannot be observed and the work behind it is detached.
+      this.#settleMain("failed");
+      throw new TypeError("Tool returned a native Promise whose settlement cannot be observed", { cause: e });
     }
+    if (settlement.ok) {
+      this.#settleMain("completed");
+      return settlement.value;
+    }
+    this.#settleMain(this.#outcomeOf(settlement.error));
+    throw settlement.error;
   }
 
   #outcomeOf(error: unknown): TerminalOutcome {
@@ -346,23 +361,20 @@ export class ManagedExecution {
 
   #track<T>(work: Promise<T>): Promise<T> {
     if (this.#state === "terminal") throw new Error(`Execution ${this.id} is terminal; work can no longer be registered`);
-    // Validated before anything is counted; the validation runs no code of the object.
-    if (!isObservablePromise(work)) throw new TypeError("track() requires an unmodified native Promise");
+    if (!types.isPromise(work)) throw new TypeError("track() requires a native Promise");
+    // Counted only after the reactions are registered; the reactions cannot run before this method returns.
+    try {
+      observeNative(work, settlement => {
+        if (settlement.ok) this.#tracked.fulfilled++;
+        else this.#tracked.rejected++;
+        this.#settleTracked();
+      });
+    } catch (e) {
+      throw new TypeError("track() requires a native Promise whose settlement can be observed", { cause: e });
+    }
     this.#tracked.registered++;
     this.#tracked.pending++;
-    void this.#observeTracked(work);
     return work;
-  }
-
-  /** Never rejects: awaiting an observable Promise runs no code of the object. */
-  async #observeTracked(work: Promise<unknown>): Promise<void> {
-    try {
-      await work;
-      this.#tracked.fulfilled++;
-    } catch {
-      this.#tracked.rejected++;
-    }
-    this.#settleTracked();
   }
 
   #settleMain(outcome: TerminalOutcome): void {

@@ -9,6 +9,8 @@ import { AuditCollector } from "../src/audit";
 import { AuthorityRevokedError } from "../src/guarded-executor";
 import { CancellationError, CommitRejectedError, ExecutionContext, ManagedStateStore } from "../src/managed-execution";
 import type { AuditEvent, AuditEventType } from "../src/acs-types";
+import { spawnSync } from "child_process";
+import path from "path";
 
 type Ctx = ReturnType<typeof setup>;
 type Deferred<T = void> = { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void };
@@ -180,16 +182,17 @@ describe("A2 commit fence", () => {
 
 describe("A2 cancellation and terminal", () => {
   it("C05 acknowledgement without ending: no terminal until the managed work actually settles", async () => {
-    const ctx = setup(Date.now()); const finish = deferred(); const acked = deferred();
+    const ctx = setup(Date.now()); const finish = deferred();
     const h = scriptedTool("read_record", async (c, h) => {
-      c.cancellation.onCancel(() => { h.log.push(`ack:${c.acknowledgeCancellation()}`); acked.resolve(); });
+      c.cancellation.onCancel(() => { h.log.push(`ack:${c.acknowledgeCancellation()}`); });
       await finish.promise; h.log.push("end"); return { status: "ok" };
     });
     const req = makeRequest({ tool: "read_record", sessionId: "c05", requestId: "c05-a" }, ctx.clock);
     const run = ctx.executor.process(req);
     await h.started.promise;
+    // Listeners run synchronously inside revoke(); nothing needs to be awaited before the checks.
     ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
-    await acked.promise; await flush();
+    await flush();
     expect(h.log).toEqual(["start", "ack:true"]);
     expect(ctx.executor.getExecution(h.ctx.execution_id)).toMatchObject({ state: "running", cancellation_requested: true, cancellation_acknowledged: true });
     expect(ctx.executor.terminals()).toEqual([]);
@@ -229,6 +232,7 @@ describe("A2 cancellation and terminal", () => {
     const run = ctx.executor.process(req);
     await h.started.promise;
     ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.cancellation_requested).toBe(true);
     await run;
     const terminal = await ctx.executor.whenTerminal(h.ctx.execution_id);
     await flush();
@@ -246,6 +250,7 @@ describe("A2 cancellation and terminal", () => {
     const run = ctx.executor.process(req);
     await h.started.promise;
     ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.cancellation_requested).toBe(true);
     await run;
     expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ outcome: "failed", cancellation_requested: true });
   });
@@ -444,18 +449,30 @@ describe("A2 settlement observation, registration and evidence", () => {
     expect(ctx.executor.terminals()).toHaveLength(1);
   });
 
-  it("C22b a modified native Promise returned by the tool is not observable: the call fails and its later work is detached", async () => {
-    const ctx = setup(Date.now()); const real = deferred<unknown>(); let c!: ExecutionContext; const log: string[] = [];
+  it("C22b a native Promise with a changed `constructor` is observed through its real settlement; one whose species lookup throws fails the call", async () => {
+    const ctx = setup(Date.now());
+    // Accessor constructor that yields Promise: observable, so the execution runs until the Promise settles.
+    const real = deferred<unknown>(); let c!: ExecutionContext;
     Object.defineProperty(real.promise, "constructor", { get: () => Promise });
     tools.read_record = (_a, ctxArg) => { c = ctxArg!; return real.promise; };
-    const req = makeRequest({ tool: "read_record", sessionId: "c22b", requestId: "c22b-a" }, ctx.clock);
+    const run = ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c22b", requestId: "c22b-a" }, ctx.clock));
+    await flush();
+    expect(ctx.executor.getExecution(c.execution_id)!.state).toBe("running");
+    real.resolve({ status: "ok" }); await run;
+    expect(await ctx.executor.whenTerminal(c.execution_id)).toMatchObject({ outcome: "completed" });
+
+    // Species lookup throws: nothing can be observed; the call fails and the work behind the Promise is detached.
+    const hidden = deferred<unknown>(); let d!: ExecutionContext; const log: string[] = [];
+    Object.defineProperty(hidden.promise, "constructor", { get() { throw new Error("constructor getter"); } });
+    tools.read_record = (_a, ctxArg) => { d = ctxArg!; return hidden.promise; };
+    const req = makeRequest({ tool: "read_record", sessionId: "c22b2", requestId: "c22b2-a" }, ctx.clock);
     await ctx.executor.process(req);
-    expect(ctx.executor.getExecution(c.execution_id)!.terminal).toMatchObject({ outcome: "failed" });
+    expect(ctx.executor.getExecution(d.execution_id)!.terminal).toMatchObject({ outcome: "failed" });
     expect(eventsOf(ctx, "tool_execution_completed").find(e => e.request_id === req.params.request_id)!.metadata!.status).toBe("error");
-    try { c.commit("late", 1); } catch (e) { log.push((e as CommitRejectedError).reason); }
+    try { d.commit("late", 1); } catch (e) { log.push((e as CommitRejectedError).reason); }
     expect(log).toEqual(["execution_terminal"]);
     expect(ctx.executor.managedState.has("late")).toBe(false);
-    real.resolve({ status: "ok" });
+    hidden.resolve({ status: "ok" });
   });
 
   it("C23 registered work with its own `then` keeps the execution draining until the work really settles", async () => {
@@ -473,8 +490,7 @@ describe("A2 settlement observation, registration and evidence", () => {
     const ctx = setup(Date.now()); const errors: string[] = [];
     const throwingConstructor = Promise.resolve("already settled");
     Object.defineProperty(throwingConstructor, "constructor", { get() { throw new Error("constructor getter"); } });
-    class SubPromise<T> extends Promise<T> {}
-    const candidates: unknown[] = [throwingConstructor, { then: (f: (v: unknown) => void) => f(1) }, SubPromise.resolve(1), 42];
+    const candidates: unknown[] = [throwingConstructor, { then: (f: (v: unknown) => void) => f(1) }, 42];
     const h = scriptedTool("read_record", async c => {
       for (const w of candidates) {
         try { c.track(w as Promise<unknown>); errors.push("registered"); } catch (e) { errors.push((e as Error).name); }
@@ -482,12 +498,36 @@ describe("A2 settlement observation, registration and evidence", () => {
       return { status: "ok" };
     });
     await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c24", requestId: "c24-a" }, ctx.clock));
-    expect(errors).toEqual(["TypeError", "TypeError", "TypeError", "TypeError"]);
-    expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ outcome: "completed", tracked_registered: 0 });
-    expect(ctx.executor.getExecution(h.ctx.execution_id)!.state).toBe("terminal");
+    expect(errors).toEqual(["TypeError", "TypeError", "TypeError"]);
+    await flush();
+    expect(ctx.executor.getExecution(h.ctx.execution_id)).toMatchObject({ state: "terminal", terminal: { outcome: "completed", tracked_registered: 0 } });
   });
 
-  it("C25 a lost execution_terminal record leaves the local terminal intact and says so", async () => {
+  it("C28 rejected registered work in a Promise subclass is observed and counted as rejected", async () => {
+    const ctx = setup(Date.now());
+    class SubPromise<T> extends Promise<T> {}
+    const marker = new Error("SUBCLASS_REJECTION_MARKER");
+    const work = deferred<void>(); const sub = new SubPromise<void>((_res, rej) => { work.promise.then(() => rej(marker)); });
+    const h = scriptedTool("read_record", async c2 => { c2.track(sub); return { status: "ok" }; });
+    await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c28t", requestId: "c28t-a" }, ctx.clock));
+    await flush();
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.state).toBe("draining");
+    work.resolve();
+    expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ outcome: "completed", tracked_registered: 1, tracked_rejected: 1 });
+  });
+
+  it("C28b process-level: a tool returning a rejected Promise subclass leaves no unhandled rejection; the process exits normally", () => {
+    const result = spawnSync(process.execPath, ["-r", "ts-node/register", path.join(__dirname, "fixtures", "rejected-subclass-tool.ts")], {
+      cwd: path.join(__dirname, ".."),
+      env: { ...process.env, TS_NODE_TRANSPILE_ONLY: "true", TS_NODE_PROJECT: path.join(__dirname, "..", "tsconfig.json") },
+      encoding: "utf8",
+    });
+    expect(result.stderr).not.toContain("SUBCLASS_REJECTION_MARKER");
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout.trim().split("\n").pop()!)).toEqual({ outcome: "failed", delivered: true });
+  }, 60_000);
+
+  it("C25 a failed execution_terminal record call leaves the local terminal intact and marks the recording unconfirmed", async () => {
     const ok = setup(Date.now());
     const h1 = scriptedTool("read_record", async () => ({ status: "ok" }));
     await ok.executor.process(makeRequest({ tool: "read_record", sessionId: "c25-ok", requestId: "c25-ok-a" }, ok.clock));
@@ -505,6 +545,18 @@ describe("A2 settlement observation, registration and evidence", () => {
     expect(await ctx.executor.whenTerminal(h.ctx.execution_id)).toMatchObject({ outcome: "completed", audit_recorded: false });
     expect(ctx.executor.terminals()).toEqual([expect.objectContaining({ execution_id: h.ctx.execution_id, audit_recorded: false })]);
     expect(eventsOf(ctx, "execution_terminal")).toEqual([]);
+
+    // A sink that writes and then throws: still unconfirmed locally, although the event is in the stream.
+    const wt = setup(Date.now());
+    const h2 = scriptedTool("read_record", async () => ({ status: "ok" }));
+    jest.spyOn(wt.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
+      recordOriginal.call(this, id, t, meta);
+      if (t === "execution_terminal") throw new Error("sink failed after writing");
+    });
+    await wt.executor.process(makeRequest({ tool: "read_record", sessionId: "c25-wt", requestId: "c25-wt-a" }, wt.clock));
+    expect(await wt.executor.whenTerminal(h2.ctx.execution_id)).toMatchObject({ outcome: "completed", audit_recorded: false });
+    expect(eventsOf(wt, "execution_terminal")).toHaveLength(1);
+    expect(wt.executor.terminals()).toHaveLength(1);
   });
 
   it("C26 the managed state store issues its writer once; the view cannot write and returns copies", () => {
