@@ -33,6 +33,12 @@
  *   resolveApproval() promise. A tool that is already running is NOT stopped
  *   and its side effects are NOT prevented; only its result delivery is withheld.
  *   clearSession() releases session state and never removes a revocation.
+ *
+ * Cooperative containment (docs/cooperative-containment.md):
+ *   Every tool invocation is a managed execution with its own execution_id and an ExecutionContext
+ *   (cancellation signal, runtime-mediated commit fence, registered work). A targeted revoke() requests
+ *   cancellation of the matching managed executions after the tombstone exists. Only cooperating tools and
+ *   effects performed through ctx.commit() are controlled.
  */
 
 import { AcsToolCallRequest, AcsResponseEnvelope, AcsToolCallResult } from "./acs-types";
@@ -46,6 +52,7 @@ import { ExecutionCorrelationStore } from "./execution-correlation";
 import * as crypto from "crypto";
 import { CapabilityGrantVerifier, CapabilityContext, CapabilityVerificationError, CapabilityGrantV1 } from "./capability-grant";
 import { AuthorityRevocationRegistry, parseRevocationTarget, RevocationMatch, RevocationTarget } from "./authority-revocation";
+import { ExecutionSnapshot, ExecutionTerminal, ManagedExecution, ManagedStateStore, ReadonlyManagedState } from "./managed-execution";
 
 export interface CapabilityLookupContext {
   agent_id: string;
@@ -154,6 +161,13 @@ export class GuardedExecutor {
   #revocations = new AuthorityRevocationRegistry();
   #inFlight = new Map<number, { sessionId: string; requestId: string; capabilityId: string }>();
   #inFlightSeq = 0;
+  #store = new ManagedStateStore();
+  #writeManagedState = this.#store.issueWriter();
+  #managedStateView = this.#store.view();
+  #executions = new Map<string, ManagedExecution>();
+  #terminalLog: ExecutionTerminal[] = [];
+  #executionSeq = 0;
+  #commitSeq = 0;
 
   // Keyed by: `${session_id}:${request_id}`
   private readonly pendingActions: Map<string, PendingAction> = new Map();
@@ -524,9 +538,12 @@ export class GuardedExecutor {
 
       const permit = this.#gate.mintPermit(this.#permitAuthority, sessionId, originalRequestId, toolName);
       // Start effective point: the tool function call. The guard runs after every callback on the start path
-      // (including the tool_execution_started audit record) and immediately before the call.
-      const result = await this.#gate.execute(request, permit, () =>
-        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tool: toolName }));
+      // (including the tool_execution_started audit record) and immediately before the call. The managed
+      // execution is created only after the guard passed, without any callback before the call.
+      const result = await this.#gate.execute(request, permit, () => {
+        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tool: toolName });
+        return (toolFn, args) => this.#startManagedExecution(originalRequestId, sessionId, capabilityId).invoke(toolFn, args);
+      });
 
       outputs = result.outputs || [{ value: result }];
       exitStatus = result.exit_status || "success";
@@ -786,7 +803,50 @@ export class GuardedExecutor {
       // The revocation is already in effect; report the missing evidence instead of undoing it.
       receipt.audit_recorded = false;
     }
+    // Cancellation of managed executions runs only now, after the tombstone exists. Listener failures and
+    // re-entrant calls are contained per execution and cannot undo the revocation.
+    for (const execution of [...this.#executions.values()]) {
+      if (!execution.terminal && !execution.cancellationRequested && covered(execution.sessionId, execution.capabilityId)) {
+        execution.requestCancellation(record.revocation_id);
+      }
+    }
     return receipt;
+  }
+
+  /** Read-only view of the runtime-managed state that ctx.commit() writes (the only A2 commit target). */
+  get managedState(): ReadonlyManagedState {
+    return this.#managedStateView;
+  }
+
+  getExecution(executionId: string): ExecutionSnapshot | undefined {
+    return this.#executions.get(executionId)?.snapshot();
+  }
+
+  /** Every terminal recorded by this executor, in the order the executions became terminal. */
+  terminals(): ExecutionTerminal[] {
+    return this.#terminalLog.map(t => ({ ...t }));
+  }
+
+  whenTerminal(executionId: string): Promise<ExecutionTerminal> {
+    const execution = this.#executions.get(executionId);
+    if (!execution) return Promise.reject(new Error(`Unknown execution ${executionId}`));
+    return execution.terminalPromise;
+  }
+
+  /** Creates the managed execution at the start effective point. Must not run any callback. */
+  #startManagedExecution(requestId: string, sessionId: string, capabilityId: string): ManagedExecution {
+    const execution: ManagedExecution = new ManagedExecution(`exec-${++this.#executionSeq}`, requestId, sessionId, capabilityId, {
+      audit: this.audit,
+      revoked: () => {
+        const match = this.#revocations.check({ session_id: sessionId, capability_id: capabilityId });
+        return match ? { reason: match.reason, revocation_id: match.record.revocation_id } : undefined;
+      },
+      write: (key, json) => this.#writeManagedState(key, json),
+      nextCommitId: () => `commit-${++this.#commitSeq}`,
+      onTerminal: terminal => { this.#terminalLog.push(Object.freeze({ ...terminal })); },
+    });
+    this.#executions.set(execution.id, execution);
+    return execution;
   }
 
   /** Records enforcement evidence for revoked authority and returns the match; audit failure never re-opens access. */

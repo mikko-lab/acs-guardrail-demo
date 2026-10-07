@@ -49,6 +49,12 @@ export const OCSF_METADATA_ALLOWLIST: Readonly<Record<AuditEventType, readonly s
   correlation_failed: ["session_id", "request_id_ref", "tool", "disposition", "reason"],
   authority_revoked: ["revocation_id", "scope", "session_id", "capability_id", "status", "effective_sequence", "effective_at", "pending_approvals", "in_flight_executions"],
   authority_revocation_enforced: ["stage", "boundary", "decision", "reason", "revocation_id", "session_id", "capability_id", "tool", "request_id_ref"],
+  execution_cancellation_requested: ["execution_id", "session_id", "capability_id", "revocation_id", "listeners"],
+  execution_cancellation_acknowledged: ["execution_id", "session_id", "capability_id"],
+  tool_commit_requested: ["execution_id", "session_id", "capability_id", "key"],
+  tool_commit_applied: ["execution_id", "session_id", "capability_id", "key", "commit_id", "sequence"],
+  tool_commit_blocked: ["execution_id", "session_id", "capability_id", "key", "decision", "reason", "revocation_id"],
+  execution_terminal: ["execution_id", "session_id", "capability_id", "outcome", "cancellation_requested", "cancellation_acknowledged", "listener_errors", "tracked_registered", "tracked_fulfilled", "tracked_rejected"],
 });
 
 /** ACS request_id sentinel used when the request identity is not known. */
