@@ -5,7 +5,8 @@
  *
  * A managed execution gives its tool an ExecutionContext: a cancellation signal, a runtime-mediated commit
  * fence over the runtime-managed state store, and registration of background work. The runtime records one
- * terminal when the tool function and all registered work have settled.
+ * terminal when the tool function and all registered work have settled. An execution whose returned Promise
+ * cannot be observed has no terminal: the call fails and the commit fence closes, but it stays a cancellation target.
  *
  * Only cooperating code and effects performed through ctx.commit() are controlled. Arbitrary tool code,
  * effects outside ctx.commit() and unregistered background work are not.
@@ -77,7 +78,12 @@ export class CancellationError extends Error {
   }
 }
 
-export type CommitBlockReason = "session_revoked" | "capability_revoked" | "execution_terminal" | "audit_unavailable";
+export type CommitBlockReason =
+  | "session_revoked"
+  | "capability_revoked"
+  | "execution_terminal"
+  | "settlement_unobservable"
+  | "audit_unavailable";
 
 export class CommitRejectedError extends Error {
   readonly code = "COMMIT_REJECTED";
@@ -113,6 +119,7 @@ export interface ExecutionContext {
   /**
    * Registers work that must settle before the execution is terminal. Accepts only a native Promise whose
    * settlement the runtime can observe (otherwise TypeError, nothing registered) and returns the same Promise.
+   * Throws once the execution is terminal or its settlement is unobservable.
    */
   track<T>(work: Promise<T>): Promise<T>;
 }
@@ -138,12 +145,19 @@ export interface ExecutionTerminal {
   audit_recorded: boolean;
 }
 
+/**
+ * running: the tool function has not settled. draining: it settled, registered work remains. unobservable: the tool
+ * function returned a native Promise whose settlement cannot be observed; the call failed, commits and registration
+ * are closed, no terminal is ever recorded, and the execution stays a cancellation target. terminal: settled.
+ */
+export type ExecutionState = "running" | "draining" | "unobservable" | "terminal";
+
 export interface ExecutionSnapshot {
   execution_id: string;
   request_id: string;
   session_id: string;
   capability_id: string;
-  state: "running" | "draining" | "terminal";
+  state: ExecutionState;
   cancellation_requested: boolean;
   cancellation_acknowledged: boolean;
   terminal?: ExecutionTerminal;
@@ -207,7 +221,7 @@ type ToolFn = (args: Record<string, unknown>, ctx?: ExecutionContext) => Promise
 
 export class ManagedExecution {
   readonly context: ExecutionContext;
-  #state: "running" | "draining" | "terminal" = "running";
+  #state: ExecutionState = "running";
   #mainSettled = false;
   #mainOutcome: TerminalOutcome = "completed";
   #cancellation: CancellationError | undefined;
@@ -290,8 +304,9 @@ export class ManagedExecution {
     try {
       settlement = await new Promise<Settlement>(resolve => observeNative(returned as Promise<unknown>, resolve));
     } catch (e) {
-      // The Promise cannot be observed without running its code: the call fails and the work behind it is detached.
-      this.#settleMain("failed");
+      // The Promise cannot be observed without running its code: the call fails, but the work behind it may still be
+      // pending, so this is not evidence that the execution ended. No terminal; the execution stays cancellable.
+      this.#markUnobservable();
       throw new TypeError("Tool returned a native Promise whose settlement cannot be observed", { cause: e });
     }
     if (settlement.ok) {
@@ -370,8 +385,16 @@ export class ManagedExecution {
     throw new CommitRejectedError(this.id, key, reason);
   }
 
+  /** The fence reason for an execution that may no longer commit, apart from revocation. */
+  #closedReason(): CommitBlockReason | undefined {
+    if (this.#state === "terminal") return "execution_terminal";
+    if (this.#state === "unobservable") return "settlement_unobservable";
+    return undefined;
+  }
+
   #commit(key: string, value: unknown): CommitReceipt {
-    if (this.#state === "terminal") this.#blocked(String(key), "execution_terminal");
+    const closed = this.#closedReason();
+    if (closed) this.#blocked(String(key), closed);
     if (typeof key !== "string" || key.length === 0 || key.length > MAX_KEY_LENGTH) {
       throw new TypeError(`commit key must be a non-empty string of at most ${MAX_KEY_LENGTH} characters`);
     }
@@ -384,9 +407,10 @@ export class ManagedExecution {
       this.#blocked(key, "audit_unavailable");
     }
 
-    // Binding check: nothing runs between this check and the write. (Re-read through the getter: the callbacks
-    // above may have changed the state.)
-    if (this.terminal) this.#blocked(key, "execution_terminal");
+    // Binding check: nothing runs between this check and the write. (Re-read: the callbacks above may have
+    // changed the state.)
+    const closedNow = this.#closedReason();
+    if (closedNow) this.#blocked(key, closedNow);
     const revoked = this.deps.revoked();
     if (revoked) this.#blocked(key, revoked.reason, revoked.revocation_id);
     const sequence = this.deps.write(key, json);
@@ -402,6 +426,7 @@ export class ManagedExecution {
 
   #track<T>(work: Promise<T>): Promise<T> {
     if (this.#state === "terminal") throw new Error(`Execution ${this.id} is terminal; work can no longer be registered`);
+    if (this.#state === "unobservable") throw new Error(`Execution ${this.id} has an unobservable settlement; work can no longer be registered`);
     if (!types.isPromise(work)) throw new TypeError("track() requires a native Promise");
     // Counted only after the reactions are registered; the reactions cannot run before this method returns.
     try {
@@ -424,6 +449,11 @@ export class ManagedExecution {
     this.#mainOutcome = outcome;
     this.#state = "draining";
     this.#maybeTerminal();
+  }
+
+  /** The tool function's settlement cannot be observed. Never terminal: #mainSettled stays false. */
+  #markUnobservable(): void {
+    this.#state = "unobservable";
   }
 
   #settleTracked(): void {
