@@ -7,7 +7,7 @@ import { setup, makeRequest, fresh } from "./evals/eval-setup";
 import { tools } from "../src/tools";
 import { AuditCollector } from "../src/audit";
 import { AuthorityRevokedError } from "../src/guarded-executor";
-import { CancellationError, CommitRejectedError, ExecutionContext, ManagedStateStore } from "../src/managed-execution";
+import { CancellationError, CommitRejectedError, ExecutionContext, ManagedExecution, ManagedStateStore } from "../src/managed-execution";
 import type { AuditEvent, AuditEventType } from "../src/acs-types";
 import { spawnSync } from "child_process";
 import path from "path";
@@ -455,7 +455,7 @@ describe("A2 settlement observation, registration and evidence", () => {
     expect(ctx.executor.terminals()).toHaveLength(1);
   });
 
-  it("C22b a changed `constructor` never runs: a configurable one is pinned and restored, a non-configurable one makes the Promise unobservable", async () => {
+  it("C22b a changed `constructor` never runs: a configurable one is pinned and restored, a non-configurable one makes the Promise unobservable without a terminal", async () => {
     const ctx = setup(Date.now());
     // Configurable accessor: the runtime pins Promise for the duration of the intrinsic `then` and restores it.
     const real = deferred<unknown>(); let c!: ExecutionContext; let getterCalls = 0;
@@ -470,19 +470,26 @@ describe("A2 settlement observation, registration and evidence", () => {
     expect(await ctx.executor.whenTerminal(c.execution_id)).toMatchObject({ outcome: "completed" });
     expect(getterCalls).toBe(0);
 
-    // Non-configurable accessor: cannot be pinned, so the call fails and the work behind the Promise is detached.
+    // Non-configurable accessor: cannot be pinned, so the call fails. The Promise is still pending and unobserved,
+    // so the failure is not evidence that the execution ended: no terminal, commits closed, still cancellable.
     const hidden = deferred<unknown>(); let d!: ExecutionContext; const log: string[] = [];
     Object.defineProperty(hidden.promise, "constructor", { get: getter });
     tools.read_record = (_a, ctxArg) => { d = ctxArg!; return hidden.promise; };
     const req = makeRequest({ tool: "read_record", sessionId: "c22b2", requestId: "c22b2-a" }, ctx.clock);
     await ctx.executor.process(req);
-    expect(ctx.executor.getExecution(d.execution_id)!.terminal).toMatchObject({ outcome: "failed" });
+    const snapshot = ctx.executor.getExecution(d.execution_id)!;
+    expect(snapshot.state).toBe("unobservable");
+    expect(snapshot).not.toHaveProperty("terminal");
+    expect(ctx.executor.terminals().map(t => t.execution_id)).toEqual([c.execution_id]);
+    expect(eventsOf(ctx, "execution_terminal").filter(e => e.request_id === req.params.request_id)).toEqual([]);
     expect(eventsOf(ctx, "tool_execution_completed").find(e => e.request_id === req.params.request_id)!.metadata!.status).toBe("error");
     try { d.commit("late", 1); } catch (e) { log.push((e as CommitRejectedError).reason); }
-    expect(log).toEqual(["execution_terminal"]);
+    expect(log).toEqual(["settlement_unobservable"]);
     expect(ctx.executor.managedState.has("late")).toBe(false);
     expect(getterCalls).toBe(0);
     hidden.resolve({ status: "ok" });
+    await flush();
+    expect(ctx.executor.getExecution(d.execution_id)!.state).toBe("unobservable");
   });
 
   it("C23 registered work with its own `then` keeps the execution draining until the work really settles", async () => {
@@ -560,7 +567,8 @@ describe("A2 settlement observation, registration and evidence", () => {
     expect(Object.prototype.hasOwnProperty.call(returned, "constructor")).toBe(false);
     expect(constructed).toBe(before);
 
-    // (d) A frozen subclass instance cannot be pinned: track() refuses it, a returned one fails the call.
+    // (d) A frozen subclass instance cannot be pinned: track() refuses it, a returned one fails the call. Although
+    // it is already fulfilled, the runtime cannot observe that, so the execution is unobservable and has no terminal.
     const frozen = Object.freeze(CountingSpecies.resolve("frozen")); const errors: string[] = [];
     const frozenBefore = constructed;
     tools.read_record = (_a, ctxArg) => {
@@ -570,7 +578,8 @@ describe("A2 settlement observation, registration and evidence", () => {
     };
     await ctx.executor.process(makeRequest({ tool: "read_record", sessionId: "c29d", requestId: "c29d-a" }, ctx.clock));
     expect(errors).toEqual(["TypeError"]);
-    expect(ctx.executor.getExecution(c.execution_id)!.terminal).toMatchObject({ outcome: "failed", tracked_registered: 0 });
+    expect(ctx.executor.getExecution(c.execution_id)).toMatchObject({ state: "unobservable" });
+    expect(ctx.executor.getExecution(c.execution_id)).not.toHaveProperty("terminal");
     expect(constructed).toBe(frozenBefore);
   });
 
@@ -659,5 +668,120 @@ describe("A2 settlement observation, registration and evidence", () => {
     expect(serialized).toContain("applied-key");
     expect(serialized).toContain("blocked-key");
     expect(serialized).not.toContain("VALUE-MARKER");
+  });
+});
+
+describe("A2 unobservable settlement is not terminal evidence", () => {
+  /**
+   * A pending native Promise whose `constructor` is a non-configurable accessor: the runtime can neither pin nor
+   * read it without running the object's code, so the Promise's settlement is unobservable.
+   */
+  function unobservablePromise() {
+    const real = deferred<unknown>(); const counter = { getterCalls: 0 };
+    Object.defineProperty(real.promise, "constructor", { get() { counter.getterCalls++; throw new Error("constructor getter must not run"); } });
+    return { ...real, counter };
+  }
+
+  /** Runs a tool that registers its hooks and then returns an unobservable, still pending Promise. */
+  async function runUnobservable(ctx: Ctx, sessionId: string, hooks: (c: ExecutionContext) => void = () => undefined) {
+    const hidden = unobservablePromise(); let c!: ExecutionContext;
+    tools.read_record = (_a, ctxArg) => { c = ctxArg!; hooks(c); return hidden.promise; };
+    const req = makeRequest({ tool: "read_record", sessionId, requestId: `${sessionId}-a` }, ctx.clock);
+    const result = await ctx.executor.process(req);
+    return { hidden, c, req, result };
+  }
+  const noTerminalYet = async (ctx: Ctx, executionId: string) => {
+    const pending = Symbol("pending");
+    return (await Promise.race([ctx.executor.whenTerminal(executionId), flush().then(() => pending)])) === pending;
+  };
+
+  it("C22c API error: the call fails with TypeError and the request ends in a failed result, without running the object's code", async () => {
+    const ctx = setup(Date.now());
+    const { hidden, req, result } = await runUnobservable(ctx, "c22c");
+    const rid = req.params.request_id;
+    expect(eventsOf(ctx, "tool_execution_completed").filter(e => e.request_id === rid).map(e => e.metadata!.status)).toEqual(["error"]);
+    expect(eventsOf(ctx, "tool_execution_blocked").filter(e => e.request_id === rid)).toHaveLength(1);
+    expect(result).toBeDefined();
+
+    // The invocation itself rejects with the documented TypeError.
+    const store = new ManagedStateStore();
+    const direct = new ManagedExecution("exec-direct", "r", "s", "cap", {
+      audit: new AuditCollector(), revoked: () => undefined, write: store.issueWriter(), nextCommitId: () => "commit-x", onTerminal: () => undefined,
+    });
+    const error = await direct.invoke(() => hidden.promise, {}).then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(TypeError);
+    expect((error as Error).message).toBe("Tool returned a native Promise whose settlement cannot be observed");
+    expect((error as Error).cause).toBeInstanceOf(TypeError);
+    expect(direct.terminal).toBe(false);
+    expect(direct.snapshot().state).toBe("unobservable");
+    expect(hidden.counter.getterCalls).toBe(0);
+    hidden.resolve({ status: "ok" });
+  });
+
+  it("C22d no terminal evidence: no execution_terminal, no terminal record and no whenTerminal, also after the work settles", async () => {
+    const ctx = setup(Date.now());
+    const { hidden, c, req } = await runUnobservable(ctx, "c22d");
+    const evidence = () => ({
+      snapshot: ctx.executor.getExecution(c.execution_id),
+      terminals: ctx.executor.terminals(),
+      events: ctx.audit.getEvents().filter((e: AuditEvent) => e.event_type === "execution_terminal" && e.request_id === req.params.request_id),
+    });
+    expect(evidence()).toEqual({
+      snapshot: { execution_id: c.execution_id, request_id: req.params.request_id, session_id: sessionOf(req), capability_id: capabilityOf(ctx, req.params.request_id),
+        state: "unobservable", cancellation_requested: false, cancellation_acknowledged: false },
+      terminals: [], events: [],
+    });
+    expect(await noTerminalYet(ctx, c.execution_id)).toBe(true);
+    // The real work ends, but the runtime never observed it: its settlement is still not terminal evidence.
+    hidden.resolve({ status: "ok" });
+    expect(await noTerminalYet(ctx, c.execution_id)).toBe(true);
+    expect(evidence().terminals).toEqual([]);
+    expect(evidence().events).toEqual([]);
+    expect(hidden.counter.getterCalls).toBe(0);
+  });
+
+  it("C22e commits are blocked after the failure (settlement_unobservable) and registration is closed; earlier commits stay", async () => {
+    const ctx = setup(Date.now());
+    const { hidden, c, req } = await runUnobservable(ctx, "c22e", ctxArg => { ctxArg.commit("before", 1); });
+    const caught = (() => { try { c.commit("after", 2); return undefined; } catch (e) { return e; } })();
+    expect(caught).toBeInstanceOf(CommitRejectedError);
+    expect((caught as CommitRejectedError).reason).toBe("settlement_unobservable");
+    expect(ctx.executor.managedState.keys()).toEqual(["before"]);
+    expect(ctx.executor.managedState.version).toBe(1);
+    expect(eventsOf(ctx, "tool_commit_blocked").filter(e => e.request_id === req.params.request_id).map(e => [e.metadata!.key, e.metadata!.reason, e.metadata!.decision]))
+      .toEqual([["after", "settlement_unobservable", "deny"]]);
+    expect(() => c.track(Promise.resolve("late work"))).toThrow(/unobservable settlement/);
+    hidden.resolve({ status: "ok" });
+    await flush();
+    expect(() => c.commit("after-settle", 3)).toThrow(CommitRejectedError);
+    expect(ctx.executor.managedState.version).toBe(1);
+  });
+
+  it("C22f a later revocation still signals cancellation to the unobservable execution; the signal is not a terminal", async () => {
+    const ctx = setup(Date.now()); const seen: string[] = []; let listenerCommit: unknown;
+    const { hidden, c, req } = await runUnobservable(ctx, "c22f", ctxArg => {
+      ctxArg.cancellation.onCancel(reason => {
+        seen.push(`${reason.execution_id}:${reason.revocation_id}`);
+        try { ctxArg.commit("from-listener", 1); } catch (e) { listenerCommit = (e as CommitRejectedError).reason; }
+      });
+    });
+    expect(c.cancellation.requested).toBe(false);
+    const receipt = ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    expect(seen).toEqual([`${c.execution_id}:${receipt.revocation_id}`]);
+    expect(c.cancellation.requested).toBe(true);
+    expect(c.cancellation.reason).toBeInstanceOf(CancellationError);
+    expect(listenerCommit).toBe("settlement_unobservable");
+    expect(ctx.executor.managedState.has("from-listener")).toBe(false);
+    expect(eventsOf(ctx, "execution_cancellation_requested").map(e => [e.metadata!.execution_id, e.metadata!.revocation_id]))
+      .toEqual([[c.execution_id, receipt.revocation_id]]);
+    expect(c.acknowledgeCancellation()).toBe(true);
+    expect(ctx.executor.getExecution(c.execution_id)).toMatchObject({ state: "unobservable", cancellation_requested: true, cancellation_acknowledged: true });
+    // A duplicate revoke does not signal again; none of this is terminal evidence.
+    ctx.executor.revoke({ scope: "session", session_id: sessionOf(req) });
+    expect(seen).toHaveLength(1);
+    expect(await noTerminalYet(ctx, c.execution_id)).toBe(true);
+    expect(ctx.executor.terminals()).toEqual([]);
+    expect(eventsOf(ctx, "execution_terminal")).toEqual([]);
+    hidden.resolve({ status: "ok" });
   });
 });
