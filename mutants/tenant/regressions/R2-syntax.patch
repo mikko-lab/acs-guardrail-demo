@@ -1,8 +1,8 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -353,6 +353,7 @@
-     const verifiedCapability = verifiedChain.leaf;
-     const ancestorIds = verifiedChain.ancestors.map(a => a.capability_id);
+@@ -355,6 +355,7 @@
+     // Callbacks only ever receive copies of it, so nothing they do can change the authority.
+     const ancestorIds: readonly string[] = Object.freeze(verifiedChain.ancestors.map(a => a.capability_id));
  
 +    if (this.#tenancy) JSON.parse("{");
      // The tenant comes only from the verified grant. A request's own tenant_id claim must match it (tenancy mode).

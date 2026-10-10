@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -864,7 +864,7 @@
+@@ -866,7 +866,7 @@
        sessionTenants.set(member.session_id, tenantId);
      }
      const contents = new Map<string, string>();

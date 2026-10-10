@@ -91,6 +91,7 @@ All conflicts are checked first, against earlier bindings and within the chain: 
 
 ## Execution and approval binding
 
+- **Immutable from verification.** The list of verified ancestor ids is frozen right after chain verification, before the first callback (an audit sink, the Guardian) runs. Callbacks only receive copies: the `capability_verified` metadata and the enforcement evidence carry copies of the list. Changing or emptying such a copy, before or after start, never changes the authority (C6.01–C6.03, mutant M42c).
 - **Start.** An execution is bound at start to its request's session, its original `capability_id`, its tenant and the `capability_id`s of its verified ancestor chain (`ancestor_capability_ids`, parent first). The binding is frozen. The commit fence, both delivery checks and the cancellation fan-out use it, and nothing is re-resolved after start. `getExecution()`, `terminals()`, the execution audit events and `capability_verified` report `ancestor_capability_ids` when the chain is not empty.
 - **Pending approval.** A pending approval keeps a snapshot of the verified leaf and its ancestors. `resolveApproval()` then does the following:
   1. checks revocation of the snapshot, ancestors included;
@@ -176,6 +177,7 @@ The runtime-test mutants are named in [`mutants/ancestor/manifest.json`](../muta
 | M41 | a member of another tenant accepted | C1.08 | both | — (tenant equality is not part of attenuation) |
 | M42a | chain re-resolved at the commit fence instead of the start-time binding | C2.04 | check_point | capability binding: the same chain is re-resolved |
 | M42b | an already bound ancestor id accepted with other content | C2.01 | both | — (the new chain's own links are consistent) |
+| M42c | the verified ancestor ids are not frozen before the first callback, and the `capability_verified` audit metadata aliases them | C6.01 | both | — (with the aliased list emptied by an audit sink, every later check point sees no ancestor) |
 | M43 | attenuation not enforced (tools; validity window) | C1.09 | both | — (the leaf's own tools include the requested tool) |
 | M44 | root signature not verified | C1.10 | both | — (fresh executor, first use) |
 | M45 | intermediate signature not verified | C1.11 | both | — (fresh executor, first use) |

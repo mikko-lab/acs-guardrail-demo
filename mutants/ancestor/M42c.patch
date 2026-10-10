@@ -1,0 +1,22 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -351,9 +351,7 @@
+       throw new Error("Capability rejected: " + err.message);
+     }
+     const verifiedCapability = verifiedChain.leaf;
+-    // The verified ancestor binding is immutable from here on, before the first callback (audit sink, Guardian) runs.
+-    // Callbacks only ever receive copies of it, so nothing they do can change the authority.
+-    const ancestorIds: readonly string[] = Object.freeze(verifiedChain.ancestors.map(a => a.capability_id));
++    const ancestorIds = verifiedChain.ancestors.map(a => a.capability_id);
+ 
+     // The tenant comes only from the verified grant. A request's own tenant_id claim must match it (tenancy mode).
+     const tenantId = tenantOf(verifiedCapability);
+@@ -395,7 +393,7 @@
+       agent_id: expectedAgentId,
+       session_id: expectedSessionId,
+       ...(tenantId !== undefined ? { tenant_id: tenantId } : {}),
+-      ...(ancestorIds.length > 0 ? { ancestor_capability_ids: [...ancestorIds] } : {}),
++      ...(ancestorIds.length > 0 ? { ancestor_capability_ids: ancestorIds } : {}),
+       tool: requestedTool
+     });
+ 

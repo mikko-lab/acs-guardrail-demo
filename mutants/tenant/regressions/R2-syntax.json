@@ -35,7 +35,7 @@
       "kind": "check_point",
       "removes": "gate regression: an unexpected SyntaxError on the request path leaves the M27e witness stage undefined; expected: technical failure, exit 2",
       "patch": "mutants/tenant/regressions/R2-syntax.patch",
-      "patch_sha256": "874191c0ce36068cab08bd55b9164f94232c4e29246a331ab8c6a50e26bc1947",
+      "patch_sha256": "aa94d62fd68f1f4f8d10229de2701404fbf131d6ac404b41beb26f5db1eb54c2",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",

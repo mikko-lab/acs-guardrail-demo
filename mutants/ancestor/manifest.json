@@ -35,7 +35,7 @@
       "kind": "both",
       "removes": "ancestry not checked at the request check after verification, the early start check and the start guard",
       "patch": "mutants/ancestor/M20.patch",
-      "patch_sha256": "2112f0e41ee7ce6102362b92fd37374e2c7a10f4e26356755ccbbdd680842eb0",
+      "patch_sha256": "87015f01c56a60424ec9ebb13b9814e70bc57f5dd1fcf7a7b803a91388263ca8",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -110,7 +110,7 @@
       "kind": "both",
       "removes": "ancestry not checked at the commit fence (ctx.commit())",
       "patch": "mutants/ancestor/M21.patch",
-      "patch_sha256": "0114da17a5b64b06574374edc5c57a022c52784bb5e9d2e7168eb5cf87a45b5f",
+      "patch_sha256": "924e308a294720dfa84b8397c91374c77415551ee3190633681a2108af6883ce",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -181,7 +181,7 @@
       "kind": "check_point",
       "removes": "ancestry not checked at the request check after verification",
       "patch": "mutants/ancestor/M27b.patch",
-      "patch_sha256": "912772e488af79a08bdb09fd826c7f11e3ad75e3b1c2b4ee25aa4b7de599b0b1",
+      "patch_sha256": "edc3aae637346432b25827839dcca8140dbb33576cec376ce69a083d624ac64c",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -244,7 +244,7 @@
       "kind": "check_point",
       "removes": "ancestry not checked at the early start check (before correlation and permit)",
       "patch": "mutants/ancestor/M27g.patch",
-      "patch_sha256": "cf69ca5a3374e07f7d65928cc4db145fe972fa6acb3bb9a77721325e9e05354b",
+      "patch_sha256": "9bc8bbddea95095a831a4ae9eab487da15a1c451697dd8f9822a767a6a583495",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -307,7 +307,7 @@
       "kind": "both",
       "removes": "ancestry not checked at the start guard (immediately before the tool call)",
       "patch": "mutants/ancestor/M27d.patch",
-      "patch_sha256": "65f32a5779ffca14574d59fb6c8bee0019cd7c382452a496f49a873453c3f806",
+      "patch_sha256": "900ca151ac775e93f38d9697f2797518cc28af78237f725f1d205b96afb33601",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -382,7 +382,7 @@
       "kind": "both",
       "removes": "ancestry not checked at the approval re-verification, the early start check and the start guard",
       "patch": "mutants/ancestor/M34.patch",
-      "patch_sha256": "3079e85587a354519cc5e76581592e6e02a8ab205f5b753f0182823eb90c5a28",
+      "patch_sha256": "f4aab7439015299ae98d8576f3abec0ea568425ab7606cefdc83f551c62c4531",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -451,7 +451,7 @@
       "kind": "check_point",
       "removes": "ancestry not checked at the approval re-verification only",
       "patch": "mutants/ancestor/M34a.patch",
-      "patch_sha256": "dc771a95c10194ea590a8cf50e730ae15f5030fe0caf191131c5552661e00bf2",
+      "patch_sha256": "249ae9cbfb351a17359d1a6ca440c16cd1127c5de193a50674414a61da0fd9a0",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -514,7 +514,7 @@
       "kind": "both",
       "removes": "ancestry not checked at either delivery check (result processing and hand-over)",
       "patch": "mutants/ancestor/M35.patch",
-      "patch_sha256": "7bccde8a45df4ba4d37392f400912b4095b08bc0a66462941f2c9e3d467edb25",
+      "patch_sha256": "d04677de140a02e8a93eaa57d5dc796b87abd2f1ab7443cd39baa434a9cd3ad1",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -587,7 +587,7 @@
       "kind": "check_point",
       "removes": "ancestry not checked at the early delivery check in result processing",
       "patch": "mutants/ancestor/M35a.patch",
-      "patch_sha256": "2e73211c30c2e3508cb100af6415962d3bd4d6b7fce02e92cf63cea3d3a547e0",
+      "patch_sha256": "7f0d8b281e8cee737e02da4653d31d0349e32ad0e2f41e82c89aaad326cee0d4",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -650,7 +650,7 @@
       "kind": "both",
       "removes": "ancestry not checked at the hand-over (public API return)",
       "patch": "mutants/ancestor/M35b.patch",
-      "patch_sha256": "d145a16a20d02ea2fcccce0cb50d12395bf51de13699628d2f5bab041e03c5ab",
+      "patch_sha256": "a2b3b586541cf448a824817e20271220c0cc1440834acbf390d69f518d993d9b",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -723,7 +723,7 @@
       "kind": "containment_effect",
       "removes": "an ancestor revocation does not request cancellation of running descendants",
       "patch": "mutants/ancestor/M36.patch",
-      "patch_sha256": "efa52b3d44cf5b918b2491b74e47b06554a92b9d97f994324405ab3f530e5190",
+      "patch_sha256": "fff8bf06ec1a970aabe144d0d0f94047cb9e26e9998b2fa93a911260d2b515a0",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -790,7 +790,7 @@
       "kind": "both",
       "removes": "a capability revocation propagates to the revoked capability's parent chain (and through it to siblings)",
       "patch": "mutants/ancestor/M37.patch",
-      "patch_sha256": "26dff6582c1d641c538462ac0b175b9e6b6ad8b7b07f8ab75dec7e4dc59b4364",
+      "patch_sha256": "2c78e321ffb22749da547ad325e42df27088dbf0987f36d7cde158af4a081f80",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -1137,7 +1137,7 @@
       "kind": "check_point",
       "removes": "the commit fence re-resolves the chain from the capability provider instead of the start-time binding",
       "patch": "mutants/ancestor/M42a.patch",
-      "patch_sha256": "cf40d2e4e9ebad6a08af56b8539259fba0e1273be492f79a1e0e40b19f27466b",
+      "patch_sha256": "399d04b15ad2c10983afa16c46480e6e0d9342001c89a78f58dcf9c1d1659e37",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -1196,7 +1196,7 @@
       "kind": "both",
       "removes": "an ancestor id bound through a used chain is accepted with other content (ancestor binding conflicts not checked)",
       "patch": "mutants/ancestor/M42b.patch",
-      "patch_sha256": "6491a49d2e24d74ae8c3c93dbe33609e799220147bae860e1195377f3cb22654",
+      "patch_sha256": "c123bf745198f47bb6066d570701f9bfc030a616df45fbbd414d65a2602fed5c",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",
@@ -1259,6 +1259,91 @@
         }
       ],
       "kept_safeguards": "none: the new chain's own links, signatures and attenuation are consistent"
+    },
+    {
+      "id": "M42c",
+      "kind": "both",
+      "removes": "the verified ancestor ids are not frozen before the first callback and the capability_verified audit metadata aliases them (an audit sink can change the authority before start)",
+      "patch": "mutants/ancestor/M42c.patch",
+      "patch_sha256": "b99aaff4920b725be8f729ed37c652fe2c6ff2baadebf7e2085d1984b2bc8b9e",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C6 audit metadata never aliases the bound ancestor chain",
+          "test": "[M42c] C6.01 an audit sink that empties its ancestor list and revokes the ancestor before start: no tool call, no commit, no raw output",
+          "labels": [
+            {
+              "label": "A-M42c-check",
+              "part": "check",
+              "control": [
+                "start",
+                "ancestor_revoked"
+              ],
+              "mutant": [
+                {
+                  "$undefined": true
+                },
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M42c-effect",
+              "part": "effect",
+              "control": [
+                0,
+                false,
+                false
+              ],
+              "mutant": [
+                1,
+                true,
+                true
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: with the aliased list emptied, the early start check, the start guard, the commit fence and both delivery checks all see no ancestor (the cancellation fan-out has no running execution to reach)"
     },
     {
       "id": "M43",
@@ -1661,7 +1746,7 @@
       "kind": "check_point",
       "removes": "the approval re-verification compares only the leaf, not the whole chain snapshot",
       "patch": "mutants/ancestor/M48.patch",
-      "patch_sha256": "45803320db0acddca62a650e1f582b8f8772dc145f3152850e3650c181506c73",
+      "patch_sha256": "37a68ba1591553e173453ecfe000efcfadf11b6386797315a93085b2e2bb2b96",
       "witnesses": [
         {
           "file": "tests/ancestor-chain.test.ts",

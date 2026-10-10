@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -974,7 +974,7 @@
+@@ -976,7 +976,7 @@
        audit: this.audit,
        // The commit fence checks the authority bound at start (tenant and ancestor chain included); nothing is re-resolved.
        revoked: () => {

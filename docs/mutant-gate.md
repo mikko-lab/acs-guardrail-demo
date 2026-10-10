@@ -83,7 +83,7 @@ Failures of tests that are not named witnesses are recorded in the report as dia
 
 | Case | Input | Required gate result |
 |---|---|---|
-| R1-inventory | the M27e patch plus deletion of an unrelated test (625 → 624 tests) | technical failure, exit 2 (test inventory differs) |
+| R1-inventory | the M27e patch plus deletion of an unrelated test (628 → 627 tests) | technical failure, exit 2 (test inventory differs) |
 | R2-syntax | an unexpected `SyntaxError` on the request path; the M27e witness stage becomes undefined | technical failure, exit 2 (unexpected value and unaccepted caught error) |
 | R3-m27e | the real M27e mutant | detected at stage `start` (control `request`), exit 0 |
 | R4-crash | a manifest whose patch path is a directory, so reading it throws inside the gate | internal error, exit 2 (a crash is never exit 1) |

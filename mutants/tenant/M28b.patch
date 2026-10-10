@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -537,7 +537,7 @@
+@@ -539,7 +539,7 @@
      const revoked = this.#revocationAt("delivery", outcome.resultRequestId, {
        session_id: outcome.authority.sessionId,
        capability_id: outcome.authority.capabilityId,

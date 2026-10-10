@@ -9,7 +9,7 @@
        tool: params.payload.tool.name,
      });
  
-@@ -383,7 +383,7 @@
+@@ -385,7 +385,7 @@
      this.#denyIfRevoked("request", params.request_id, {
        session_id: expectedSessionId,
        capability_id: verifiedCapability.capability_id,
@@ -18,7 +18,7 @@
        ancestor_capability_ids: ancestorIds,
        tool: requestedTool,
      });
-@@ -569,7 +569,7 @@
+@@ -571,7 +571,7 @@
  
      // Early start check, before correlation and permit state are created. The binding start check runs inside
      // ExecutionGate.execute() immediately before the tool function call (see #runAndProcessResult).
@@ -27,7 +27,7 @@
      const flight = ++this.#inFlightSeq;
      this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId, tenantId, ancestorIds });
      try {
-@@ -596,7 +596,7 @@
+@@ -598,7 +598,7 @@
        // (including the tool_execution_started audit record) and immediately before the call. The managed
        // execution is created only after the guard passed, without any callback before the call.
        const result = await this.#gate.execute(request, permit, () => {

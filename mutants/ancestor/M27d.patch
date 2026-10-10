@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -596,7 +596,7 @@
+@@ -598,7 +598,7 @@
        // (including the tool_execution_started audit record) and immediately before the call. The managed
        // execution is created only after the guard passed, without any callback before the call.
        const result = await this.#gate.execute(request, permit, () => {

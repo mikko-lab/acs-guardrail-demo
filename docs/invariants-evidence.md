@@ -90,6 +90,7 @@ Specification: [ancestor-chains.md](ancestor-chains.md). Evidence: `tests/ancest
 - **A rejected chain stops before the Guardian decision, pending approval, permit, execution and tool call, and binds nothing**: `C1.15`, `C2.02`, `C2.03`
 - **An ancestor id stays bound to its first verified content**: `C2.01` (M42b)
 - **The execution's chain is fixed at start; nothing is re-resolved**: `C2.04` (M42a), `C2.05`
+- **The verified ancestor ids are immutable before the first callback; audit metadata is a copy and cannot change the authority (before or after start)**: `C6.01` (M42c), `C6.02`, `C6.03`
 - **Approval compares the re-resolved chain with the snapshot, member by member**: `C1.14` (M48), `C5.02`
 - **Ancestor revocation at every check point, also before first use**: request `C3.01` (M27b), `C3.02` (M20); start `C3.03` (M27g), `C3.04` (M27d); approval `C3.05` (M34a), `C3.06` (M34); commit `C3.07` (M21); delivery `C3.09` (M35), `C3.10` (M35a), `C3.11` (M35b)
 - **Cancellation is requested for running descendants; acknowledgement is not termination**: `C3.12` (M36)

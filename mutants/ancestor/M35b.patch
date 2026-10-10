@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -538,7 +538,7 @@
+@@ -540,7 +540,7 @@
        session_id: outcome.authority.sessionId,
        capability_id: outcome.authority.capabilityId,
        tenant_id: outcome.authority.tenantId,

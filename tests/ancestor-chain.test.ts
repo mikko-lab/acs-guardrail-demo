@@ -56,12 +56,13 @@ const linkKindOf = (o: Outcome<unknown>) =>
 const events = (ctx: TenancyCtx, type: AuditEventType, requestId?: string) =>
   ctx.audit.getEvents().filter((e: AuditEvent) => e.event_type === type && (requestId === undefined || e.request_id === requestId));
 const rejectedReason = (ctx: TenancyCtx, requestId: string) => events(ctx, "capability_rejected", requestId).map(e => e.metadata!.reason)[0];
-const onAudit = (ctx: TenancyCtx, type: AuditEventType, action: () => void) => {
+/** Runs `action` once, after the first audit record of `type`, with the metadata object the sink received. */
+const onAudit = (ctx: TenancyCtx, type: AuditEventType, action: (meta?: Record<string, unknown>) => void) => {
   const recordOriginal = AuditCollector.prototype.record;
   let fired = false;
   jest.spyOn(ctx.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
     recordOriginal.call(this, id, t, meta);
-    if (t === type && !fired) { fired = true; action(); }
+    if (t === type && !fired) { fired = true; action(meta); }
   });
 };
 const approvalFor = (ctx: TenancyCtx, req: ReturnType<typeof tenantRequest>) => ctx.testSigner.sign({
@@ -677,5 +678,66 @@ describe("C5 approval snapshots, legacy mode and export", () => {
     expect(events(ctx, "authority_revocation_enforced", req.params.request_id)[0].metadata).toMatchObject({
       stage: "request", reason: "ancestor_revoked", revocation_id: `capability:${R}`, capability_id: "c505-L", ancestor_capability_ids: [I, R],
     });
+  });
+});
+
+describe("C6 audit metadata never aliases the bound ancestor chain", () => {
+  const ids = (meta?: Record<string, unknown>) => meta!.ancestor_capability_ids as string[];
+
+  it("[M42c] C6.01 an audit sink that empties its ancestor list and revokes the ancestor before start: no tool call, no commit, no raw output", async () => {
+    const { ctx, I } = threeChain("c601", "s-c601");
+    const h = scriptedTool("read_record", async c => { tryCommit(c, "k", 17); return { data: NONCE }; });
+    onAudit(ctx, "capability_verified", meta => {
+      ids(meta).length = 0;
+      ctx.executor.revoke({ scope: "capability", capability_id: I });
+    });
+    const o = await outcome(ctx.executor.process(request(ctx, "c601", "s-c601")));
+    witness(
+      ["A-M42c-check", [stageOf(o), reasonOf(o)], ["start", "ancestor_revoked"]],
+      ["A-M42c-effect", [h.calls, ctx.executor.managedState.has("k"), delivered(o)], [0, false, false]],
+    );
+  });
+
+  it("C6.02 an audit sink that changes its ancestor list without a revocation: the execution succeeds bound to the original chain", async () => {
+    const { ctx, I, R } = threeChain("c602", "s-c602");
+    const h = scriptedTool("read_record", async c => { tryCommit(c, "k", 1); return { data: NONCE }; });
+    onAudit(ctx, "capability_verified", meta => { ids(meta).length = 0; ids(meta).push("c602-forged"); });
+    const out = await ctx.executor.process(request(ctx, "c602", "s-c602"));
+    expect(delivered(out)).toBe(true);
+    expect(h.calls).toBe(1);
+    expect(ctx.executor.managedState.get("k")).toBe(1);
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.ancestor_capability_ids).toEqual([I, R]);
+    expect((await ctx.executor.whenTerminal(h.ctx.execution_id)).ancestor_capability_ids).toEqual([I, R]);
+    // A revocation of the forged id covers nothing; the original ancestor still covers a new use.
+    expect(ctx.executor.revoke({ scope: "capability", capability_id: "c602-forged" }).in_flight_executions).toEqual([]);
+    ctx.executor.revoke({ scope: "capability", capability_id: I });
+    const again = await outcome(ctx.executor.process(request(ctx, "c602-b", "s-c602")));
+    expect([stageOf(again), reasonOf(again)]).toEqual(["request", "ancestor_revoked"]);
+  });
+
+  it("C6.03 a retained metadata list changed after start: commit, delivery and cancellation still use the original chain", async () => {
+    const { ctx, I, R } = threeChain("c603", "s-c603");
+    const retained: string[][] = [];
+    const recordOriginal = AuditCollector.prototype.record;
+    jest.spyOn(ctx.audit, "record").mockImplementation(function (this: AuditCollector, id: string, t: AuditEventType, meta?: Record<string, unknown>) {
+      recordOriginal.call(this, id, t, meta);
+      if (Array.isArray(meta?.ancestor_capability_ids)) retained.push(meta!.ancestor_capability_ids as string[]);
+    });
+    const gate = deferred(); let commit = ""; let signalled = false;
+    const h = scriptedTool("read_record", async c => { c.cancellation.onCancel(() => { signalled = true; }); await gate.promise; commit = tryCommit(c, "k", 1); return { data: NONCE }; });
+    const run = ctx.executor.process(request(ctx, "c603", "s-c603"));
+    await h.started.promise;
+    expect(retained.length).toBeGreaterThan(0);
+    for (const list of retained) list.length = 0;
+    const receipt = ctx.executor.revoke({ scope: "capability", capability_id: I });
+    gate.resolve();
+    const out = await run;
+    expect(signalled).toBe(true);
+    expect(receipt.in_flight_executions).toHaveLength(1);
+    expect(commit).toBe("ancestor_revoked");
+    expect(ctx.executor.managedState.has("k")).toBe(false);
+    expect(delivered(out)).toBe(false);
+    expect(out.status === "executed" ? (out.result.outputs?.[0]?.value as { code?: string }).code : undefined).toBe("ancestor_revoked");
+    expect(ctx.executor.getExecution(h.ctx.execution_id)!.ancestor_capability_ids).toEqual([I, R]);
   });
 });

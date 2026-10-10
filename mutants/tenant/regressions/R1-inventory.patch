@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -383,7 +383,7 @@
+@@ -385,7 +385,7 @@
      this.#denyIfRevoked("request", params.request_id, {
        session_id: expectedSessionId,
        capability_id: verifiedCapability.capability_id,

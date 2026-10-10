@@ -8,7 +8,7 @@
    #store = new ManagedStateStore();
    #writeManagedState = this.#store.issueWriter();
    #managedStateView = this.#store.view();
-@@ -871,6 +872,7 @@
+@@ -873,6 +874,7 @@
        contents.set(member.capability_id, fingerprint);
      }
      for (const member of members) {
@@ -16,7 +16,7 @@
        this.#revocations.bindCapability(member);
        const tenantId = tenantOf(member);
        if (tenantId !== undefined) this.#revocations.bindSessionTenant(member.session_id, tenantId);
-@@ -891,6 +893,9 @@
+@@ -893,6 +895,9 @@
        throw new RevocationTargetError("Tenant scope requires tenancy mode (a verifier created with { tenancy: true })");
      }
      const { record, duplicate } = this.#revocations.revoke(target, this.clock.nowMs());
