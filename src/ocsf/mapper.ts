@@ -26,10 +26,12 @@ import {
  * - `approver_id` (human_approval / human_rejection): approver identity claim;
  *   identity mapping to a log system is out of scope for this export.
  * - `raw` (timestamp_rejected): attacker-controlled request input.
+ * - a request's own `tenant_id` claim: only the tenant of a verified grant (or the tenant bound to an
+ *   execution at start) is exported.
  */
 export const OCSF_METADATA_ALLOWLIST: Readonly<Record<AuditEventType, readonly string[]>> = Object.freeze({
   tool_call_requested: ["session_id", "tool"],
-  capability_verified: ["capability_id", "agent_id", "session_id", "tool"],
+  capability_verified: ["capability_id", "agent_id", "session_id", "tenant_id", "tool"],
   capability_rejected: ["reason", "agent_id", "session_id", "tool"],
   guardian_decision: ["session_id", "decision", "reason_codes"],
   tool_execution_blocked: ["reason", "error"],
@@ -47,14 +49,14 @@ export const OCSF_METADATA_ALLOWLIST: Readonly<Record<AuditEventType, readonly s
   replay_rejected: ["session_id", "reason_code"],
   timestamp_rejected: ["session_id", "reason_code", "delta_ms", "skew_window_ms"],
   correlation_failed: ["session_id", "request_id_ref", "tool", "disposition", "reason"],
-  authority_revoked: ["revocation_id", "scope", "session_id", "capability_id", "status", "effective_sequence", "effective_at", "pending_approvals", "in_flight_executions"],
-  authority_revocation_enforced: ["stage", "boundary", "decision", "reason", "revocation_id", "session_id", "capability_id", "tool", "request_id_ref"],
-  execution_cancellation_requested: ["execution_id", "session_id", "capability_id", "revocation_id", "listeners"],
-  execution_cancellation_acknowledged: ["execution_id", "session_id", "capability_id"],
-  tool_commit_requested: ["execution_id", "session_id", "capability_id", "key"],
-  tool_commit_applied: ["execution_id", "session_id", "capability_id", "key", "commit_id", "sequence"],
-  tool_commit_blocked: ["execution_id", "session_id", "capability_id", "key", "decision", "reason", "revocation_id"],
-  execution_terminal: ["execution_id", "session_id", "capability_id", "outcome", "cancellation_requested", "cancellation_acknowledged", "listener_errors", "tracked_registered", "tracked_fulfilled", "tracked_rejected"],
+  authority_revoked: ["revocation_id", "scope", "session_id", "capability_id", "tenant_id", "status", "effective_sequence", "effective_at", "pending_approvals", "in_flight_executions"],
+  authority_revocation_enforced: ["stage", "boundary", "decision", "reason", "revocation_id", "session_id", "capability_id", "tenant_id", "tool", "request_id_ref"],
+  execution_cancellation_requested: ["execution_id", "session_id", "capability_id", "tenant_id", "revocation_id", "listeners"],
+  execution_cancellation_acknowledged: ["execution_id", "session_id", "capability_id", "tenant_id"],
+  tool_commit_requested: ["execution_id", "session_id", "capability_id", "tenant_id", "key"],
+  tool_commit_applied: ["execution_id", "session_id", "capability_id", "tenant_id", "key", "commit_id", "sequence"],
+  tool_commit_blocked: ["execution_id", "session_id", "capability_id", "tenant_id", "key", "decision", "reason", "revocation_id"],
+  execution_terminal: ["execution_id", "session_id", "capability_id", "tenant_id", "outcome", "cancellation_requested", "cancellation_acknowledged", "listener_errors", "tracked_registered", "tracked_fulfilled", "tracked_rejected"],
 });
 
 /** ACS request_id sentinel used when the request identity is not known. */

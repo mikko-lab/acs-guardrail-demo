@@ -1,0 +1,11 @@
+--- a/src/authority-revocation.ts
++++ b/src/authority-revocation.ts
+@@ -135,7 +135,7 @@
+    */
+   check(authority: CheckedAuthority): RevocationMatch | undefined {
+     if (authority.tenant_id !== undefined) {
+-      const tenant = this.tenants.get(authority.tenant_id);
++      const tenant = this.tenants.values().next().value;
+       if (tenant) return { reason: "tenant_revoked", record: tenant };
+     }
+     const session = this.sessions.get(authority.session_id);

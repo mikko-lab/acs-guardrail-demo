@@ -44,6 +44,11 @@ export interface AcsParams {
   acs_version: string;
   request_id: string;
   timestamp: string;
+  /**
+   * ACS reserved tenant field (request-envelope.json). Covered by the request signature. It is a claim only: in
+   * tenancy mode it must equal the verified grant's tenant_id; outside tenancy mode it is ignored.
+   */
+  tenant_id?: string;
   metadata: AcsMetadata;
   payload: AcsToolCallRequestPayload;
   signature?: AcsSignature;
