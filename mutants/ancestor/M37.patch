@@ -1,0 +1,28 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -180,6 +180,7 @@
+   /** Tenancy mode, taken from the capability verifier (the single source of the mode). */
+   readonly #tenancy: boolean;
+   #inFlightSeq = 0;
++  #mutantParents = new Map<string, string>();
+   #store = new ManagedStateStore();
+   #writeManagedState = this.#store.issueWriter();
+   #managedStateView = this.#store.view();
+@@ -871,6 +872,7 @@
+       contents.set(member.capability_id, fingerprint);
+     }
+     for (const member of members) {
++      if (member.version === 2 && member.parent) this.#mutantParents.set(member.capability_id, member.parent.capability_id);
+       this.#revocations.bindCapability(member);
+       const tenantId = tenantOf(member);
+       if (tenantId !== undefined) this.#revocations.bindSessionTenant(member.session_id, tenantId);
+@@ -891,6 +893,9 @@
+       throw new RevocationTargetError("Tenant scope requires tenancy mode (a verifier created with { tenancy: true })");
+     }
+     const { record, duplicate } = this.#revocations.revoke(target, this.clock.nowMs());
++    if (target.scope === "capability") {
++      for (let p = this.#mutantParents.get(target.capability_id); p; p = this.#mutantParents.get(p)) this.#revocations.revoke({ scope: "capability", capability_id: p }, this.clock.nowMs());
++    }
+     // A capability revocation covers the capability and every authority whose bound chain contains it (descendants).
+     const covered = (sessionId: string, capabilityId: string, tenantId: string | undefined, ancestorIds: readonly string[]) =>
+       target.scope === "session" ? sessionId === target.session_id

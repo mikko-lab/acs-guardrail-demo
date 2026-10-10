@@ -1,6 +1,6 @@
 --- a/src/capability-grant.ts
 +++ b/src/capability-grant.ts
-@@ -95,10 +95,10 @@
+@@ -212,10 +212,10 @@
      const grant = input as Record<string, unknown>;
  
      if (this.tenancy) {
@@ -12,4 +12,4 @@
 +      if (grant.tenant_id !== undefined && (typeof grant.tenant_id !== "string" || grant.tenant_id.length === 0 || grant.tenant_id.length > MAX_TENANT_ID_LENGTH)) {
          throw new CapabilityVerificationError("MALFORMED_GRANT", `Validation Error: tenant_id must be a non-empty string of at most ${MAX_TENANT_ID_LENGTH} characters`);
        }
-     } else {
+       if (grant.parent !== undefined) {

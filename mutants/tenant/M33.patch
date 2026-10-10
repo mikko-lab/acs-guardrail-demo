@@ -1,12 +1,11 @@
---- a/src/authority-revocation.ts
-+++ b/src/authority-revocation.ts
-@@ -101,7 +101,8 @@
+--- a/src/capability-grant.ts
++++ b/src/capability-grant.ts
+@@ -82,7 +82,7 @@
  
- /** Content fingerprint of a verified grant, excluding its signature. It covers every other field, including tenant_id. */
- export function capabilityFingerprint(grant: CapabilityGrant): string {
--  const { signature: _signature, ...body } = grant;
-+  const { signature: _signature, ...rest } = grant;
-+  const { tenant_id: _tenant, ...body } = rest as typeof rest & { tenant_id?: string };
-   return createHash("sha256").update(canonicalize(body)).digest("hex");
+ /** Content fingerprint of a grant: SHA-256 of the canonical JSON of every field except the signature. */
+ export function capabilityFingerprint(grant: { signature?: unknown } & Record<string, unknown> | CapabilityGrant): string {
+-  const { signature: _signature, ...body } = grant as Record<string, unknown>;
++  const { signature: _signature, tenant_id: _tenant, ...body } = grant as Record<string, unknown>;
+   return crypto.createHash("sha256").update(canonicalize(body)).digest("hex");
  }
  

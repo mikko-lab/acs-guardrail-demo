@@ -36,6 +36,8 @@ export class TenantCapabilityProvider implements CapabilityProvider {
   defaultTenant = "t1";
   /** Optional override of the grant issued for one lookup. */
   grantFor?: (context: CapabilityLookupContext) => GrantSpec;
+  /** Optional override of the whole answer for one lookup (a chain envelope, for example); used by tests/chain-setup.ts. */
+  answerFor?: (context: CapabilityLookupContext) => unknown;
 
   constructor(private readonly keyId: string, private readonly privateKey: crypto.KeyObject, private readonly clock: MutableClock) {}
 
@@ -59,6 +61,7 @@ export class TenantCapabilityProvider implements CapabilityProvider {
 
   resolve(context: CapabilityLookupContext): unknown {
     this.resolveCalled++;
+    if (this.answerFor) return this.answerFor(context);
     const spec = this.grantFor?.(context) ?? { version: 2, tenant_id: this.tenants.get(context.session_id) ?? this.defaultTenant };
     return this.grant(context, spec);
   }

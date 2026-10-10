@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Added
+- **Ancestor chains and descendant revocation (package 1b):** issuer-attested derivation in tenancy mode. See `docs/ancestor-chains.md`.
+  - **Grants and provider.** A `CapabilityGrantV2` may carry a signed `parent: { capability_id, fingerprint }`. The provider may return `{ kind: "capability_chain", leaf, ancestors }` with the complete issuer-signed chain, parent first, root last. `MAX_CHAIN_LENGTH` is 8 grants, leaf included.
+  - **Verification** (`CapabilityGrantVerifier.verifyChain()`). Envelope, depth, repeated ids and cycles, the leaf with its request binding, every ancestor's signature and validity (failures name the chain position), both link directions (capability_id, then fingerprint), the leaf's tenant for every member, and attenuation (tool subset, validity window inside the parent's). New codes `MALFORMED_CHAIN`, `CHAIN_TOO_DEEP`, `CHAIN_REPEATED_ID`, `CHAIN_LINK_MISMATCH`, `TENANT_CHAIN_MISMATCH` and `CHAIN_ATTENUATION`, with audit reasons `capability_malformed_chain`, `capability_chain_too_deep`, `capability_chain_repeated_id`, `capability_chain_link_mismatch`, `capability_tenant_chain_mismatch` and `capability_chain_attenuation`.
+  - **Rejection and binding.** A wrong chain is rejected before any binding, the Guardian decision, a pending approval, a permit, an execution and the tool call. A verified chain is bound atomically: every member's id to its content and every member's session to the tenant. A conflicting chain binds nothing. A chain is never assembled from grants seen earlier.
+  - **Start and approval binding.** An execution is bound at start to its frozen ancestor chain (`ancestor_capability_ids` on snapshots, terminals and execution audit events), and no later fence re-resolves it. A pending approval keeps a chain snapshot. At approval the provider's chain must equal it member by member (`chain_snapshot_mismatch`), and it is then re-verified.
+  - **Descendant revocation.** A capability revocation of an ancestor covers its descendants (reason `ancestor_revoked`) at the request check after verification, approval re-verification, the early start check, the start guard, the commit fence, both delivery checks and the cancellation fan-out. It also covers ancestors revoked before their first use. It never propagates to parents or siblings. Session revocation still covers only its own session.
+  - **Evidence.** Tests: `tests/ancestor-chain.test.ts` (43 tests). Runtime-test mutants: `mutants/ancestor/manifest.json` lists 24 mutants (M20, M21, M27b, M27d, M27g, M34, M34a, M35, M35a, M35b, M36, M37, M38–M41, M42a, M42b, M43–M48), each with exact witness values, plus the valid-chain control witness. `npm run mutants:ancestor` runs them.
+- **Shared mutant gate:** `scripts/mutants/run-mutant-gate.mjs --manifest <manifest>` replaces `run-tenant-mutants.mjs` and serves both packages.
+  - It adds `control` witnesses, which must hold unchanged under a mutant, and recorded gaps taken from the manifest.
+  - It copies only regular files into the gate's work trees.
+  - A crash of the gate itself exits 2, never 1. The new gate regression R4-crash checks this.
+  - See `docs/mutant-gate.md`.
 - **Tenant scope (package 1a):** tenancy mode, enabled by `new CapabilityGrantVerifier(publicKey, keyId, clock, { tenancy: true })`.
   - **Grants.** Tenancy mode accepts only signed `CapabilityGrantV2` grants (`version: 2`, required `tenant_id`). Tenantless grants are rejected (`MISSING_TENANT`, audit reason `capability_missing_tenant`); there is no default tenant and no mixed mode.
   - **Trust and binding.** The tenant comes only from the verified grant. A request's own `params.tenant_id` must equal it (`tenant_mismatch`). The capability fingerprint covers `tenant_id`. A runtime session is bound to one tenant (`session_tenant_conflict`). An execution is bound to its tenant at start, and the commit fence, both delivery checks and the cancellation fan-out use that binding.
@@ -18,6 +30,19 @@
 - **Unobservable settlement is not a terminal (A2):** a tool function that returns a native Promise whose settlement cannot be observed (a non-configurable `constructor` or non-extensible Promise that cannot be pinned) still fails the call with `TypeError`, but no longer records a `failed` terminal or `execution_terminal`: the Promise may still be pending. The execution enters the new state `unobservable`; `ctx.commit()` is denied with the new reason `settlement_unobservable`, `ctx.track()` throws, `whenTerminal()` never resolves, and a later `revoke()` that covers it still requests cancellation. `tests/cooperative-containment.test.ts` › C22b and C29 (d) now expect this state instead of a `failed` terminal; C22c–C22f are new regressions.
 
 ### Changed
+- **Ancestor chain compatibility (package 1b):**
+  - **Grants with `parent`.** A version 1 grant with a `parent` field is now rejected (`MALFORMED_GRANT`), and a chain envelope is rejected outside tenancy mode (`MALFORMED_CHAIN`). In tenancy mode a version 2 grant with `parent` is accepted only with its verified chain; before, an issuer-signed `parent` field was ignored. Grants without `parent` behave as before, and the 582 earlier tests pass unchanged.
+  - **API types.**
+    - `RevocationReason` and `CommitBlockReason` gain `ancestor_revoked`.
+    - `CheckedAuthority`, `ExecutionSnapshot` and `ExecutionTerminal` gain optional `ancestor_capability_ids`, present only for chained authorities.
+    - `ManagedExecutionDeps` gains optional `ancestorIds`.
+    - `capabilityFingerprint` moves to `capability-grant.ts` (re-exported from `authority-revocation.ts`).
+  - **Revocation reason precedence.** Tenant, then session, then an ancestor (nearest parent first), then the capability itself.
+  - **OCSF.** The allowlists of `capability_verified`, `authority_revocation_enforced` and the execution and commit events include `ancestor_capability_ids`.
+  - **Mutant gate.**
+    - The tenant patches and gate regressions are regenerated against the new source.
+    - The tenant manifest gains `recorded_gaps` (the M33 gap, unchanged).
+    - Its witnesses and exact values are unchanged.
 - **Tenant scope compatibility (package 1a):**
   - **Legacy mode (default).** A version 1 grant that carries a `tenant_id` field is now rejected (`MALFORMED_GRANT`) instead of having the field silently ignored, and a version 2 grant is rejected. Version 1 grants without `tenant_id` behave exactly as before, and a request's `params.tenant_id` is still ignored. All 553 existing tests pass unchanged.
   - **API types.**
@@ -38,8 +63,9 @@
 ### Limitations
 - Revocation does not stop a running tool. A2 cancellation is cooperative; the commit fence covers only `ctx.commit()` on the in-memory managed state; effects outside it, non-cooperating code and unregistered background work are not controlled.
 - Revocation state is in memory for one executor instance: not persistent, not distributed, not shared between processes, and lost on restart.
-- Capability, session and (tenancy mode) tenant scopes only; no agent or delegated-authority (descendant) scope; no regrant. Tenant scope is one issuer key and one executor for all tenants, not separate trust domains.
+- Capability (with issuer-attested descendants in tenancy mode), session and (tenancy mode) tenant scopes only; no agent scope, no holder-to-holder delegation, no regrant. Tenant scope is one issuer key and one executor for all tenants, not separate trust domains.
 - The tenant field of the capability fingerprint has component evidence only (mutant M33); no production-path witness separates it from the kept safeguards (`docs/tenant-scope.md`).
+- Ancestor chains: M40, M42a, M47 and M48 are check-point evidence only; M42a re-resolves only at the commit fence; ancestor expiry between request and approval has no isolated witness (attenuation masks it). Contract and supplement evidence for the ancestor column belongs to the later eval work (`docs/ancestor-chains.md`).
 
 ## [v0.4.0] - 2026-09-29
 

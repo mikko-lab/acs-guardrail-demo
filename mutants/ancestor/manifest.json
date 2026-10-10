@@ -1,0 +1,1723 @@
+{
+  "version": 2,
+  "description": "Ancestor chains and descendant revocation (package 1b) runtime-test mutants. Named before any run; see docs/ancestor-chains.md#mutant-gate and docs/mutant-gate.md.",
+  "gate_rules": {
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; every witness logs exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors",
+    "unexpected": "a witness value that is neither the control nor the mutant value, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never check-point evidence",
+    "kinds": {
+      "check_point": "its check labels change",
+      "containment_effect": "its effect labels change (runtime state: tool calls, managed state, returned content, cancellation signal)",
+      "both": "check and effect labels change in the same run",
+      "component_check_point": "the component test's check labels change; never production-path evidence"
+    },
+    "control_witness": "a witness with role control keeps every label value under the mutant (control value = mutant value); it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)",
+    "never_detection": [
+      "patch does not apply",
+      "typecheck or build error",
+      "suite load or collection error",
+      "test inventory differs from the control",
+      "jest exit status other than 0/1, signal or timeout",
+      "witness failure that is not a WitnessAssertionError",
+      "witness value matching neither control nor mutant",
+      "caught error not accepted by the manifest",
+      "failing control",
+      "control witness changed under the mutant",
+      "gate crash"
+    ]
+  },
+  "recorded_gaps": [],
+  "mutants": [
+    {
+      "id": "M20",
+      "kind": "both",
+      "removes": "ancestry not checked at the request check after verification, the early start check and the start guard",
+      "patch": "mutants/ancestor/M20.patch",
+      "patch_sha256": "2112f0e41ee7ce6102362b92fd37374e2c7a10f4e26356755ccbbdd680842eb0",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M20] C3.02 a descendant of a revoked ancestor is denied at request and start; the tool is never called",
+          "labels": [
+            {
+              "label": "A-M20-decision",
+              "part": "check",
+              "control": "ancestor_revoked",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M20-effect",
+              "part": "effect",
+              "control": [
+                0,
+                true
+              ],
+              "mutant": [
+                1,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none for the start: every check point that could deny the start is removed (the commit fence and delivery checks still withhold later effects and output)"
+    },
+    {
+      "id": "M21",
+      "kind": "both",
+      "removes": "ancestry not checked at the commit fence (ctx.commit())",
+      "patch": "mutants/ancestor/M21.patch",
+      "patch_sha256": "0114da17a5b64b06574374edc5c57a022c52784bb5e9d2e7168eb5cf87a45b5f",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M21] C3.07 commit fence: a running descendant of a revoked ancestor cannot commit; the managed state is unchanged",
+          "labels": [
+            {
+              "label": "A-M21-check",
+              "part": "check",
+              "control": "ancestor_revoked",
+              "mutant": "ok"
+            },
+            {
+              "label": "A-M21-effect",
+              "part": "effect",
+              "control": [
+                false,
+                0
+              ],
+              "mutant": [
+                true,
+                1
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: the commit fence is the only check on ctx.commit()"
+    },
+    {
+      "id": "M27b",
+      "kind": "check_point",
+      "removes": "ancestry not checked at the request check after verification",
+      "patch": "mutants/ancestor/M27b.patch",
+      "patch_sha256": "912772e488af79a08bdb09fd826c7f11e3ad75e3b1c2b4ee25aa4b7de599b0b1",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M27b] C3.01 request check after verification: an ancestor revoked before its first use denies the descendant at stage request",
+          "labels": [
+            {
+              "label": "A-M27b",
+              "part": "check",
+              "control": "request",
+              "mutant": "start"
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ]
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "early start check and start guard: still denied, at stage start (ancestry has no early request check: the chain is known only after verification)"
+    },
+    {
+      "id": "M27g",
+      "kind": "check_point",
+      "removes": "ancestry not checked at the early start check (before correlation and permit)",
+      "patch": "mutants/ancestor/M27g.patch",
+      "patch_sha256": "cf69ca5a3374e07f7d65928cc4db145fe972fa6acb3bb9a77721325e9e05354b",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M27g] C3.03 early start check: an ancestor revoked after the request checks is denied before the gate starts the tool",
+          "labels": [
+            {
+              "label": "A-M27g",
+              "part": "check",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ]
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "start guard: still denied before the tool call, after tool_execution_started is recorded"
+    },
+    {
+      "id": "M27d",
+      "kind": "both",
+      "removes": "ancestry not checked at the start guard (immediately before the tool call)",
+      "patch": "mutants/ancestor/M27d.patch",
+      "patch_sha256": "65f32a5779ffca14574d59fb6c8bee0019cd7c382452a496f49a873453c3f806",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M27d] C3.04 start guard: an ancestor revoked at tool_execution_started is denied immediately before the tool call",
+          "labels": [
+            {
+              "label": "A-M27d-check",
+              "part": "check",
+              "control": "start",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M27d-effect",
+              "part": "effect",
+              "control": [
+                0,
+                true
+              ],
+              "mutant": [
+                1,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none for this input: the revocation is injected after every earlier check"
+    },
+    {
+      "id": "M34",
+      "kind": "both",
+      "removes": "ancestry not checked at the approval re-verification, the early start check and the start guard",
+      "patch": "mutants/ancestor/M34.patch",
+      "patch_sha256": "3079e85587a354519cc5e76581592e6e02a8ab205f5b753f0182823eb90c5a28",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M34] C3.06 approval: a pending descendant of a revoked ancestor never calls the tool; the receipt lists it",
+          "labels": [
+            {
+              "label": "A-M34-decision",
+              "part": "check",
+              "control": "ancestor_revoked",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M34-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (approval)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: every check point on the approval path is removed"
+    },
+    {
+      "id": "M34a",
+      "kind": "check_point",
+      "removes": "ancestry not checked at the approval re-verification only",
+      "patch": "mutants/ancestor/M34a.patch",
+      "patch_sha256": "dc771a95c10194ea590a8cf50e730ae15f5030fe0caf191131c5552661e00bf2",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M34a] C3.05 approval: a pending descendant of a revoked ancestor is denied at the approval re-verification",
+          "labels": [
+            {
+              "label": "A-M34a",
+              "part": "check",
+              "control": "approval",
+              "mutant": "start"
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (approval)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ]
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "early start check and start guard (resolveApproval() runs the start path): the tool is still not called; the denial moves to stage start"
+    },
+    {
+      "id": "M35",
+      "kind": "both",
+      "removes": "ancestry not checked at either delivery check (result processing and hand-over)",
+      "patch": "mutants/ancestor/M35.patch",
+      "patch_sha256": "7bccde8a45df4ba4d37392f400912b4095b08bc0a66462941f2c9e3d467edb25",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M35] C3.09 delivery: the output of a descendant whose ancestor was revoked while it ran is withheld",
+          "labels": [
+            {
+              "label": "A-M35-decision",
+              "part": "check",
+              "control": [
+                "blocked",
+                "ancestor_revoked"
+              ],
+              "mutant": [
+                "success",
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M35-effect",
+              "part": "effect",
+              "control": false,
+              "mutant": true
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: both delivery checks are removed"
+    },
+    {
+      "id": "M35a",
+      "kind": "check_point",
+      "removes": "ancestry not checked at the early delivery check in result processing",
+      "patch": "mutants/ancestor/M35a.patch",
+      "patch_sha256": "2e73211c30c2e3508cb100af6415962d3bd4d6b7fce02e92cf63cea3d3a547e0",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M35a] C3.10 delivery: an ancestor revocation while the tool runs is enforced at the early delivery check",
+          "labels": [
+            {
+              "label": "A-M35a",
+              "part": "check",
+              "control": [
+                "result_processing"
+              ],
+              "mutant": [
+                "api_return"
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "hand-over check: the output is still withheld, at boundary api_return"
+    },
+    {
+      "id": "M35b",
+      "kind": "both",
+      "removes": "ancestry not checked at the hand-over (public API return)",
+      "patch": "mutants/ancestor/M35b.patch",
+      "patch_sha256": "d145a16a20d02ea2fcccce0cb50d12395bf51de13699628d2f5bab041e03c5ab",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M35b] C3.11 hand-over: an ancestor revoked after the early delivery check is withheld at the public API return",
+          "labels": [
+            {
+              "label": "A-M35b-check",
+              "part": "check",
+              "control": [
+                "blocked",
+                "ancestor_revoked"
+              ],
+              "mutant": [
+                "success",
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M35b-effect",
+              "part": "effect",
+              "control": false,
+              "mutant": true
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none for this input: the revocation is injected after the early delivery check"
+    },
+    {
+      "id": "M36",
+      "kind": "containment_effect",
+      "removes": "an ancestor revocation does not request cancellation of running descendants",
+      "patch": "mutants/ancestor/M36.patch",
+      "patch_sha256": "efa52b3d44cf5b918b2491b74e47b06554a92b9d97f994324405ab3f530e5190",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C3 ancestor revocation at the runtime check points",
+          "test": "[M36] C3.12 cancellation: an ancestor revocation sends the cancellation signal to its running descendant; the signal is not termination",
+          "labels": [
+            {
+              "label": "A-M36-effect",
+              "part": "effect",
+              "control": [
+                true,
+                true,
+                true
+              ],
+              "mutant": [
+                false,
+                false,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: the fan-out in revoke() is the only source of the cancellation signal"
+    },
+    {
+      "id": "M37",
+      "kind": "both",
+      "removes": "a capability revocation propagates to the revoked capability's parent chain (and through it to siblings)",
+      "patch": "mutants/ancestor/M37.patch",
+      "patch_sha256": "26dff6582c1d641c538462ac0b175b9e6b6ad8b7b07f8ab75dec7e4dc59b4364",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C4 scope: siblings, branches, sessions and tenants",
+          "test": "[M37] C4.01 a revocation does not propagate to the parent or to a sibling",
+          "labels": [
+            {
+              "label": "A-M37-decision",
+              "part": "check",
+              "control": [
+                true,
+                true
+              ],
+              "mutant": [
+                false,
+                false
+              ]
+            },
+            {
+              "label": "A-M37-effect",
+              "part": "effect",
+              "control": 2,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (request)",
+              "AuthorityRevokedError: Execution blocked (request)",
+              "AuthorityRevokedError: Execution blocked (request)"
+            ]
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: over-reach denies the sibling's and the parent's own starts"
+    },
+    {
+      "id": "M38",
+      "kind": "both",
+      "removes": "a leaf whose parent is not supplied is accepted as a root",
+      "patch": "mutants/ancestor/M38.patch",
+      "patch_sha256": "801ca8c09940c08f084cbe9de6183f8db20b4b65cebc9eae7dcb8fcd9bd7f190",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M38] C1.02 a leaf whose parent the provider does not supply is rejected; it is never treated as a root",
+          "labels": [
+            {
+              "label": "A-M38-check",
+              "part": "check",
+              "control": "capability_malformed_chain",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M38-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: missing parent c102-I of chain position 0"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: no revocation exists and nothing is bound"
+    },
+    {
+      "id": "M39",
+      "kind": "both",
+      "removes": "chain depth not limited",
+      "patch": "mutants/ancestor/M39.patch",
+      "patch_sha256": "27cc619d4b75d353ac2aa277042ad32f7cfee6c783fc3792f0699d69d1b22b33",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M39] C1.04 a chain longer than the limit is rejected, not truncated",
+          "labels": [
+            {
+              "label": "A-M39-check",
+              "part": "check",
+              "control": "capability_chain_too_deep",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M39-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: chain has 9 grants"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: the 9 members are valid, linked and attenuated"
+    },
+    {
+      "id": "M40",
+      "kind": "check_point",
+      "removes": "a repeated capability_id in the chain is accepted",
+      "patch": "mutants/ancestor/M40.patch",
+      "patch_sha256": "cfaaf57982d535595af3a2ed5f14d989d8a39369afa7dfac88142fafefd29d18",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M40] C1.06 a repeated capability_id in the chain is rejected as such",
+          "labels": [
+            {
+              "label": "A-M40",
+              "part": "check",
+              "control": "capability_chain_repeated_id",
+              "mutant": "capability_id_conflict"
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: capability_id c106-P occurs more than once"
+            ],
+            "mutant": [
+              "Error: Capability rejected: capability_id is already bound to a different grant"
+            ]
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "capability binding: the two contents of one id give capability_id_conflict within the chain (and fingerprint linkage keeps identical content from linking to itself); the tool is still not called"
+    },
+    {
+      "id": "M41",
+      "kind": "both",
+      "removes": "a chain member of another tenant is accepted",
+      "patch": "mutants/ancestor/M41.patch",
+      "patch_sha256": "7609e55431b9015d638440363af299092005f5a3765cc07ed992b243f5dccc56",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M41] C1.08 a chain member of another tenant is rejected",
+          "labels": [
+            {
+              "label": "A-M41-check",
+              "part": "check",
+              "control": "capability_tenant_chain_mismatch",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M41-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: chain position 1 belongs to another tenant"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: tenant equality is not part of attenuation, and the members name different sessions"
+    },
+    {
+      "id": "M42a",
+      "kind": "check_point",
+      "removes": "the commit fence re-resolves the chain from the capability provider instead of the start-time binding",
+      "patch": "mutants/ancestor/M42a.patch",
+      "patch_sha256": "cf40d2e4e9ebad6a08af56b8539259fba0e1273be492f79a1e0e40b19f27466b",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C2 chain binding",
+          "test": "[M42a] C2.04 the execution's chain is the start-time binding: no capability or chain is resolved again after start",
+          "labels": [
+            {
+              "label": "A-M42a",
+              "part": "check",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "capability binding: the re-resolved chain is the same, so the commit is still denied; only the provider call count differs"
+    },
+    {
+      "id": "M42b",
+      "kind": "both",
+      "removes": "an ancestor id bound through a used chain is accepted with other content (ancestor binding conflicts not checked)",
+      "patch": "mutants/ancestor/M42b.patch",
+      "patch_sha256": "6491a49d2e24d74ae8c3c93dbe33609e799220147bae860e1195377f3cb22654",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C2 chain binding",
+          "test": "[M42b] C2.01 an ancestor id bound through a used chain cannot be presented later with other content",
+          "labels": [
+            {
+              "label": "A-M42b-check",
+              "part": "check",
+              "control": "capability_id_conflict",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M42b-effect",
+              "part": "effect",
+              "control": 1,
+              "mutant": 2
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: capability_id is already bound to a different grant"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: the new chain's own links, signatures and attenuation are consistent"
+    },
+    {
+      "id": "M43",
+      "kind": "both",
+      "removes": "attenuation not enforced (a child tool outside the parent's allowed_tools; a child validity beyond the parent's)",
+      "patch": "mutants/ancestor/M43.patch",
+      "patch_sha256": "4e5aaf35aef790e218a11a3114597ce7617bc8dbd02514118b0c4d489a49138e",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M43] C1.09 attenuation: a child may not allow a tool its parent does not, or be valid beyond its parent",
+          "labels": [
+            {
+              "label": "A-M43-check",
+              "part": "check",
+              "control": [
+                "capability_chain_attenuation",
+                "capability_chain_attenuation"
+              ],
+              "mutant": [
+                {
+                  "$undefined": true
+                },
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M43-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 2
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: chain position 0 allows tools its parent does not",
+              "Error: Capability rejected: Validation Error: chain position 0 is valid outside its parent's validity window"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: the leaf's own allowed_tools include the requested tool and the leaf is valid now"
+    },
+    {
+      "id": "M44",
+      "kind": "both",
+      "removes": "the root's signature is not verified",
+      "patch": "mutants/ancestor/M44.patch",
+      "patch_sha256": "2e9e5e447b7e546cb035ae8be6713f0a5b7771122feaca92d0d3993e95d1c9d3",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M44] C1.10 a root with an invalid signature is rejected at chain position 2; nothing runs",
+          "labels": [
+            {
+              "label": "A-M44-check",
+              "part": "check",
+              "control": [
+                "capability_authentication_failed",
+                2
+              ],
+              "mutant": [
+                {
+                  "$undefined": true
+                },
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M44-effect",
+              "part": "effect",
+              "control": [
+                0,
+                true
+              ],
+              "mutant": [
+                1,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: Invalid signature (chain position 2)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: fresh executor, no revocation, members never seen before"
+    },
+    {
+      "id": "M45",
+      "kind": "both",
+      "removes": "an intermediate member's signature is not verified",
+      "patch": "mutants/ancestor/M45.patch",
+      "patch_sha256": "489eaac53aaa04513cef1d8e4255e552a8ee650859c204ce5e73cfb1ad0319f6",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M45] C1.11 an intermediate member with an invalid signature is rejected at chain position 1; nothing runs",
+          "labels": [
+            {
+              "label": "A-M45-check",
+              "part": "check",
+              "control": [
+                "capability_authentication_failed",
+                1
+              ],
+              "mutant": [
+                {
+                  "$undefined": true
+                },
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M45-effect",
+              "part": "effect",
+              "control": [
+                0,
+                true
+              ],
+              "mutant": [
+                1,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: Invalid signature (chain position 1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: fresh executor, no revocation, members never seen before"
+    },
+    {
+      "id": "M46",
+      "kind": "both",
+      "removes": "the parent fingerprint is not compared (a replaced parent with the same capability_id is accepted)",
+      "patch": "mutants/ancestor/M46.patch",
+      "patch_sha256": "b568ef3e851ebec2e108de183a0cf7299e2cdf3dc40a77c39f22a2bac47f90b4",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M46] C1.12 a replaced parent (same capability_id, other content) is rejected by the fingerprint link",
+          "labels": [
+            {
+              "label": "A-M46-check",
+              "part": "check",
+              "control": [
+                "capability_chain_link_mismatch",
+                "fingerprint"
+              ],
+              "mutant": [
+                {
+                  "$undefined": true
+                },
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M46-effect",
+              "part": "effect",
+              "control": [
+                0,
+                true
+              ],
+              "mutant": [
+                1,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: chain position 0 names a parent fingerprint"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "none: fresh executor, so the replaced id is not bound yet"
+    },
+    {
+      "id": "M47",
+      "kind": "check_point",
+      "removes": "the parent capability_id is not compared (any validly signed grant accepted as the parent)",
+      "patch": "mutants/ancestor/M47.patch",
+      "patch_sha256": "3c0c3f8f91b70a9b85c47f075b81c60b7291f456fb6d21717d20cde0f129c8c9",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M47] C1.13 a substituted parent (another validly signed grant) is rejected by the capability_id link",
+          "labels": [
+            {
+              "label": "A-M47",
+              "part": "check",
+              "control": [
+                "capability_chain_link_mismatch",
+                "capability_id"
+              ],
+              "mutant": [
+                "capability_chain_link_mismatch",
+                "fingerprint"
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: chain position 0 names parent capability id c113-I"
+            ],
+            "mutant": [
+              "Error: Capability rejected: Validation Error: chain position 0 names a parent fingerprint"
+            ]
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "fingerprint comparison: a different id always means a different body, so the link is still rejected; the tool is still not called"
+    },
+    {
+      "id": "M48",
+      "kind": "check_point",
+      "removes": "the approval re-verification compares only the leaf, not the whole chain snapshot",
+      "patch": "mutants/ancestor/M48.patch",
+      "patch_sha256": "45803320db0acddca62a650e1f582b8f8772dc145f3152850e3650c181506c73",
+      "witnesses": [
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[M48] C1.14 approval: a chain that differs from the pending request's snapshot is rejected as a snapshot mismatch",
+          "labels": [
+            {
+              "label": "A-M48",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "capability_chain_link_mismatch"
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected at approval: the provider's current capability chain differs"
+            ],
+            "mutant": [
+              "Error: Capability rejected at approval: Validation Error: chain position 0 names a parent fingerprint"
+            ]
+          }
+        },
+        {
+          "file": "tests/ancestor-chain.test.ts",
+          "describe": "C1 chain verification",
+          "test": "[chain-valid] C1.01 control: a leaf with a verified issuer-signed chain executes; the execution is bound to the chain",
+          "labels": [
+            {
+              "label": "A-chain-valid",
+              "part": "check",
+              "control": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ],
+              "mutant": [
+                true,
+                1,
+                [
+                  "c101-I",
+                  "c101-R"
+                ]
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          },
+          "role": "control"
+        }
+      ],
+      "kept_safeguards": "signature, link and binding checks of the re-resolved chain: still rejected, by the fingerprint link; the tool is still not called"
+    }
+  ]
+}

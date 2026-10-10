@@ -1,0 +1,38 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -569,7 +569,7 @@
+ 
+     // Early start check, before correlation and permit state are created. The binding start check runs inside
+     // ExecutionGate.execute() immediately before the tool function call (see #runAndProcessResult).
+-    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: ancestorIds, tool: toolName });
++    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: [], tool: toolName });
+     const flight = ++this.#inFlightSeq;
+     this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId, tenantId, ancestorIds });
+     try {
+@@ -596,7 +596,7 @@
+       // (including the tool_execution_started audit record) and immediately before the call. The managed
+       // execution is created only after the guard passed, without any callback before the call.
+       const result = await this.#gate.execute(request, permit, () => {
+-        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: ancestorIds, tool: toolName });
++        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: [], tool: toolName });
+         return (toolFn, args) => this.#startManagedExecution(originalRequestId, authority).invoke(toolFn, args);
+       });
+ 
+@@ -788,7 +788,7 @@
+       throw new Error("Capability rejected at approval: " + message);
+     };
+ 
+-    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: original.capability_id, tenant_id: tenantId, ancestor_capability_ids: ancestorIds, tool });
++    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: original.capability_id, tenant_id: tenantId, ancestor_capability_ids: [], tool });
+ 
+     const ctx: CapabilityContext = { expectedAgentId: pending.agentId, expectedSessionId: sessionId, requestedTool: tool };
+     try {
+@@ -818,7 +818,7 @@
+     }
+     const conflict = this.#bindVerifiedChain(current);
+     if (conflict) reject(conflict, conflict === "capability_id_conflict" ? "capability_id is already bound to a different grant" : "the session is already bound to a different tenant");
+-    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: current.leaf.capability_id, tenant_id: tenantId, ancestor_capability_ids: current.ancestors.map(a => a.capability_id), tool });
++    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: current.leaf.capability_id, tenant_id: tenantId, ancestor_capability_ids: [], tool });
+     return { sessionId, capabilityId: original.capability_id, tenantId, ancestorIds };
+   }
+ 

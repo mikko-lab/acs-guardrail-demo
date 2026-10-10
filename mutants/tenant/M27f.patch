@@ -1,11 +1,11 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -543,7 +543,7 @@
+@@ -569,7 +569,7 @@
  
      // Early start check, before correlation and permit state are created. The binding start check runs inside
      // ExecutionGate.execute() immediately before the tool function call (see #runAndProcessResult).
--    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, tool: toolName });
-+    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: undefined, tool: toolName });
+-    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: ancestorIds, tool: toolName });
++    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: undefined, ancestor_capability_ids: ancestorIds, tool: toolName });
      const flight = ++this.#inFlightSeq;
-     this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId, tenantId });
+     this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId, tenantId, ancestorIds });
      try {

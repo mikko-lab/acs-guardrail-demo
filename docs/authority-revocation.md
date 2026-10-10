@@ -10,7 +10,7 @@ This document specifies the explicit authority revocation added to `GuardedExecu
 | Session | `{ "scope": "session", "session_id": "<id>" }` | The authenticated request `metadata.session_id` (which a valid capability is bound to) |
 | Tenant (tenancy mode only) | `{ "scope": "tenant", "tenant_id": "<id>" }` | The `tenant_id` of a verified, issuer-signed `CapabilityGrantV2`; see [tenant-scope.md](tenant-scope.md) |
 
-No other scope is supported. Agent and ancestor/descendant revocation are not modelled (capabilities have no parent). A tenant target outside tenancy mode, unknown scopes, empty or oversized identifiers and extra fields are rejected with `RevocationTargetError` and change nothing. When several revocations apply to one authority, the broadest is reported: tenant, then session, then capability.
+No other scope is supported; there is no agent scope. In tenancy mode a capability may carry an issuer-attested ancestor chain, and a capability revocation of an ancestor also covers every descendant whose verified chain contains it (reason `ancestor_revoked`); see [ancestor-chains.md](ancestor-chains.md). Without a chain a capability has no parent. A tenant target outside tenancy mode, unknown scopes, empty or oversized identifiers and extra fields are rejected with `RevocationTargetError` and change nothing. When several revocations apply to one authority, the broadest is reported: tenant, then session, then an ancestor (nearest parent first), then the capability itself.
 
 **Capability identity binding.** A `capability_id` is not a nonce: the same signed grant may be presented repeatedly while it is valid. To keep a revocation of an id unambiguous, the runtime binds every `capability_id` to the content of the first verified grant it sees with that id (all signed fields except the signature). A later grant with the same id but different content is rejected (`capability_rejected`, reason `capability_id_conflict`) before Guardian evaluation. A provider that issues a new grant with a **new** `capability_id` issues a new authority; revoking the session is the way to cut every capability of a session.
 
@@ -96,7 +96,7 @@ Revocation state lives in the memory of one `GuardedExecutor` instance. It is no
 ## Not provided by A1
 
 - Stopping a running tool, cancellation signals, or fencing a commit that a running tool performs, and terminal evidence for executions. A2 provides cancellation requests, a commit fence for runtime-mediated effects and terminal evidence for managed executions; see [cooperative-containment.md](cooperative-containment.md). Non-cooperating code and effects outside the commit fence remain uncontrolled.
-- Agent or ancestor/descendant scopes; regrant. (Tenant scope is provided in tenancy mode: [tenant-scope.md](tenant-scope.md).)
+- Agent scope; holder-to-holder delegation; regrant. (Tenant scope and issuer-attested ancestor chains are provided in tenancy mode: [tenant-scope.md](tenant-scope.md), [ancestor-chains.md](ancestor-chains.md).)
 - Persistent, distributed or cross-process revocation.
 - A network endpoint or UI for revocation.
 - Conformance to the `agent-control-evals` revocation-0.3.0 containment contract.

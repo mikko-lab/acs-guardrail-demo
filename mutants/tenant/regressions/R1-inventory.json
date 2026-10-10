@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "description": "gate regression: the M27e patch plus deletion of an unrelated test (582 -> 581 tests); expected: technical failure, exit 2",
+  "description": "gate regression: the M27e patch plus deletion of an unrelated test (625 -> 624 tests); expected: technical failure, exit 2",
   "gate_rules": {
     "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; every witness logs exactly its labels' control values and exactly its accepted control errors",
     "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the test inventory (count and every test id) is identical to the control's; no suite execution error",
@@ -12,6 +12,8 @@
       "both": "check and effect labels change in the same run",
       "component_check_point": "the component test's check labels change; never production-path evidence"
     },
+    "control_witness": "a witness with role control keeps every label value under the mutant (control value = mutant value); it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)",
     "never_detection": [
       "patch does not apply",
       "typecheck or build error",
@@ -21,16 +23,19 @@
       "witness failure that is not a WitnessAssertionError",
       "witness value matching neither control nor mutant",
       "caught error not accepted by the manifest",
-      "failing control"
+      "failing control",
+      "control witness changed under the mutant",
+      "gate crash"
     ]
   },
+  "recorded_gaps": [],
   "mutants": [
     {
       "id": "R1-inventory",
       "kind": "check_point",
-      "removes": "gate regression: the M27e patch plus deletion of an unrelated test (582 -> 581 tests); expected: technical failure, exit 2",
+      "removes": "gate regression: the M27e patch plus deletion of an unrelated test (625 -> 624 tests); expected: technical failure, exit 2",
       "patch": "mutants/tenant/regressions/R1-inventory.patch",
-      "patch_sha256": "23010f52a307d0ad611cf1dd767b4b22b61acbf63ada6bda404a823aea7b4251",
+      "patch_sha256": "7c66dfba204810b40c5fbf5cd1848ec71f6bb80a08073ca82acd9f26820074cd",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",

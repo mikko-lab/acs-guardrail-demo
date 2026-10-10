@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "description": "Tenant scope (package 1a) runtime-test mutants. Named before any run; see docs/tenant-scope.md#mutant-gate.",
+  "description": "Tenant scope (package 1a) runtime-test mutants. Named before any run; see docs/tenant-scope.md#mutant-gate and docs/mutant-gate.md.",
   "gate_rules": {
     "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; every witness logs exactly its labels' control values and exactly its accepted control errors",
     "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the test inventory (count and every test id) is identical to the control's; no suite execution error",
@@ -12,6 +12,8 @@
       "both": "check and effect labels change in the same run",
       "component_check_point": "the component test's check labels change; never production-path evidence"
     },
+    "control_witness": "a witness with role control keeps every label value under the mutant (control value = mutant value); it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)",
     "never_detection": [
       "patch does not apply",
       "typecheck or build error",
@@ -21,16 +23,21 @@
       "witness failure that is not a WitnessAssertionError",
       "witness value matching neither control nor mutant",
       "caught error not accepted by the manifest",
-      "failing control"
+      "failing control",
+      "control witness changed under the mutant",
+      "gate crash"
     ]
   },
+  "recorded_gaps": [
+    "M33: no production-path witness; component_check_point only (docs/tenant-scope.md)"
+  ],
   "mutants": [
     {
       "id": "M15",
       "kind": "both",
       "removes": "tenant not checked at the commit fence (ctx.commit())",
       "patch": "mutants/tenant/M15.patch",
-      "patch_sha256": "4b50efff2a97650fd17d9405797a71d41f2eed6ed257de67469e4d2a88d0aeab",
+      "patch_sha256": "5bc95aed01ee5db7aa5fdeb02a1d4b7281f529337560bc2bcadd152a33f51257",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -69,7 +76,7 @@
       "kind": "both",
       "removes": "tenant revocation over-reaches: any revoked tenant matches every tenant-bound authority",
       "patch": "mutants/tenant/M16.patch",
-      "patch_sha256": "c8e2fcd2eb85508d597670a75bf08df0af04d44b7f1599b3342e145e3bee6dc5",
+      "patch_sha256": "3c4bf018612bba4106ad90404c70362705a988cdded678b8440c78c6c04e9b75",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -104,7 +111,7 @@
       "kind": "both",
       "removes": "tenant not checked at the request checks, the early start check and the start guard",
       "patch": "mutants/tenant/M22.patch",
-      "patch_sha256": "d540085949ce17a52acb8aa035577d0a6f355cbd576630e1e1737afe8a4e5f9e",
+      "patch_sha256": "72fdcd8568d885822b7192f377a3ea8e9ffe69871da613e5976649ce1d1e81f3",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -147,7 +154,7 @@
       "kind": "both",
       "removes": "tenant not checked at the approval re-verification, the early start check and the start guard",
       "patch": "mutants/tenant/M26.patch",
-      "patch_sha256": "c5ecf50954421590e892cd87b58ef5bceb28f139bbe896c2807241787921a319",
+      "patch_sha256": "a2aa1e58be5bfd1246282736c3b02f556575ad9cb9943eb4b38884586e357cad",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -184,7 +191,7 @@
       "kind": "check_point",
       "removes": "tenant not checked at the approval re-verification only",
       "patch": "mutants/tenant/M26a.patch",
-      "patch_sha256": "585bcfb496afffd611d42333f94fa0d33eb013ea1a2ab36fc2280ee5c7115136",
+      "patch_sha256": "339d072f6c15782f8f71da0000f667fb066ef843ed5525d45bd6ed75e3e0a53b",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -215,7 +222,7 @@
       "kind": "check_point",
       "removes": "tenant not checked at the early request check (session-tenant binding, before capability resolution)",
       "patch": "mutants/tenant/M27a.patch",
-      "patch_sha256": "270926b7d0a5f6d77b5097528b46a08e6f052b1095d971ca3b1c086b73b4f7b0",
+      "patch_sha256": "31e23e3f29bed511fc372e6ea125953a165c7853aa7bc2416f45447175672f82",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -246,7 +253,7 @@
       "kind": "check_point",
       "removes": "tenant not checked at the request check after capability verification",
       "patch": "mutants/tenant/M27e.patch",
-      "patch_sha256": "c61d557828ff120036e5b30ebbf41bb868239a313c22c93ad7bba57a40e9fca6",
+      "patch_sha256": "d6cb445406ad96ebc402ee8fb89252eab3b8e3bcc7262b1be7968a83093cec79",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -277,7 +284,7 @@
       "kind": "check_point",
       "removes": "tenant not checked at the early start check (before correlation and permit)",
       "patch": "mutants/tenant/M27f.patch",
-      "patch_sha256": "a0d245ad2cb880d6138f7df4115125724c5d7fabe3035f41a79c36c2588062fd",
+      "patch_sha256": "5a9cb5f7e125e88816ec43d52d271a7174292570de60b3f4370d5a917f11c684",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -308,7 +315,7 @@
       "kind": "both",
       "removes": "tenant not checked at the start guard (immediately before the tool call)",
       "patch": "mutants/tenant/M27c.patch",
-      "patch_sha256": "20b277b02e4ed128c94a11f759ab3c69c9a95050bc43e3c6db1593fa33846819",
+      "patch_sha256": "b08745904d70f848d7dfca52ced90617434c2aa0fab0291153465137c9e3bc9d",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -351,7 +358,7 @@
       "kind": "both",
       "removes": "tenant not checked at either delivery check (result processing and hand-over)",
       "patch": "mutants/tenant/M28.patch",
-      "patch_sha256": "99b0f747ac94585a867501a52b11d74c42ef616b11e838b513ff865a52c41e43",
+      "patch_sha256": "9b313a8ab0069447ecfee909b5add1614d9933a023ad2e4f065d77d8b4dbcbb4",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -392,7 +399,7 @@
       "kind": "check_point",
       "removes": "tenant not checked at the early delivery check in result processing",
       "patch": "mutants/tenant/M28a.patch",
-      "patch_sha256": "eefdf2e5cf00940f6f7175a8649f1322831c7f37fefe4a725b2f05af0a3615fe",
+      "patch_sha256": "6a0a1760c7936cf9f97e0f85ea7dc3a34dcd1a130a0f0a8471f0148354fcda3b",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -423,7 +430,7 @@
       "kind": "both",
       "removes": "tenant not checked at the hand-over (public API return)",
       "patch": "mutants/tenant/M28b.patch",
-      "patch_sha256": "f72bdd1391b878e33781f6146649479bc2a3092170a2d3eee79d0fa19ae14e86",
+      "patch_sha256": "69c6ea9568d6e88fd618f4ea4405012fcc7f3fd127cdcc936449bb6ff3fcd4a1",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -464,7 +471,7 @@
       "kind": "containment_effect",
       "removes": "tenant revocation does not request cancellation of the tenant's running executions",
       "patch": "mutants/tenant/M29.patch",
-      "patch_sha256": "028bc39988122d0087f23b1fe65ea42efca44738c25f8e9de0d5728dacf1d19d",
+      "patch_sha256": "3b1bc723c67bb5ac07d9c0a6a4a120f1dc6a607bfb0ec2a0387115b1369ea4f5",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -499,7 +506,7 @@
       "kind": "both",
       "removes": "tenant taken from the request's tenant_id claim instead of the signed grant",
       "patch": "mutants/tenant/M30.patch",
-      "patch_sha256": "2878a595b60d0be08652a6b1641df1d5b0ab240740ea1fcef8659eb6536bc587",
+      "patch_sha256": "f22dcfc960ddbe0696a41fe3b5a7de35e97b46720c7029dafb3d4cc697ba05f1",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -536,7 +543,7 @@
       "kind": "both",
       "removes": "request/grant tenant mismatch not rejected",
       "patch": "mutants/tenant/M30b.patch",
-      "patch_sha256": "6d51ef2a781ff08e45764d8ad43771ca22ed211514c0f61eaf55b032aa644ff7",
+      "patch_sha256": "914eed26f6845f4bb8af8454d794d97448cbd093d854fd15439584e5b842b8cd",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -573,7 +580,7 @@
       "kind": "both",
       "removes": "tenantless (version 1) grant accepted in tenancy mode",
       "patch": "mutants/tenant/M31.patch",
-      "patch_sha256": "90272cae65d8976f9357da9419d18d2bb190e9ce13a5e44640bbd8b04e96a954",
+      "patch_sha256": "005cfb1ce4027e596a0e864793391ec2433d0adaf8890246f9e70160b068ff46",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -610,7 +617,7 @@
       "kind": "both",
       "removes": "a session is not bound to one tenant (session-tenant conflict not detected)",
       "patch": "mutants/tenant/M32.patch",
-      "patch_sha256": "013bd55c55789f3dc412f0624ad63134297e995046d35eb362a8e8f5718f40be",
+      "patch_sha256": "0081f86a85bb9ac386ae279f6eade232f2fd0e8002b2acf0015afe63e8c1118e",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -647,7 +654,7 @@
       "kind": "component_check_point",
       "removes": "capability fingerprint excludes tenant_id",
       "patch": "mutants/tenant/M33.patch",
-      "patch_sha256": "a2478dd6c4bb68624e745aafed2d45e7fa0519b548798eaf7159c0083e06ad09",
+      "patch_sha256": "d0ee7566a9a6a59f9277fed9d9efaca503e65c8ae9cb66fea06be8f79d6c9ba9",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",
@@ -682,7 +689,7 @@
       "kind": "check_point",
       "removes": "the commit fence re-resolves the tenant from the capability provider instead of the start-time binding",
       "patch": "mutants/tenant/M33b.patch",
-      "patch_sha256": "70e66d5833d9879c7d1f7055e7ce7c7992cd43210704b49655b0138d029c0136",
+      "patch_sha256": "dcbb20929769e296a87f67b86b266142c8f8e2d1757151fd8191949fdc3f68fb",
       "witnesses": [
         {
           "file": "tests/tenant-scope.test.ts",

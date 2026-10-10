@@ -10,7 +10,8 @@
     "test": "jest",
     "test:verbose": "jest --verbose",
     "verify": "npm run typecheck && npm run build && npm test",
-    "mutants:tenant": "node scripts/mutants/run-tenant-mutants.mjs",
+    "mutants:tenant": "node scripts/mutants/run-mutant-gate.mjs --manifest mutants/tenant/manifest.json",
+    "mutants:ancestor": "node scripts/mutants/run-mutant-gate.mjs --manifest mutants/ancestor/manifest.json",
     "mutants:tenant:regressions": "node scripts/mutants/gate-regressions.mjs"
   },
   "devDependencies": {
