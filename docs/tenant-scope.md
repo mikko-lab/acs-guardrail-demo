@@ -67,24 +67,64 @@ The tests are in `tests/tenant-scope.test.ts` (setup: `tests/tenant-setup.ts`).
 
 ## Mutant gate
 
-The runtime-test mutants are named, with their witnesses and expected assertions, in [`mutants/tenant/manifest.json`](../mutants/tenant/manifest.json) before any run. The manifest's SHA-256 and every patch's SHA-256 are checked first. `npm run mutants:tenant` runs `scripts/mutants/run-tenant-mutants.mjs`.
+The runtime-test mutants are named in [`mutants/tenant/manifest.json`](../mutants/tenant/manifest.json) before any run. For each mutant the manifest gives:
+- its patch, bound by SHA-256;
+- its witness tests (file, describe and title);
+- for every witness label, the exact value the unmodified runtime and the mutant must produce;
+- the exact errors each witness may catch in each run.
 
-**A mutant is detected only if all of the following hold:**
+The manifest's own SHA-256 is checked first. `npm run mutants:tenant` runs `scripts/mutants/run-tenant-mutants.mjs`.
 
-1. **Control passes.** The unpatched tree typechecks and passes the whole suite, every witness included.
-2. **Mutant is technically sound.** The patch applies, the patched tree typechecks, and jest loads the same number of suites as the control with no suite execution error.
-3. **Witness fails as expected.** Every named witness test fails with a `WitnessAssertionError` (`tests/witness.ts`), and every label its evidence kind requires appears in that failure.
+**Witness log.** `tests/witness.ts` logs every witness check (label, actual, expected, with undefined encoded as `{"$undefined":true}`) and every error a witness caught through `outcome()` to the file named by `WITNESS_LOG`. It logs whether or not the check passed. The gate compares these observations with the manifest, so a label alone is never enough.
 
-A patch that does not apply, a typecheck error, a load error, a crash or timeout, a changed suite count, or a witness failing for any other reason is a technical failure (exit 2), never a detection.
+**Control.** The unpatched tree must pass all of the following:
+- `npm run typecheck` and `npm run build` (`tsc --outDir dist`; `dist/src/guarded-executor.js` must exist);
+- jest exiting 0, with no signal and no timeout, every test passing;
+- every witness logging exactly its manifest control values and exactly its accepted control errors.
+
+**Technical soundness of a mutant.** All of the following must hold:
+- the patch applies;
+- typecheck and build pass;
+- jest exits 0 or 1, with no signal and no timeout, and writes its JSON result;
+- no suite execution error;
+- the **test inventory is identical to the control's**: the same number of tests and the same test ids (file, describe path and title).
+
+**Detection.** All of the following must hold:
+- jest exits 1;
+- every named witness fails with `WitnessAssertionError`;
+- every label logs exactly its manifest mutant value;
+- the failed labels are exactly those whose mutant value differs from the control value;
+- the errors the witness caught are exactly the accepted mutant errors.
+
+**Unexpected failures.** A label value that is neither the control nor the mutant value, or a caught error the manifest does not accept, is an unexpected failure. It is reported with its details (value, error name and message) as a technical failure and is never check-point evidence.
+
+**Never a detection; these are technical failures (exit 2):**
+- a patch that does not apply;
+- a typecheck or build error;
+- a load error;
+- a changed test inventory;
+- a jest exit status other than 0 or 1, a signal or a timeout;
+- a failure that is not a `WitnessAssertionError`;
+- an unexpected value or error;
+- a failing control.
 
 **Evidence kinds:**
-
-- **`check_point`:** the named stage, boundary, reason or call-count assertion fails.
-- **`containment_effect`:** the named effect assertion fails, and the mutant changes the behaviour observed in runtime state.
-- **`both`:** both of the above hold in the same run.
-- **`component_check_point`:** the named assertion of a component test fails; this is never production-path evidence.
+- **`check_point`:** a check label changes from its control value to its mutant value; the value is a stage, boundary, reason or call count.
+- **`containment_effect`:** an effect label changes in runtime state: tool calls, managed state, returned content or the cancellation signal.
+- **`both`:** both of the above in the same run.
+- **`component_check_point`:** a component test's check label changes; this is never production-path evidence.
 
 A changed rejection code alone is never containment. Safeguards that mask a check point are kept.
+
+### Gate regressions
+
+`npm run mutants:tenant:regressions` (`scripts/mutants/gate-regressions.mjs`) runs the gate on three fixed, hash-checked manifests in `mutants/tenant/regressions/` and requires their exit statuses:
+
+| Case | Patch | Required gate result |
+|---|---|---|
+| R1-inventory | the M27e patch plus deletion of an unrelated test (582 → 581 tests) | technical failure, exit 2 (test inventory differs) |
+| R2-syntax | an unexpected `SyntaxError` on the request path; the M27e witness stage becomes undefined | technical failure, exit 2 (unexpected value and unaccepted caught error) |
+| R3-m27e | the real M27e mutant | detected at stage `start` (control `request`), exit 0 |
 
 | Mutant | Removes | Witness | Kind | Kept safeguards that still contain the effect |
 |---|---|---|---|---|

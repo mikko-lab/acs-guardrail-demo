@@ -6,10 +6,12 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "build": "tsc --outDir dist",
     "test": "jest",
     "test:verbose": "jest --verbose",
-    "verify": "npm run typecheck && npm test",
-    "mutants:tenant": "node scripts/mutants/run-tenant-mutants.mjs"
+    "verify": "npm run typecheck && npm run build && npm test",
+    "mutants:tenant": "node scripts/mutants/run-tenant-mutants.mjs",
+    "mutants:tenant:regressions": "node scripts/mutants/gate-regressions.mjs"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

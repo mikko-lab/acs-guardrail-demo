@@ -17,7 +17,7 @@ import { OCSF_METADATA_ALLOWLIST } from "../src/ocsf/mapper";
 import type { AuditEvent, AuditEventType } from "../src/acs-types";
 import { fresh } from "./evals/eval-setup";
 import { setupTenancy, tenantRequest, sessionUuid, TenancyCtx } from "./tenant-setup";
-import { witness } from "./witness";
+import { observeError, witness } from "./witness";
 
 type Deferred<T = void> = { promise: Promise<T>; resolve: (v: T) => void };
 function deferred<T = void>(): Deferred<T> {
@@ -40,7 +40,8 @@ const tryCommit = (h: Harness, key: string, value: unknown): string => {
   try { h.ctx.commit(key, value); return "ok"; } catch (e) { return e instanceof CommitRejectedError ? e.reason : `error:${String(e)}`; }
 };
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
-const outcome = <T>(p: Promise<T>): Promise<Outcome<T>> => p.then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }));
+/** Settles a call without throwing; every caught error is logged for the mutant gate (tests/witness.ts). */
+const outcome = <T>(p: Promise<T>): Promise<Outcome<T>> => p.then(value => ({ ok: true as const, value }), error => { observeError(error); return { ok: false as const, error }; });
 const stageOf = (o: Outcome<unknown>) => (!o.ok && o.error instanceof AuthorityRevokedError ? o.error.stage : undefined);
 const reasonOf = (o: Outcome<unknown>) => (!o.ok && o.error instanceof AuthorityRevokedError ? o.error.reason : undefined);
 const events = (ctx: TenancyCtx, type: AuditEventType, requestId?: string) =>
