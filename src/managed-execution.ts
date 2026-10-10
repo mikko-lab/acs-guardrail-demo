@@ -79,6 +79,7 @@ export class CancellationError extends Error {
 }
 
 export type CommitBlockReason =
+  | "tenant_revoked"
   | "session_revoked"
   | "capability_revoked"
   | "execution_terminal"
@@ -131,6 +132,8 @@ export interface ExecutionTerminal {
   request_id: string;
   session_id: string;
   capability_id: string;
+  /** Tenant bound at start (tenancy mode only). */
+  tenant_id?: string;
   outcome: TerminalOutcome;
   cancellation_requested: boolean;
   cancellation_acknowledged: boolean;
@@ -157,6 +160,8 @@ export interface ExecutionSnapshot {
   request_id: string;
   session_id: string;
   capability_id: string;
+  /** Tenant bound at start (tenancy mode only). */
+  tenant_id?: string;
   state: ExecutionState;
   cancellation_requested: boolean;
   cancellation_acknowledged: boolean;
@@ -209,9 +214,11 @@ export class ManagedStateStore implements ReadonlyManagedState {
 }
 
 export interface ManagedExecutionDeps {
+  /** Tenant bound at start from the verified grant (tenancy mode); immutable for the execution's lifetime. */
+  readonly tenantId?: string;
   audit: AuditCollector;
   /** Current revocation state of the execution's authority; consulted at the commit binding check. */
-  revoked(): { reason: "session_revoked" | "capability_revoked"; revocation_id: string } | undefined;
+  revoked(): { reason: "tenant_revoked" | "session_revoked" | "capability_revoked"; revocation_id: string } | undefined;
   write(key: string, json: string): number;
   nextCommitId(): string;
   onTerminal(terminal: ExecutionTerminal): void;
@@ -221,6 +228,7 @@ type ToolFn = (args: Record<string, unknown>, ctx?: ExecutionContext) => Promise
 
 export class ManagedExecution {
   readonly context: ExecutionContext;
+  readonly #tenantId: string | undefined;
   #state: ExecutionState = "running";
   #mainSettled = false;
   #mainOutcome: TerminalOutcome = "completed";
@@ -240,6 +248,7 @@ export class ManagedExecution {
     readonly capabilityId: string,
     private readonly deps: ManagedExecutionDeps
   ) {
+    this.#tenantId = deps.tenantId;
     this.terminalPromise = new Promise(resolve => (this.#resolveTerminal = resolve));
     const self = this;
     const cancellation: CancellationSignal = Object.freeze({
@@ -257,6 +266,9 @@ export class ManagedExecution {
     });
   }
 
+  /** Tenant bound at start (tenancy mode only). Fixed when the execution is created. */
+  get tenantId(): string | undefined { return this.#tenantId; }
+
   get terminal(): boolean { return this.#state === "terminal"; }
   get cancellationRequested(): boolean { return this.#cancellation !== undefined; }
 
@@ -266,6 +278,7 @@ export class ManagedExecution {
       request_id: this.requestId,
       session_id: this.sessionId,
       capability_id: this.capabilityId,
+      ...(this.#tenantId !== undefined ? { tenant_id: this.#tenantId } : {}),
       state: this.#state,
       cancellation_requested: this.#cancellation !== undefined,
       cancellation_acknowledged: this.#acknowledged,
@@ -338,7 +351,7 @@ export class ManagedExecution {
   }
 
   #binding() {
-    return { execution_id: this.id, session_id: this.sessionId, capability_id: this.capabilityId };
+    return { execution_id: this.id, session_id: this.sessionId, capability_id: this.capabilityId, ...(this.#tenantId !== undefined ? { tenant_id: this.#tenantId } : {}) };
   }
 
   #onCancel(listener: (reason: CancellationError) => void): () => void {
@@ -469,6 +482,7 @@ export class ManagedExecution {
       request_id: this.requestId,
       session_id: this.sessionId,
       capability_id: this.capabilityId,
+      ...(this.#tenantId !== undefined ? { tenant_id: this.#tenantId } : {}),
       outcome: this.#mainOutcome,
       cancellation_requested: this.#cancellation !== undefined,
       cancellation_acknowledged: this.#acknowledged,

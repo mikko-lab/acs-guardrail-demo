@@ -26,7 +26,7 @@
  *
  * Authority revocation (docs/authority-revocation.md):
  *   revoke(target) is a trusted-integrator API, not reachable from agent requests.
- *   It records a monotonic, in-memory revocation of a capability or a session.
+ *   It records a monotonic, in-memory revocation of a capability, a session or (tenancy mode) a tenant.
  *   Revoked authority is denied at the request, approval, start and delivery
  *   boundaries. The start effective point is the tool function call; the
  *   delivery effective point is the fulfilment of the public process() /
@@ -50,8 +50,8 @@ import { SchemaValidator, AddressableSchemaError } from "./schema-validator";
 import { SignatureService } from "./signature-service";
 import { ExecutionCorrelationStore } from "./execution-correlation";
 import * as crypto from "crypto";
-import { CapabilityGrantVerifier, CapabilityContext, CapabilityVerificationError, CapabilityGrantV1 } from "./capability-grant";
-import { AuthorityRevocationRegistry, parseRevocationTarget, RevocationMatch, RevocationTarget } from "./authority-revocation";
+import { CapabilityGrantVerifier, CapabilityContext, CapabilityVerificationError, CapabilityGrant, tenantOf } from "./capability-grant";
+import { AuthorityRevocationRegistry, CheckedAuthority, parseRevocationTarget, RevocationMatch, RevocationTarget, RevocationTargetError } from "./authority-revocation";
 import { ExecutionSnapshot, ExecutionTerminal, ManagedExecution, ManagedStateStore, ReadonlyManagedState } from "./managed-execution";
 
 export interface CapabilityLookupContext {
@@ -77,13 +77,16 @@ interface PendingAction {
   response: AcsResponseEnvelope;
   /** Authority context verified when the ASK was created; the approval is bound to it. */
   agentId: string;
-  capability: CapabilityGrantV1;
+  capability: CapabilityGrant;
 }
 
 /** Result of internal result processing, before the public hand-over check. */
 type ResultOutcome =
   | { delivered: false; result: AcsToolCallResult }
-  | { delivered: true; result: AcsToolCallResult; resultRequestId: string; requestIdRef: string; authority: { sessionId: string; capabilityId: string } };
+  | { delivered: true; result: AcsToolCallResult; resultRequestId: string; requestIdRef: string; authority: BoundAuthority };
+
+/** The authority an execution is bound to at start: request session, original capability and (tenancy mode) its tenant. */
+interface BoundAuthority { sessionId: string; capabilityId: string; tenantId: string | undefined }
 
 /** Boundary at which revoked authority was enforced. */
 export type RevocationStage = "request" | "approval" | "start" | "delivery";
@@ -136,6 +139,7 @@ function capabilityRejectionReason(err: unknown): string {
       case "NOT_YET_VALID": return "capability_not_yet_valid";
       case "MALFORMED_GRANT": return "capability_malformed";
       case "UNSUPPORTED_SCOPE": return "capability_unsupported_scope";
+      case "MISSING_TENANT": return "capability_missing_tenant";
     }
   }
   return "capability_verification_failed";
@@ -159,7 +163,9 @@ export class GuardedExecutor {
   #permitAuthority = Symbol("ExecutionAuthority");
   #gate: ExecutionGate;
   #revocations = new AuthorityRevocationRegistry();
-  #inFlight = new Map<number, { sessionId: string; requestId: string; capabilityId: string }>();
+  #inFlight = new Map<number, { sessionId: string; requestId: string; capabilityId: string; tenantId: string | undefined }>();
+  /** Tenancy mode, taken from the capability verifier (the single source of the mode). */
+  readonly #tenancy: boolean;
   #inFlightSeq = 0;
   #store = new ManagedStateStore();
   #writeManagedState = this.#store.issueWriter();
@@ -201,6 +207,7 @@ export class GuardedExecutor {
       throw new Error("Constructor Invariant Violation: capabilityVerifier is required");
     }
     this.capabilityVerifier = capabilityVerifier;
+    this.#tenancy = capabilityVerifier.tenancy === true;
     if (typeof approvalFutureSkewMs !== 'number' || !Number.isFinite(approvalFutureSkewMs) || approvalFutureSkewMs < 0) {
       throw new Error("approvalFutureSkewMs must be a non-negative finite number");
     }
@@ -269,9 +276,11 @@ export class GuardedExecutor {
       tool: params.payload.tool.name,
     });
 
-    // Revoked session: denied before any capability is resolved.
+    // Revoked session (and, in tenancy mode, the tenant the session is already bound to): denied before any
+    // capability is resolved.
     this.#denyIfRevoked("request", params.request_id, {
       session_id: params.metadata.session_id,
+      tenant_id: this.#revocations.sessionTenant(params.metadata.session_id),
       tool: params.payload.tool.name,
     });
 
@@ -310,7 +319,7 @@ export class GuardedExecutor {
       throw new Error("Missing capability");
     }
 
-    let verifiedCapability: CapabilityGrantV1;
+    let verifiedCapability: CapabilityGrant;
     try {
       verifiedCapability = this.capabilityVerifier.verify(rawCap, {
         expectedAgentId,
@@ -327,20 +336,36 @@ export class GuardedExecutor {
       throw new Error("Capability rejected: " + err.message);
     }
 
-    // One capability_id must name one grant, so that revoking an id is unambiguous.
-    if (!this.#revocations.bindCapability(verifiedCapability)) {
+    // The tenant comes only from the verified grant. A request's own tenant_id claim must match it (tenancy mode).
+    const tenantId = tenantOf(verifiedCapability);
+    if (this.#tenancy && params.tenant_id !== undefined && params.tenant_id !== tenantId) {
       this.audit.record(params.request_id, "capability_rejected", {
-        reason: "capability_id_conflict",
+        reason: "tenant_mismatch",
         agent_id: expectedAgentId,
         session_id: expectedSessionId,
         tool: requestedTool
       });
-      throw new Error("Capability rejected: capability_id is already bound to a different grant");
+      throw new Error("Capability rejected: the request's tenant_id does not match the grant's tenant");
+    }
+
+    // One capability_id must name one grant, so that revoking an id is unambiguous; one session belongs to one tenant.
+    const conflict = this.#bindVerifiedGrant(verifiedCapability);
+    if (conflict) {
+      this.audit.record(params.request_id, "capability_rejected", {
+        reason: conflict,
+        agent_id: expectedAgentId,
+        session_id: expectedSessionId,
+        tool: requestedTool
+      });
+      throw new Error(conflict === "capability_id_conflict"
+        ? "Capability rejected: capability_id is already bound to a different grant"
+        : "Capability rejected: the session is already bound to a different tenant");
     }
 
     this.#denyIfRevoked("request", params.request_id, {
       session_id: expectedSessionId,
       capability_id: verifiedCapability.capability_id,
+      tenant_id: tenantId,
       tool: requestedTool,
     });
 
@@ -348,6 +373,7 @@ export class GuardedExecutor {
       capability_id: verifiedCapability.capability_id,
       agent_id: expectedAgentId,
       session_id: expectedSessionId,
+      ...(tenantId !== undefined ? { tenant_id: tenantId } : {}),
       tool: requestedTool
     });
 
@@ -388,20 +414,20 @@ export class GuardedExecutor {
       // Deep clone to prevent caller mutations
       const snapshotRequest = JSON.parse(JSON.stringify(request));
       const snapshotResponse = JSON.parse(JSON.stringify(response));
-      const snapshotCapability = JSON.parse(JSON.stringify(verifiedCapability)) as CapabilityGrantV1;
+      const snapshotCapability = JSON.parse(JSON.stringify(verifiedCapability)) as CapabilityGrant;
       this.pendingActions.set(key, { request: snapshotRequest, response: snapshotResponse, createdAtMs, expiresAtMs, agentId: expectedAgentId, capability: snapshotCapability });
       this.audit.record(params.request_id, "approval_requested", { session_id: params.metadata.session_id });
       return { status: "pending" };
     }
 
     // decision === "allow"
-    const outcome = await this.executeAndProcessResult(request, response, verifiedCapability.capability_id);
+    const outcome = await this.executeAndProcessResult(request, response, verifiedCapability.capability_id, tenantId);
     // Nothing may run between the hand-over check and the return that fulfils the public promise.
     return { status: "executed", result: this.#handOver(outcome) };
   }
 
 
-  private async processResultRequest(signedResultRequest: import("./acs-types").AcsToolCallResultRequest, authority: { sessionId: string; capabilityId: string }): Promise<ResultOutcome> {
+  private async processResultRequest(signedResultRequest: import("./acs-types").AcsToolCallResultRequest, authority: BoundAuthority): Promise<ResultOutcome> {
     let request: import("./acs-types").AcsToolCallResultRequest;
     try {
       const validated = this.schemaValidator.validateRequest(signedResultRequest);
@@ -468,6 +494,7 @@ export class GuardedExecutor {
     const revoked = this.#revocationAt("delivery", params.request_id, {
       session_id: authority.sessionId,
       capability_id: authority.capabilityId,
+      tenant_id: authority.tenantId,
       tool: payload.tool.name,
     }, { request_id_ref: requestIdRef, boundary: "result_processing" });
     if (revoked) return { delivered: false, result: this.#withheldForRevocation(outcome, revoked) };
@@ -488,6 +515,7 @@ export class GuardedExecutor {
     const revoked = this.#revocationAt("delivery", outcome.resultRequestId, {
       session_id: outcome.authority.sessionId,
       capability_id: outcome.authority.capabilityId,
+      tenant_id: outcome.authority.tenantId,
       tool: outcome.result.tool.name,
     }, { request_id_ref: outcome.requestIdRef, boundary: "api_return" });
     return revoked ? this.#withheldForRevocation(outcome, revoked) : outcome.result;
@@ -507,7 +535,7 @@ export class GuardedExecutor {
     };
   }
 
-  private async executeAndProcessResult(request: import("./acs-types").AcsToolCallRequest, response: import("./acs-types").AcsResponseEnvelope, capabilityId: string): Promise<ResultOutcome> {
+  private async executeAndProcessResult(request: import("./acs-types").AcsToolCallRequest, response: import("./acs-types").AcsResponseEnvelope, capabilityId: string, tenantId: string | undefined): Promise<ResultOutcome> {
     const { params } = request;
     const sessionId = params.metadata.session_id;
     const toolName = params.payload.tool.name;
@@ -515,17 +543,17 @@ export class GuardedExecutor {
 
     // Early start check, before correlation and permit state are created. The binding start check runs inside
     // ExecutionGate.execute() immediately before the tool function call (see #runAndProcessResult).
-    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tool: toolName });
+    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, tool: toolName });
     const flight = ++this.#inFlightSeq;
-    this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId });
+    this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId, tenantId });
     try {
-      return await this.#runAndProcessResult(request, capabilityId);
+      return await this.#runAndProcessResult(request, capabilityId, tenantId);
     } finally {
       this.#inFlight.delete(flight);
     }
   }
 
-  async #runAndProcessResult(request: import("./acs-types").AcsToolCallRequest, capabilityId: string): Promise<ResultOutcome> {
+  async #runAndProcessResult(request: import("./acs-types").AcsToolCallRequest, capabilityId: string, tenantId: string | undefined): Promise<ResultOutcome> {
     const { params } = request;
     const sessionId = params.metadata.session_id;
     const toolName = params.payload.tool.name;
@@ -541,8 +569,8 @@ export class GuardedExecutor {
       // (including the tool_execution_started audit record) and immediately before the call. The managed
       // execution is created only after the guard passed, without any callback before the call.
       const result = await this.#gate.execute(request, permit, () => {
-        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tool: toolName });
-        return (toolFn, args) => this.#startManagedExecution(originalRequestId, sessionId, capabilityId).invoke(toolFn, args);
+        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, tool: toolName });
+        return (toolFn, args) => this.#startManagedExecution(originalRequestId, sessionId, capabilityId, tenantId).invoke(toolFn, args);
       });
 
       outputs = result.outputs || [{ value: result }];
@@ -578,7 +606,7 @@ export class GuardedExecutor {
 
     this.audit.record(resultRequest.params.request_id, "tool_result_created", { tool: toolName });
     const signedResultRequest = this.signatureService.signRequest(resultRequest);
-    return this.processResultRequest(signedResultRequest, { sessionId, capabilityId });
+    return this.processResultRequest(signedResultRequest, { sessionId, capabilityId, tenantId });
   }
 
   /**
@@ -692,7 +720,7 @@ export class GuardedExecutor {
 
     // Approval fence: re-check the authority the pending action was created under, immediately before
     // execution is allowed. The pending action is already consumed, so a failure here is final.
-    const capabilityId = this.#reverifyPendingAuthority(pending);
+    const { capabilityId, tenantId } = this.#reverifyPendingAuthority(pending);
 
     this.audit.record(grant.request_id, "human_approval", {
       approver_type: grant.approver.type,
@@ -700,7 +728,7 @@ export class GuardedExecutor {
       session_id: grant.session_id,
       request_id: grant.request_id
     });
-    const outcome = await this.executeAndProcessResult(pending.request, pending.response, capabilityId);
+    const outcome = await this.executeAndProcessResult(pending.request, pending.response, capabilityId, tenantId);
     // Nothing may run between the hand-over check and the return that fulfils the public promise.
     return this.#handOver(outcome);
   }
@@ -712,21 +740,23 @@ export class GuardedExecutor {
    *   3. the provider still resolves a valid capability for the identical context.
    * A capability returned by the provider in step 3 is evidence that the context is still authorized;
    * it never replaces the original authority (no regrant contract is defined), and it is itself checked
-   * against the revocation registry. Returns the original capability_id the execution stays bound to.
+   * against the revocation registry. In tenancy mode it must carry the original tenant. Returns the original
+   * capability_id and tenant the execution stays bound to.
    */
-  #reverifyPendingAuthority(pending: PendingAction): string {
+  #reverifyPendingAuthority(pending: PendingAction): { capabilityId: string; tenantId: string | undefined } {
     const params = pending.request.params;
     const requestId = params.request_id;
     const sessionId = params.metadata.session_id;
     const tool = params.payload.tool.name;
     const original = pending.capability;
+    const tenantId = tenantOf(original);
     const reject = (reason: string, message: string): never => {
       this.audit.record(requestId, "capability_rejected", { reason, stage: "approval", agent_id: pending.agentId, session_id: sessionId, tool });
       this.audit.record(requestId, "tool_execution_blocked", { reason });
       throw new Error("Capability rejected at approval: " + message);
     };
 
-    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: original.capability_id, tool });
+    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: original.capability_id, tenant_id: tenantId, tool });
 
     const ctx: CapabilityContext = { expectedAgentId: pending.agentId, expectedSessionId: sessionId, requestedTool: tool };
     try {
@@ -742,17 +772,31 @@ export class GuardedExecutor {
       reject("capability_provider_error", "Capability provider error: " + e.message);
     }
     if (!raw) reject("missing_capability", "Missing capability");
-    let current!: CapabilityGrantV1;
+    let current!: CapabilityGrant;
     try {
       current = this.capabilityVerifier.verify(raw, ctx);
     } catch (err: any) {
       reject(capabilityRejectionReason(err), err.message);
     }
-    if (!this.#revocations.bindCapability(current)) {
-      reject("capability_id_conflict", "capability_id is already bound to a different grant");
+    if (tenantOf(current) !== tenantId) {
+      reject("tenant_mismatch", "the provider's current capability names a different tenant");
     }
-    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: current.capability_id, tool });
-    return original.capability_id;
+    const conflict = this.#bindVerifiedGrant(current);
+    if (conflict) reject(conflict, conflict === "capability_id_conflict" ? "capability_id is already bound to a different grant" : "the session is already bound to a different tenant");
+    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: current.capability_id, tenant_id: tenantId, tool });
+    return { capabilityId: original.capability_id, tenantId };
+  }
+
+  /**
+   * Binds a verified grant: its capability_id to its content (including tenant_id) and, in tenancy mode, its session
+   * to its tenant. Both conflicts are checked before anything is bound. Returns the conflict, if any.
+   */
+  #bindVerifiedGrant(grant: CapabilityGrant): "capability_id_conflict" | "session_tenant_conflict" | undefined {
+    const tenantId = tenantOf(grant);
+    if (tenantId !== undefined && this.#revocations.sessionTenantConflicts(grant.session_id, tenantId)) return "session_tenant_conflict";
+    if (!this.#revocations.bindCapability(grant)) return "capability_id_conflict";
+    if (tenantId !== undefined) this.#revocations.bindSessionTenant(grant.session_id, tenantId);
+    return undefined;
   }
 
   /**
@@ -763,15 +807,21 @@ export class GuardedExecutor {
    */
   revoke(input: unknown): RevocationReceiptV1 {
     const target = parseRevocationTarget(input);
+    if (target.scope === "tenant" && !this.#tenancy) {
+      // Without tenancy mode no authority carries a tenant, so a tenant revocation could cover nothing.
+      throw new RevocationTargetError("Tenant scope requires tenancy mode (a verifier created with { tenancy: true })");
+    }
     const { record, duplicate } = this.#revocations.revoke(target, this.clock.nowMs());
-    const covered = (sessionId: string, capabilityId: string) =>
-      target.scope === "session" ? sessionId === target.session_id : capabilityId === target.capability_id;
+    const covered = (sessionId: string, capabilityId: string, tenantId: string | undefined) =>
+      target.scope === "session" ? sessionId === target.session_id
+        : target.scope === "capability" ? capabilityId === target.capability_id
+        : tenantId !== undefined && tenantId === target.tenant_id;
     const pending_approvals = [...this.pendingActions.values()]
-      .filter(p => covered(p.request.params.metadata.session_id, p.capability.capability_id))
+      .filter(p => covered(p.request.params.metadata.session_id, p.capability.capability_id, tenantOf(p.capability)))
       .map(p => p.request.params.request_id)
       .sort();
     const in_flight_executions = [...new Set([...this.#inFlight.values()]
-      .filter(f => covered(f.sessionId, f.capabilityId))
+      .filter(f => covered(f.sessionId, f.capabilityId, f.tenantId))
       .map(f => f.requestId))]
       .sort();
     const receipt: RevocationReceiptV1 = {
@@ -792,7 +842,9 @@ export class GuardedExecutor {
       this.audit.record(record.revocation_id, "authority_revoked", {
         revocation_id: record.revocation_id,
         scope: target.scope,
-        ...(target.scope === "session" ? { session_id: target.session_id } : { capability_id: target.capability_id }),
+        ...(target.scope === "session" ? { session_id: target.session_id }
+          : target.scope === "capability" ? { capability_id: target.capability_id }
+          : { tenant_id: target.tenant_id }),
         status: receipt.status,
         effective_sequence: record.effective_sequence,
         effective_at: record.effective_at,
@@ -806,7 +858,7 @@ export class GuardedExecutor {
     // Cancellation of managed executions runs only now, after the tombstone exists. Listener failures and
     // re-entrant calls are contained per execution and cannot undo the revocation.
     for (const execution of [...this.#executions.values()]) {
-      if (!execution.terminal && !execution.cancellationRequested && covered(execution.sessionId, execution.capabilityId)) {
+      if (!execution.terminal && !execution.cancellationRequested && covered(execution.sessionId, execution.capabilityId, execution.tenantId)) {
         execution.requestCancellation(record.revocation_id);
       }
     }
@@ -834,11 +886,13 @@ export class GuardedExecutor {
   }
 
   /** Creates the managed execution at the start effective point. Must not run any callback. */
-  #startManagedExecution(requestId: string, sessionId: string, capabilityId: string): ManagedExecution {
+  #startManagedExecution(requestId: string, sessionId: string, capabilityId: string, tenantId: string | undefined): ManagedExecution {
     const execution: ManagedExecution = new ManagedExecution(`exec-${++this.#executionSeq}`, requestId, sessionId, capabilityId, {
+      ...(tenantId !== undefined ? { tenantId } : {}),
       audit: this.audit,
+      // The commit fence checks the authority bound at start (including its tenant); nothing is re-resolved.
       revoked: () => {
-        const match = this.#revocations.check({ session_id: sessionId, capability_id: capabilityId });
+        const match = this.#revocations.check({ session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId });
         return match ? { reason: match.reason, revocation_id: match.record.revocation_id } : undefined;
       },
       write: (key, json) => this.#writeManagedState(key, json),
@@ -850,7 +904,7 @@ export class GuardedExecutor {
   }
 
   /** Records enforcement evidence for revoked authority and returns the match; audit failure never re-opens access. */
-  #revocationAt(stage: RevocationStage, requestId: string, authority: { session_id: string; capability_id?: string; tool: string }, extra: Record<string, unknown> = {}): RevocationMatch | undefined {
+  #revocationAt(stage: RevocationStage, requestId: string, authority: CheckedAuthority & { tool: string }, extra: Record<string, unknown> = {}): RevocationMatch | undefined {
     const match = this.#revocations.check(authority);
     if (!match) return undefined;
     try {
@@ -861,6 +915,7 @@ export class GuardedExecutor {
         revocation_id: match.record.revocation_id,
         session_id: authority.session_id,
         ...(authority.capability_id !== undefined ? { capability_id: authority.capability_id } : {}),
+        ...(authority.tenant_id !== undefined ? { tenant_id: authority.tenant_id } : {}),
         tool: authority.tool,
         ...extra,
       });
@@ -871,7 +926,7 @@ export class GuardedExecutor {
     return match;
   }
 
-  #denyIfRevoked(stage: Exclude<RevocationStage, "delivery">, requestId: string, authority: { session_id: string; capability_id?: string; tool: string }): void {
+  #denyIfRevoked(stage: Exclude<RevocationStage, "delivery">, requestId: string, authority: CheckedAuthority & { tool: string }): void {
     const match = this.#revocationAt(stage, requestId, authority);
     if (match) throw new AuthorityRevokedError(stage, match);
   }

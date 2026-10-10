@@ -1,0 +1,27 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -365,7 +365,7 @@
+     this.#denyIfRevoked("request", params.request_id, {
+       session_id: expectedSessionId,
+       capability_id: verifiedCapability.capability_id,
+-      tenant_id: tenantId,
++      tenant_id: undefined,
+       tool: requestedTool,
+     });
+ 
+--- a/tests/tenant-scope.test.ts
++++ b/tests/tenant-scope.test.ts
+@@ -419,13 +419,6 @@
+     expect(ctx.executor.getExecution("exec-1")!.tenant_id).toBeUndefined();
+   });
+ 
+-  it("T3.05 tenant targets are validated fail closed", () => {
+-    expect(parseRevocationTarget({ scope: "tenant", tenant_id: "t1" })).toEqual({ scope: "tenant", tenant_id: "t1" });
+-    for (const bad of [{ scope: "tenant" }, { scope: "tenant", tenant_id: "" }, { scope: "tenant", tenant_id: "t1", session_id: "s" }, { scope: "tenant", tenant_id: "x".repeat(257) }]) {
+-      expect(() => parseRevocationTarget(bad)).toThrow(RevocationTargetError);
+-    }
+-  });
+-
+   it("T3.06 OCSF export carries only the verified tenant: tenant_id is allowlisted for grant- and execution-bound events, not for rejections", () => {
+     for (const type of ["capability_verified", "authority_revoked", "authority_revocation_enforced", "tool_commit_blocked", "execution_terminal"] as const) {
+       expect(OCSF_METADATA_ALLOWLIST[type]).toContain("tenant_id");

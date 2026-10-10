@@ -1,0 +1,12 @@
+--- a/src/authority-revocation.ts
++++ b/src/authority-revocation.ts
+@@ -101,7 +101,8 @@
+ 
+ /** Content fingerprint of a verified grant, excluding its signature. It covers every other field, including tenant_id. */
+ export function capabilityFingerprint(grant: CapabilityGrant): string {
+-  const { signature: _signature, ...body } = grant;
++  const { signature: _signature, ...rest } = grant;
++  const { tenant_id: _tenant, ...body } = rest as typeof rest & { tenant_id?: string };
+   return createHash("sha256").update(canonicalize(body)).digest("hex");
+ }
+ 

@@ -1,0 +1,15 @@
+--- a/src/capability-grant.ts
++++ b/src/capability-grant.ts
+@@ -95,10 +95,10 @@
+     const grant = input as Record<string, unknown>;
+ 
+     if (this.tenancy) {
+-      if (grant.version !== 2 || grant.tenant_id === undefined) {
++      if (grant.version !== 1 && grant.version !== 2) {
+         throw new CapabilityVerificationError("MISSING_TENANT", "Validation Error: tenancy mode requires a version 2 grant with tenant_id");
+       }
+-      if (typeof grant.tenant_id !== "string" || grant.tenant_id.length === 0 || grant.tenant_id.length > MAX_TENANT_ID_LENGTH) {
++      if (grant.tenant_id !== undefined && (typeof grant.tenant_id !== "string" || grant.tenant_id.length === 0 || grant.tenant_id.length > MAX_TENANT_ID_LENGTH)) {
+         throw new CapabilityVerificationError("MALFORMED_GRANT", `Validation Error: tenant_id must be a non-empty string of at most ${MAX_TENANT_ID_LENGTH} characters`);
+       }
+     } else {

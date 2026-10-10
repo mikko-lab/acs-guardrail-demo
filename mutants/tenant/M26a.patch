@@ -1,0 +1,20 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -756,7 +756,7 @@
+       throw new Error("Capability rejected at approval: " + message);
+     };
+ 
+-    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: original.capability_id, tenant_id: tenantId, tool });
++    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: original.capability_id, tenant_id: undefined, tool });
+ 
+     const ctx: CapabilityContext = { expectedAgentId: pending.agentId, expectedSessionId: sessionId, requestedTool: tool };
+     try {
+@@ -783,7 +783,7 @@
+     }
+     const conflict = this.#bindVerifiedGrant(current);
+     if (conflict) reject(conflict, conflict === "capability_id_conflict" ? "capability_id is already bound to a different grant" : "the session is already bound to a different tenant");
+-    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: current.capability_id, tenant_id: tenantId, tool });
++    this.#denyIfRevoked("approval", requestId, { session_id: sessionId, capability_id: current.capability_id, tenant_id: undefined, tool });
+     return { capabilityId: original.capability_id, tenantId };
+   }
+ 

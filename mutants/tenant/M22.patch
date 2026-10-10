@@ -1,0 +1,38 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -280,7 +280,7 @@
+     // capability is resolved.
+     this.#denyIfRevoked("request", params.request_id, {
+       session_id: params.metadata.session_id,
+-      tenant_id: this.#revocations.sessionTenant(params.metadata.session_id),
++      tenant_id: undefined,
+       tool: params.payload.tool.name,
+     });
+ 
+@@ -365,7 +365,7 @@
+     this.#denyIfRevoked("request", params.request_id, {
+       session_id: expectedSessionId,
+       capability_id: verifiedCapability.capability_id,
+-      tenant_id: tenantId,
++      tenant_id: undefined,
+       tool: requestedTool,
+     });
+ 
+@@ -543,7 +543,7 @@
+ 
+     // Early start check, before correlation and permit state are created. The binding start check runs inside
+     // ExecutionGate.execute() immediately before the tool function call (see #runAndProcessResult).
+-    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, tool: toolName });
++    this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: undefined, tool: toolName });
+     const flight = ++this.#inFlightSeq;
+     this.#inFlight.set(flight, { sessionId, requestId: originalRequestId, capabilityId, tenantId });
+     try {
+@@ -569,7 +569,7 @@
+       // (including the tool_execution_started audit record) and immediately before the call. The managed
+       // execution is created only after the guard passed, without any callback before the call.
+       const result = await this.#gate.execute(request, permit, () => {
+-        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, tool: toolName });
++        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: undefined, tool: toolName });
+         return (toolFn, args) => this.#startManagedExecution(originalRequestId, sessionId, capabilityId, tenantId).invoke(toolFn, args);
+       });
+ 

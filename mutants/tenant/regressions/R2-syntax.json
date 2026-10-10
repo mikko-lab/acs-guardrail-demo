@@ -1,0 +1,60 @@
+{
+  "version": 2,
+  "description": "gate regression: an unexpected SyntaxError on the request path leaves the M27e witness stage undefined; expected: technical failure, exit 2",
+  "gate_rules": {
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; every witness logs exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors",
+    "unexpected": "a witness value that is neither the control nor the mutant value, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never check-point evidence",
+    "kinds": {
+      "check_point": "its check labels change",
+      "containment_effect": "its effect labels change (runtime state: tool calls, managed state, returned content, cancellation signal)",
+      "both": "check and effect labels change in the same run",
+      "component_check_point": "the component test's check labels change; never production-path evidence"
+    },
+    "never_detection": [
+      "patch does not apply",
+      "typecheck or build error",
+      "suite load or collection error",
+      "test inventory differs from the control",
+      "jest exit status other than 0/1, signal or timeout",
+      "witness failure that is not a WitnessAssertionError",
+      "witness value matching neither control nor mutant",
+      "caught error not accepted by the manifest",
+      "failing control"
+    ]
+  },
+  "mutants": [
+    {
+      "id": "R2-syntax",
+      "kind": "check_point",
+      "removes": "gate regression: an unexpected SyntaxError on the request path leaves the M27e witness stage undefined; expected: technical failure, exit 2",
+      "patch": "mutants/tenant/regressions/R2-syntax.patch",
+      "patch_sha256": "bc18eea95415310b7e482f8018d7ca7d42aadd4d47031d0d5febd11239ec2bfb",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M27e] T2.02 request check after verification: a first use under a revoked tenant is denied at stage request",
+          "labels": [
+            {
+              "label": "A-M27e",
+              "part": "check",
+              "control": "request",
+              "mutant": "start"
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ]
+          }
+        }
+      ],
+      "kept_safeguards": "early start check and start guard: still denied, at stage start"
+    }
+  ]
+}

@@ -5,6 +5,8 @@ const tsJestTransformCfg = createDefaultPreset().transform;
 /** @type {import("jest").Config} **/
 module.exports = {
   testEnvironment: "node",
+  // Build output (npm run build -> dist/) is never a test source.
+  testPathIgnorePatterns: ["/node_modules/", "/dist/"],
   transform: {
     ...tsJestTransformCfg,
   },

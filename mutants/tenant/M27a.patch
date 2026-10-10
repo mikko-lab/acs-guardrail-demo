@@ -1,0 +1,11 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -280,7 +280,7 @@
+     // capability is resolved.
+     this.#denyIfRevoked("request", params.request_id, {
+       session_id: params.metadata.session_id,
+-      tenant_id: this.#revocations.sessionTenant(params.metadata.session_id),
++      tenant_id: undefined,
+       tool: params.payload.tool.name,
+     });
+ 

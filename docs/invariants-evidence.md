@@ -70,6 +70,18 @@ Specification: [authority-revocation.md](authority-revocation.md). Evidence: `te
 - **Delivery effective point is the fulfilment of the public promise: a revocation from the `tool_result_delivered` audit callback withholds the raw output; a revocation in any Promise transition before fulfilment is honoured, after it is not**: `REV-15`, `REV-16b`, `REV-19`, `REV-18`
 - **Untargeted revocations from the same callbacks do not affect the execution or its output**: `REV-17`
 
+## G1. Tenant Scope (package 1a)
+Specification: [tenant-scope.md](tenant-scope.md). Evidence: `tests/tenant-scope.test.ts`; runtime-test mutants: `mutants/tenant/manifest.json` (`npm run mutants:tenant`). Effects are observed through tool doubles, `executor.managedState`, returned content and the cancellation signal; audit events are check-point evidence only.
+- **The tenant comes from the signed grant; a request's tenant claim must match it**: `T1.01`, `T1.02` (M30), `T1.03` (M30b), `T1.04`
+- **Tenancy mode rejects tenantless or malformed grants; legacy mode rejects tenant grants and tenant targets**: `T1.05` (M31), `T1.06`, `T3.04`
+- **A session belongs to one tenant; a capability_id cannot be re-bound to another tenant**: `T1.07` (M32), `T1.09` (M33, component check point), `T1.08` (regression of the kept safeguards; not M33 evidence)
+- **Tenant revocation at every check point**: request `T2.01` (M27a), `T2.02` (M27e), `T2.03` (M22); start `T2.04` (M27f), `T2.05` (M27c); approval `T2.06` (M26a), `T2.07` (M26); commit `T2.08` (M15); delivery `T2.10` (M28), `T2.11` (M28a), `T2.12` (M28b)
+- **Cancellation is requested for the tenant's running executions; acknowledgement is not termination**: `T2.13` (M29)
+- **Execution binding is fixed at start; nothing is re-resolved**: `T2.14` (M33b)
+- **A commit before the revocation stays; the later delivery is withheld**: `T2.09`
+- **Other tenants are unaffected (start, commit, delivery, no cancellation); receipt lists only the tenant's work**: `T3.01` (M16), `T3.02`, `T3.03`
+- **Tenant targets validated fail closed; OCSF exports only the verified tenant**: `T3.05`, `T3.06`
+
 ## G2. Cooperative Containment (A2)
 Specification: [cooperative-containment.md](cooperative-containment.md). Evidence: `tests/cooperative-containment.test.ts`. Commits are observed through `executor.managedState`, tool behaviour through harness-owned doubles.
 - **Revoke before start: no tool call, no execution, no terminal**: `C01`

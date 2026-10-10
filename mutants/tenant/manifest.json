@@ -1,0 +1,708 @@
+{
+  "version": 2,
+  "description": "Tenant scope (package 1a) runtime-test mutants. Named before any run; see docs/tenant-scope.md#mutant-gate.",
+  "gate_rules": {
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; every witness logs exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors",
+    "unexpected": "a witness value that is neither the control nor the mutant value, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never check-point evidence",
+    "kinds": {
+      "check_point": "its check labels change",
+      "containment_effect": "its effect labels change (runtime state: tool calls, managed state, returned content, cancellation signal)",
+      "both": "check and effect labels change in the same run",
+      "component_check_point": "the component test's check labels change; never production-path evidence"
+    },
+    "never_detection": [
+      "patch does not apply",
+      "typecheck or build error",
+      "suite load or collection error",
+      "test inventory differs from the control",
+      "jest exit status other than 0/1, signal or timeout",
+      "witness failure that is not a WitnessAssertionError",
+      "witness value matching neither control nor mutant",
+      "caught error not accepted by the manifest",
+      "failing control"
+    ]
+  },
+  "mutants": [
+    {
+      "id": "M15",
+      "kind": "both",
+      "removes": "tenant not checked at the commit fence (ctx.commit())",
+      "patch": "mutants/tenant/M15.patch",
+      "patch_sha256": "4b50efff2a97650fd17d9405797a71d41f2eed6ed257de67469e4d2a88d0aeab",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M15] T2.08 commit fence: a running execution of a revoked tenant cannot commit; the managed state is unchanged",
+          "labels": [
+            {
+              "label": "A-M15-check",
+              "part": "check",
+              "control": "tenant_revoked",
+              "mutant": "ok"
+            },
+            {
+              "label": "A-M15-effect",
+              "part": "effect",
+              "control": [
+                false,
+                0
+              ],
+              "mutant": [
+                true,
+                1
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: the commit fence is the only check on ctx.commit()"
+    },
+    {
+      "id": "M16",
+      "kind": "both",
+      "removes": "tenant revocation over-reaches: any revoked tenant matches every tenant-bound authority",
+      "patch": "mutants/tenant/M16.patch",
+      "patch_sha256": "c8e2fcd2eb85508d597670a75bf08df0af04d44b7f1599b3342e145e3bee6dc5",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T3 tenant isolation, receipts and legacy mode",
+          "test": "[M16] T3.01 a tenant revocation does not reach another tenant",
+          "labels": [
+            {
+              "label": "A-M16-decision",
+              "part": "check",
+              "control": true,
+              "mutant": false
+            },
+            {
+              "label": "A-M16-effect",
+              "part": "effect",
+              "control": 1,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ]
+          }
+        }
+      ],
+      "kept_safeguards": "none: over-reach denies the other tenant's start"
+    },
+    {
+      "id": "M22",
+      "kind": "both",
+      "removes": "tenant not checked at the request checks, the early start check and the start guard",
+      "patch": "mutants/tenant/M22.patch",
+      "patch_sha256": "d540085949ce17a52acb8aa035577d0a6f355cbd576630e1e1737afe8a4e5f9e",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M22] T2.03 a start under a revoked tenant is denied and the tool is never called",
+          "labels": [
+            {
+              "label": "A-M22-decision",
+              "part": "check",
+              "control": "tenant_revoked",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M22-effect",
+              "part": "effect",
+              "control": [
+                0,
+                true
+              ],
+              "mutant": [
+                1,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: every check point that could deny the start is removed"
+    },
+    {
+      "id": "M26",
+      "kind": "both",
+      "removes": "tenant not checked at the approval re-verification, the early start check and the start guard",
+      "patch": "mutants/tenant/M26.patch",
+      "patch_sha256": "c5ecf50954421590e892cd87b58ef5bceb28f139bbe896c2807241787921a319",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M26] T2.07 approval: a pending approval under a revoked tenant never calls the tool",
+          "labels": [
+            {
+              "label": "A-M26-decision",
+              "part": "check",
+              "control": "tenant_revoked",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M26-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (approval)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: every check point on the approval path is removed"
+    },
+    {
+      "id": "M26a",
+      "kind": "check_point",
+      "removes": "tenant not checked at the approval re-verification only",
+      "patch": "mutants/tenant/M26a.patch",
+      "patch_sha256": "585bcfb496afffd611d42333f94fa0d33eb013ea1a2ab36fc2280ee5c7115136",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M26a] T2.06 approval: a pending approval under a revoked tenant is denied at the approval re-verification",
+          "labels": [
+            {
+              "label": "A-M26a",
+              "part": "check",
+              "control": "approval",
+              "mutant": "start"
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (approval)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ]
+          }
+        }
+      ],
+      "kept_safeguards": "early start check and start guard (resolveApproval() runs the start path): the tool is still not called; the denial moves to stage start"
+    },
+    {
+      "id": "M27a",
+      "kind": "check_point",
+      "removes": "tenant not checked at the early request check (session-tenant binding, before capability resolution)",
+      "patch": "mutants/tenant/M27a.patch",
+      "patch_sha256": "270926b7d0a5f6d77b5097528b46a08e6f052b1095d971ca3b1c086b73b4f7b0",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M27a] T2.01 early request check: a session already bound to a revoked tenant is denied before any capability resolution",
+          "labels": [
+            {
+              "label": "A-M27a",
+              "part": "check",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ]
+          }
+        }
+      ],
+      "kept_safeguards": "request check after verification, early start check, start guard: the request is still denied at stage request, after one capability resolution"
+    },
+    {
+      "id": "M27e",
+      "kind": "check_point",
+      "removes": "tenant not checked at the request check after capability verification",
+      "patch": "mutants/tenant/M27e.patch",
+      "patch_sha256": "c61d557828ff120036e5b30ebbf41bb868239a313c22c93ad7bba57a40e9fca6",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M27e] T2.02 request check after verification: a first use under a revoked tenant is denied at stage request",
+          "labels": [
+            {
+              "label": "A-M27e",
+              "part": "check",
+              "control": "request",
+              "mutant": "start"
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ]
+          }
+        }
+      ],
+      "kept_safeguards": "early start check and start guard: still denied, at stage start"
+    },
+    {
+      "id": "M27f",
+      "kind": "check_point",
+      "removes": "tenant not checked at the early start check (before correlation and permit)",
+      "patch": "mutants/tenant/M27f.patch",
+      "patch_sha256": "a0d245ad2cb880d6138f7df4115125724c5d7fabe3035f41a79c36c2588062fd",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M27f] T2.04 early start check: a tenant revoked after the request checks is denied before the gate starts the tool",
+          "labels": [
+            {
+              "label": "A-M27f",
+              "part": "check",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ]
+          }
+        }
+      ],
+      "kept_safeguards": "start guard: still denied before the tool call, after tool_execution_started is recorded"
+    },
+    {
+      "id": "M27c",
+      "kind": "both",
+      "removes": "tenant not checked at the start guard (immediately before the tool call)",
+      "patch": "mutants/tenant/M27c.patch",
+      "patch_sha256": "20b277b02e4ed128c94a11f759ab3c69c9a95050bc43e3c6db1593fa33846819",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M27c] T2.05 start guard: a tenant revoked at tool_execution_started is denied immediately before the tool call",
+          "labels": [
+            {
+              "label": "A-M27c-check",
+              "part": "check",
+              "control": "start",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M27c-effect",
+              "part": "effect",
+              "control": [
+                0,
+                true
+              ],
+              "mutant": [
+                1,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none for this input: the revocation is injected after every earlier check"
+    },
+    {
+      "id": "M28",
+      "kind": "both",
+      "removes": "tenant not checked at either delivery check (result processing and hand-over)",
+      "patch": "mutants/tenant/M28.patch",
+      "patch_sha256": "99b0f747ac94585a867501a52b11d74c42ef616b11e838b513ff865a52c41e43",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M28] T2.10 delivery: the output of an execution whose tenant was revoked while it ran is withheld",
+          "labels": [
+            {
+              "label": "A-M28-decision",
+              "part": "check",
+              "control": [
+                "blocked",
+                "tenant_revoked"
+              ],
+              "mutant": [
+                "success",
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M28-effect",
+              "part": "effect",
+              "control": false,
+              "mutant": true
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: both delivery checks are removed"
+    },
+    {
+      "id": "M28a",
+      "kind": "check_point",
+      "removes": "tenant not checked at the early delivery check in result processing",
+      "patch": "mutants/tenant/M28a.patch",
+      "patch_sha256": "eefdf2e5cf00940f6f7175a8649f1322831c7f37fefe4a725b2f05af0a3615fe",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M28a] T2.11 delivery: a revocation while the tool runs is enforced at the early delivery check in result processing",
+          "labels": [
+            {
+              "label": "A-M28a",
+              "part": "check",
+              "control": [
+                "result_processing"
+              ],
+              "mutant": [
+                "api_return"
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "hand-over check: the output is still withheld, at boundary api_return"
+    },
+    {
+      "id": "M28b",
+      "kind": "both",
+      "removes": "tenant not checked at the hand-over (public API return)",
+      "patch": "mutants/tenant/M28b.patch",
+      "patch_sha256": "f72bdd1391b878e33781f6146649479bc2a3092170a2d3eee79d0fa19ae14e86",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M28b] T2.12 hand-over: a tenant revoked after the early delivery check is withheld at the public API return",
+          "labels": [
+            {
+              "label": "A-M28b-check",
+              "part": "check",
+              "control": [
+                "blocked",
+                "tenant_revoked"
+              ],
+              "mutant": [
+                "success",
+                {
+                  "$undefined": true
+                }
+              ]
+            },
+            {
+              "label": "A-M28b-effect",
+              "part": "effect",
+              "control": false,
+              "mutant": true
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none for this input: the revocation is injected after the early delivery check"
+    },
+    {
+      "id": "M29",
+      "kind": "containment_effect",
+      "removes": "tenant revocation does not request cancellation of the tenant's running executions",
+      "patch": "mutants/tenant/M29.patch",
+      "patch_sha256": "028bc39988122d0087f23b1fe65ea42efca44738c25f8e9de0d5728dacf1d19d",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M29] T2.13 cancellation: a tenant revocation sends the cancellation signal to the tenant's running execution",
+          "labels": [
+            {
+              "label": "A-M29-effect",
+              "part": "effect",
+              "control": [
+                true,
+                true,
+                true
+              ],
+              "mutant": [
+                false,
+                false,
+                false
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: the fan-out in revoke() is the only source of the cancellation signal"
+    },
+    {
+      "id": "M30",
+      "kind": "both",
+      "removes": "tenant taken from the request's tenant_id claim instead of the signed grant",
+      "patch": "mutants/tenant/M30.patch",
+      "patch_sha256": "2878a595b60d0be08652a6b1641df1d5b0ab240740ea1fcef8659eb6536bc587",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T1 tenant grant and request binding",
+          "test": "[M30] T1.02 the tenant comes from the signed grant: a request without tenant_id under a revoked tenant's grant is denied",
+          "labels": [
+            {
+              "label": "A-M30-decision",
+              "part": "check",
+              "control": "tenant_revoked",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M30-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none for this input: first use of the session, so the early request check has no binding"
+    },
+    {
+      "id": "M30b",
+      "kind": "both",
+      "removes": "request/grant tenant mismatch not rejected",
+      "patch": "mutants/tenant/M30b.patch",
+      "patch_sha256": "6d51ef2a781ff08e45764d8ad43771ca22ed211514c0f61eaf55b032aa644ff7",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T1 tenant grant and request binding",
+          "test": "[M30b] T1.03 a request whose own tenant_id differs from the grant's tenant is rejected before any tool call",
+          "labels": [
+            {
+              "label": "A-M30b-check",
+              "part": "check",
+              "control": "tenant_mismatch",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M30b-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: the request's tenant_id does not match the grant's tenant"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: no revocation exists"
+    },
+    {
+      "id": "M31",
+      "kind": "both",
+      "removes": "tenantless (version 1) grant accepted in tenancy mode",
+      "patch": "mutants/tenant/M31.patch",
+      "patch_sha256": "90272cae65d8976f9357da9419d18d2bb190e9ce13a5e44640bbd8b04e96a954",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T1 tenant grant and request binding",
+          "test": "[M31] T1.05 a tenantless (version 1) grant is rejected in tenancy mode; there is no default tenant",
+          "labels": [
+            {
+              "label": "A-M31-check",
+              "part": "check",
+              "control": "capability_missing_tenant",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M31-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: Validation Error: tenancy mode requires a version 2 grant with tenant_id"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: no revocation exists"
+    },
+    {
+      "id": "M32",
+      "kind": "both",
+      "removes": "a session is not bound to one tenant (session-tenant conflict not detected)",
+      "patch": "mutants/tenant/M32.patch",
+      "patch_sha256": "013bd55c55789f3dc412f0624ad63134297e995046d35eb362a8e8f5718f40be",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T1 tenant grant and request binding",
+          "test": "[M32] T1.07 a runtime session belongs to one tenant: a grant of another tenant for the same session is rejected",
+          "labels": [
+            {
+              "label": "A-M32-check",
+              "part": "check",
+              "control": "session_tenant_conflict",
+              "mutant": {
+                "$undefined": true
+              }
+            },
+            {
+              "label": "A-M32-effect",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "Error: Capability rejected: the session is already bound to a different tenant"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "none: different capability ids and no revocation"
+    },
+    {
+      "id": "M33",
+      "kind": "component_check_point",
+      "removes": "capability fingerprint excludes tenant_id",
+      "patch": "mutants/tenant/M33.patch",
+      "patch_sha256": "a2478dd6c4bb68624e745aafed2d45e7fa0519b548798eaf7159c0083e06ad09",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T1 tenant grant and request binding",
+          "test": "[M33] T1.09 component: the capability binding registry treats grants differing only in tenant_id as different content",
+          "labels": [
+            {
+              "label": "A-M33",
+              "part": "check",
+              "control": [
+                true,
+                true,
+                false
+              ],
+              "mutant": [
+                false,
+                true,
+                true
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "production path unchanged: in a new session the session_id field still gives capability_id_conflict; in the same session the session-tenant binding (or, after a tenant revocation, the early request check) rejects. Recorded gap: no production-path witness (tests/tenant-scope.test.ts T1.08 is a regression test of the kept safeguards, not M33 evidence)"
+    },
+    {
+      "id": "M33b",
+      "kind": "check_point",
+      "removes": "the commit fence re-resolves the tenant from the capability provider instead of the start-time binding",
+      "patch": "mutants/tenant/M33b.patch",
+      "patch_sha256": "70e66d5833d9879c7d1f7055e7ce7c7992cd43210704b49655b0138d029c0136",
+      "witnesses": [
+        {
+          "file": "tests/tenant-scope.test.ts",
+          "describe": "T2 tenant revocation at the runtime check points",
+          "test": "[M33b] T2.14 the execution's tenant is the start-time binding: no capability is resolved again after start",
+          "labels": [
+            {
+              "label": "A-M33b",
+              "part": "check",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "kept_safeguards": "capability binding: the re-resolved grant names the same tenant, so the commit is still denied; only the provider call count differs"
+    }
+  ]
+}

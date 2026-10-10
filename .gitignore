@@ -3,3 +3,4 @@ dist/
 *.js.map
 *.d.ts
 .ocsf-crossval/
+out/
