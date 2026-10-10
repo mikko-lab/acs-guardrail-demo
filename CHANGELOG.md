@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## [v0.5.0] - 2026-10-10
+
+### Summary
+- **Authority revocation (A1)** of a capability or a session, enforced at the request, approval, start and delivery boundaries.
+- **Cooperative containment (A2):** managed executions, cancellation requests, a commit fence on `ctx.commit()` and exactly one observed terminal per execution.
+- **Tenant scope (package 1a):** opt-in tenancy mode with issuer-signed tenant grants (`CapabilityGrantV2`), session–tenant binding and tenant revocation at every check point.
+- **Ancestor chains and descendant revocation (package 1b):** issuer-attested parent links with a complete, verified chain (signatures, both link directions, one tenant, attenuation, at most 8 grants). An ancestor's revocation covers its descendants at every check point and in the cancellation fan-out, never its parents or siblings.
+- **Fix:** audit metadata no longer aliases the verified ancestor binding. The ids are frozen before the first callback, and audit sinks receive copies.
+- **Shared runtime-test mutant gate:** tenant 19/19 and ancestor 25/25 mutants detected with pre-named witnesses and exact values; the gate's own regressions R1–R4 pass.
+- Release notes: `docs/releases/v0.5.0.md`.
+
+### Scope of the evidence
+- This release carries runtime-own evidence: tests and runtime-test mutants. It is not a pass of the `agent-control-evals` revocation contract. The eval corpus, the supplement cases, the adapter extension and the SUT pin are separate, later work.
+- M33 (the tenant field of the capability fingerprint) has component evidence only.
+- M42a covers re-resolution of the chain at the commit fence only.
+- No full ACS conformance or certification claim.
+
 ### Added
 - **Ancestor chains and descendant revocation (package 1b):** issuer-attested derivation in tenancy mode. See `docs/ancestor-chains.md`.
   - **Grants and provider.** A `CapabilityGrantV2` may carry a signed `parent: { capability_id, fingerprint }`. The provider may return `{ kind: "capability_chain", leaf, ancestors }` with the complete issuer-signed chain, parent first, root last. `MAX_CHAIN_LENGTH` is 8 grants, leaf included.
