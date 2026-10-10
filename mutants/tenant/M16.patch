@@ -1,6 +1,6 @@
 --- a/src/authority-revocation.ts
 +++ b/src/authority-revocation.ts
-@@ -135,7 +135,7 @@
+@@ -136,7 +136,7 @@
     */
    check(authority: CheckedAuthority): RevocationMatch | undefined {
      if (authority.tenant_id !== undefined) {

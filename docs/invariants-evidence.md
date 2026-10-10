@@ -82,6 +82,23 @@ Specification: [tenant-scope.md](tenant-scope.md). Evidence: `tests/tenant-scope
 - **Other tenants are unaffected (start, commit, delivery, no cancellation); receipt lists only the tenant's work**: `T3.01` (M16), `T3.02`, `T3.03`
 - **Tenant targets validated fail closed; OCSF exports only the verified tenant**: `T3.05`, `T3.06`
 
+## G1b. Ancestor Chains and Descendant Revocation (package 1b, plan gap G2)
+Specification: [ancestor-chains.md](ancestor-chains.md). Evidence: `tests/ancestor-chain.test.ts` (setup: `tests/chain-setup.ts`); runtime-test mutants: `mutants/ancestor/manifest.json` (`npm run mutants:ancestor`, shared gate [mutant-gate.md](mutant-gate.md)). Effects are observed through tool doubles, `executor.managedState`, returned content and the cancellation signal; audit events are check-point evidence only.
+- **A valid issuer-signed chain executes and the execution is bound to it (control under every ancestor mutant)**: `C1.01`, `C1.05` (exactly 8 grants), `C5.01` (approval)
+- **Chain authentication: every member's signature, both link directions**: `C1.10` (M44, root), `C1.11` (M45, intermediate), `C1.12` (M46, fingerprint), `C1.13` (M47, capability_id)
+- **Fail closed: missing parent, chain past a root, no chain from memory, depth, repeated id and cycles, tenant, attenuation, malformed envelopes**: `C1.02` (M38), `C1.03`, `C1.04` (M39), `C1.06` (M40), `C1.07`, `C1.08` (M41), `C1.09` (M43), `C1.16`, `C5.03` (legacy mode)
+- **A rejected chain stops before the Guardian decision, pending approval, permit, execution and tool call, and binds nothing**: `C1.15`, `C2.02`, `C2.03`
+- **An ancestor id stays bound to its first verified content**: `C2.01` (M42b)
+- **The execution's chain is fixed at start; nothing is re-resolved**: `C2.04` (M42a), `C2.05`
+- **The verified ancestor ids are immutable before the first callback; audit metadata is a copy and cannot change the authority (before or after start)**: `C6.01` (M42c), `C6.02`, `C6.03`
+- **Approval compares the re-resolved chain with the snapshot, member by member**: `C1.14` (M48), `C5.02`
+- **Ancestor revocation at every check point, also before first use**: request `C3.01` (M27b), `C3.02` (M20); start `C3.03` (M27g), `C3.04` (M27d); approval `C3.05` (M34a), `C3.06` (M34); commit `C3.07` (M21); delivery `C3.09` (M35), `C3.10` (M35a), `C3.11` (M35b)
+- **Cancellation is requested for running descendants; acknowledgement is not termination**: `C3.12` (M36)
+- **A commit before the revocation stays; the later commit and delivery are denied**: `C3.08`
+- **No propagation to the parent or siblings; a common ancestor covers both branches**: `C4.01` (M37), `C4.02`
+- **Sessions and tenants: an ancestor covers descendants in other sessions of the tenant, a session revocation only its own session; tenant precedence and isolation**: `C4.03`, `C4.04`, `C4.05`
+- **Evidence and export name only the verified chain**: `C5.04`, `C5.05`
+
 ## G2. Cooperative Containment (A2)
 Specification: [cooperative-containment.md](cooperative-containment.md). Evidence: `tests/cooperative-containment.test.ts`. Commits are observed through `executor.managedState`, tool behaviour through harness-owned doubles.
 - **Revoke before start: no tool call, no execution, no terminal**: `C01`

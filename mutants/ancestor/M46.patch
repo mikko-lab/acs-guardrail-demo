@@ -1,0 +1,12 @@
+--- a/src/capability-grant.ts
++++ b/src/capability-grant.ts
+@@ -182,9 +182,6 @@
+       if (ref.capability_id !== parent.capability_id) {
+         throw new CapabilityVerificationError("CHAIN_LINK_MISMATCH", `Validation Error: chain position ${i} names parent capability id ${ref.capability_id}, chain supplies ${parent.capability_id}`);
+       }
+-      if (ref.fingerprint !== capabilityFingerprint(parent)) {
+-        throw new CapabilityVerificationError("CHAIN_LINK_MISMATCH", `Validation Error: chain position ${i} names a parent fingerprint that does not match the supplied parent`);
+-      }
+     }
+     const tenant = tenantOf(leaf);
+     for (let i = 1; i < members.length; i++) {

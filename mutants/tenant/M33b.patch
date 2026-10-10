@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -167,6 +167,7 @@
+@@ -180,6 +180,7 @@
    /** Tenancy mode, taken from the capability verifier (the single source of the mode). */
    readonly #tenancy: boolean;
    #inFlightSeq = 0;
@@ -8,7 +8,7 @@
    #store = new ManagedStateStore();
    #writeManagedState = this.#store.issueWriter();
    #managedStateView = this.#store.view();
-@@ -558,6 +559,7 @@
+@@ -587,6 +588,7 @@
      const sessionId = params.metadata.session_id;
      const toolName = params.payload.tool.name;
      const originalRequestId = params.request_id;
@@ -16,14 +16,14 @@
  
      let exitStatus: "success" | "failure" | "blocked" | "timeout" = "success";
      let outputs: import("./acs-types").AcsToolCallResult["outputs"] = [];
-@@ -892,7 +894,9 @@
+@@ -976,7 +978,9 @@
        audit: this.audit,
-       // The commit fence checks the authority bound at start (including its tenant); nothing is re-resolved.
+       // The commit fence checks the authority bound at start (tenant and ancestor chain included); nothing is re-resolved.
        revoked: () => {
--        const match = this.#revocations.check({ session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId });
+-        const match = this.#revocations.check({ session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: ancestorIds });
 +        const context = this.#mutantContexts.get(requestId)!;
 +        const fresh = this.capabilityVerifier.verify(this.capabilityProvider.resolve({ agent_id: context.agent_id, session_id: sessionId, request_id: requestId, tool: context.tool }), { expectedAgentId: context.agent_id, expectedSessionId: sessionId, requestedTool: context.tool });
-+        const match = this.#revocations.check({ session_id: sessionId, capability_id: capabilityId, tenant_id: tenantOf(fresh) });
++        const match = this.#revocations.check({ session_id: sessionId, capability_id: capabilityId, tenant_id: tenantOf(fresh), ancestor_capability_ids: ancestorIds });
          return match ? { reason: match.reason, revocation_id: match.record.revocation_id } : undefined;
        },
        write: (key, json) => this.#writeManagedState(key, json),

@@ -1,6 +1,6 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -338,7 +338,7 @@
+@@ -357,7 +357,7 @@
  
      // The tenant comes only from the verified grant. A request's own tenant_id claim must match it (tenancy mode).
      const tenantId = tenantOf(verifiedCapability);

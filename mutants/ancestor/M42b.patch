@@ -1,0 +1,11 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -866,7 +866,7 @@
+       sessionTenants.set(member.session_id, tenantId);
+     }
+     const contents = new Map<string, string>();
+-    for (const member of members) {
++    for (const member of [chain.leaf]) {
+       const fingerprint = capabilityFingerprint(member);
+       const seen = contents.get(member.capability_id);
+       if (this.#revocations.capabilityConflicts(member) || (seen !== undefined && seen !== fingerprint)) return "capability_id_conflict";

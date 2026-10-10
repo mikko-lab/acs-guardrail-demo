@@ -6,6 +6,7 @@
  * Scope of this version (see docs/authority-revocation.md):
  *   - Targets: a capability (by capability_id), a session (by session_id) or, in tenancy mode, a tenant
  *     (by tenant_id, covering every grant, session and execution bound to it, including ones first seen later).
+ *     A capability target also covers every authority whose verified ancestor chain contains it (descendants).
  *   - State is in memory only. It is not persistent, not distributed and not
  *     shared between processes; a process restart forgets every revocation.
  *   - Revocation is monotonic: there is no un-revoke, and clearing session
@@ -16,26 +17,26 @@
  * The registry also binds every capability_id to the exact content of the first
  * signed grant seen with that id, so that one id cannot silently refer to two
  * different authorities (a revocation of an id must mean one thing). The content
- * includes the tenant_id of a version 2 grant. In tenancy mode it also binds every
+ * includes the tenant_id and the parent reference of a version 2 grant. In tenancy mode it also binds every
  * runtime session_id to the tenant of the first verified grant that names it, so a
  * session belongs to exactly one tenant.
  */
-import { createHash } from "node:crypto";
-import { canonicalize } from "json-canonicalize";
-import type { CapabilityGrant } from "./capability-grant";
+import { capabilityFingerprint, type CapabilityGrant } from "./capability-grant";
 
 export type RevocationTarget =
   | { scope: "capability"; capability_id: string }
   | { scope: "session"; session_id: string }
   | { scope: "tenant"; tenant_id: string };
 
-export type RevocationReason = "capability_revoked" | "session_revoked" | "tenant_revoked";
+export type RevocationReason = "capability_revoked" | "session_revoked" | "tenant_revoked" | "ancestor_revoked";
 
 /** The authority checked at a revocation fence. tenant_id is the start-time or grant-bound tenant, never a request claim. */
 export interface CheckedAuthority {
   session_id: string;
   capability_id?: string;
   tenant_id?: string;
+  /** The verified ancestor chain bound to the authority (parent first); a capability revocation of any covers it. */
+  ancestor_capability_ids?: readonly string[];
 }
 
 export interface RevocationRecord {
@@ -99,11 +100,11 @@ export const revocationIdFor = (target: RevocationTarget): string =>
     : target.scope === "session" ? `session:${target.session_id}`
     : `tenant:${target.tenant_id}`;
 
-/** Content fingerprint of a verified grant, excluding its signature. It covers every other field, including tenant_id. */
-export function capabilityFingerprint(grant: CapabilityGrant): string {
-  const { signature: _signature, ...body } = grant;
-  return createHash("sha256").update(canonicalize(body)).digest("hex");
-}
+/**
+ * Content fingerprint of a verified grant, excluding its signature. It covers every other field, including tenant_id
+ * and the parent reference. Defined in capability-grant.ts (chain links use it); re-exported here.
+ */
+export { capabilityFingerprint };
 
 export class AuthorityRevocationRegistry {
   private readonly capabilities = new Map<string, RevocationRecord>();
@@ -130,8 +131,8 @@ export class AuthorityRevocationRegistry {
   }
 
   /**
-   * Any applicable record denies. When several apply, the broadest scope is reported (tenant, then session, then
-   * capability), so the reason is deterministic.
+   * Any applicable record denies. When several apply, the broadest scope is reported (tenant, then session, then an
+   * ancestor capability, nearest parent first, then the capability itself), so the reason is deterministic.
    */
   check(authority: CheckedAuthority): RevocationMatch | undefined {
     if (authority.tenant_id !== undefined) {
@@ -140,11 +141,21 @@ export class AuthorityRevocationRegistry {
     }
     const session = this.sessions.get(authority.session_id);
     if (session) return { reason: "session_revoked", record: session };
+    for (const ancestor of authority.ancestor_capability_ids ?? []) {
+      const record = this.capabilities.get(ancestor);
+      if (record) return { reason: "ancestor_revoked", record };
+    }
     if (authority.capability_id !== undefined) {
       const capability = this.capabilities.get(authority.capability_id);
       if (capability) return { reason: "capability_revoked", record: capability };
     }
     return undefined;
+  }
+
+  /** True if the capability_id is already bound to different content. Binds nothing. */
+  capabilityConflicts(grant: CapabilityGrant): boolean {
+    const bound = this.capabilityBindings.get(grant.capability_id);
+    return bound !== undefined && bound !== capabilityFingerprint(grant);
   }
 
   /**

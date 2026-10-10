@@ -1,0 +1,11 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -846,7 +846,7 @@
+       }
+     };
+     if (!same(leafRaw, original)) return false;
+-    return snapshot.every((ancestor, i) => same(ancestorsRaw[i], ancestor));
++    return true;
+   }
+ 
+   /**

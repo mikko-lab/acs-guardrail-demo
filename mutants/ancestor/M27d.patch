@@ -1,0 +1,11 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -598,7 +598,7 @@
+       // (including the tool_execution_started audit record) and immediately before the call. The managed
+       // execution is created only after the guard passed, without any callback before the call.
+       const result = await this.#gate.execute(request, permit, () => {
+-        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: ancestorIds, tool: toolName });
++        this.#denyIfRevoked("start", originalRequestId, { session_id: sessionId, capability_id: capabilityId, tenant_id: tenantId, ancestor_capability_ids: [], tool: toolName });
+         return (toolFn, args) => this.#startManagedExecution(originalRequestId, authority).invoke(toolFn, args);
+       });
+ 

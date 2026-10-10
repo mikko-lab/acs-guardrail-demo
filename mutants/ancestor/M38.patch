@@ -1,0 +1,11 @@
+--- a/src/capability-grant.ts
++++ b/src/capability-grant.ts
+@@ -178,7 +178,7 @@
+         if (parent) throw new CapabilityVerificationError("MALFORMED_CHAIN", `Validation Error: chain continues past a root at position ${i}`);
+         continue;
+       }
+-      if (!parent) throw new CapabilityVerificationError("MALFORMED_CHAIN", `Validation Error: missing parent ${ref.capability_id} of chain position ${i}`);
++      if (!parent) continue;
+       if (ref.capability_id !== parent.capability_id) {
+         throw new CapabilityVerificationError("CHAIN_LINK_MISMATCH", `Validation Error: chain position ${i} names parent capability id ${ref.capability_id}, chain supplies ${parent.capability_id}`);
+       }

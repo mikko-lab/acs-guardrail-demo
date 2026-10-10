@@ -1,0 +1,12 @@
+--- a/src/capability-grant.ts
++++ b/src/capability-grant.ts
+@@ -179,9 +179,6 @@
+         continue;
+       }
+       if (!parent) throw new CapabilityVerificationError("MALFORMED_CHAIN", `Validation Error: missing parent ${ref.capability_id} of chain position ${i}`);
+-      if (ref.capability_id !== parent.capability_id) {
+-        throw new CapabilityVerificationError("CHAIN_LINK_MISMATCH", `Validation Error: chain position ${i} names parent capability id ${ref.capability_id}, chain supplies ${parent.capability_id}`);
+-      }
+       if (ref.fingerprint !== capabilityFingerprint(parent)) {
+         throw new CapabilityVerificationError("CHAIN_LINK_MISMATCH", `Validation Error: chain position ${i} names a parent fingerprint that does not match the supplied parent`);
+       }

@@ -1,11 +1,11 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -858,7 +858,7 @@
+@@ -940,7 +940,7 @@
      // Cancellation of managed executions runs only now, after the tombstone exists. Listener failures and
      // re-entrant calls are contained per execution and cannot undo the revocation.
      for (const execution of [...this.#executions.values()]) {
--      if (!execution.terminal && !execution.cancellationRequested && covered(execution.sessionId, execution.capabilityId, execution.tenantId)) {
-+      if (!execution.terminal && !execution.cancellationRequested && covered(execution.sessionId, execution.capabilityId, undefined)) {
+-      if (!execution.terminal && !execution.cancellationRequested && covered(execution.sessionId, execution.capabilityId, execution.tenantId, execution.ancestorIds)) {
++      if (!execution.terminal && !execution.cancellationRequested && covered(execution.sessionId, execution.capabilityId, undefined, execution.ancestorIds)) {
          execution.requestCancellation(record.revocation_id);
        }
      }

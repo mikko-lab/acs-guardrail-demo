@@ -1,0 +1,11 @@
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -540,7 +540,7 @@
+       session_id: outcome.authority.sessionId,
+       capability_id: outcome.authority.capabilityId,
+       tenant_id: outcome.authority.tenantId,
+-      ancestor_capability_ids: outcome.authority.ancestorIds,
++      ancestor_capability_ids: [],
+       tool: outcome.result.tool.name,
+     }, { request_id_ref: outcome.requestIdRef, boundary: "api_return" });
+     return revoked ? this.#withheldForRevocation(outcome, revoked) : outcome.result;

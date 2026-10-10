@@ -1,6 +1,6 @@
 # Tenant scope (package 1a)
 
-This document specifies tenant-bound authority and tenant-scope revocation in `GuardedExecutor`. It implements §7.5 and the tenant column of the fence matrix (§7.3, §7.8) of the approved [coverage expansion plan](https://github.com/mikko-lab/agent-control-evals/blob/main/docs/revocation/coverage-expansion-plan.md) of `agent-control-evals`. Ancestor chains and descendant coverage (package 1b) are not part of it.
+This document specifies tenant-bound authority and tenant-scope revocation in `GuardedExecutor`. It implements §7.5 and the tenant column of the fence matrix (§7.3, §7.8) of the approved [coverage expansion plan](https://github.com/mikko-lab/agent-control-evals/blob/main/docs/revocation/coverage-expansion-plan.md) of `agent-control-evals`. Ancestor chains and descendant coverage (package 1b) are specified in [ancestor-chains.md](ancestor-chains.md).
 
 Tenant scope extends [authority revocation (A1)](authority-revocation.md) and [cooperative containment (A2)](cooperative-containment.md). It has the same limits: one executor instance, in memory, cooperating tools, and effects through `ctx.commit()` only.
 
@@ -35,7 +35,7 @@ No verifier accepts both grant versions, so there is no mixed mode in which a te
 
 ## Tenant revocation
 
-`revoke({ scope: "tenant", tenant_id })` records a monotonic, idempotent tombstone, `revocation_id` `tenant:<tenant_id>`. It is checked at use time, so it covers every grant, session and execution bound to the tenant, including grants first seen after the revocation; nothing is enumerated in advance. A use is denied if any applicable record matches, that is tenant, session or capability. When several match, the broadest scope is reported, in the order tenant, then session, then capability.
+`revoke({ scope: "tenant", tenant_id })` records a monotonic, idempotent tombstone, `revocation_id` `tenant:<tenant_id>`. It is checked at use time, so it covers every grant, session and execution bound to the tenant, including grants first seen after the revocation; nothing is enumerated in advance. A use is denied if any applicable record matches, that is tenant, session or capability. When several match, the broadest scope is reported, in the order tenant, then session, then an ancestor capability (package 1b), then the capability itself.
 
 | Check point | Where | Tenant source | Outcome when the tenant is revoked |
 |---|---|---|---|
@@ -67,64 +67,7 @@ The tests are in `tests/tenant-scope.test.ts` (setup: `tests/tenant-setup.ts`).
 
 ## Mutant gate
 
-The runtime-test mutants are named in [`mutants/tenant/manifest.json`](../mutants/tenant/manifest.json) before any run. For each mutant the manifest gives:
-- its patch, bound by SHA-256;
-- its witness tests (file, describe and title);
-- for every witness label, the exact value the unmodified runtime and the mutant must produce;
-- the exact errors each witness may catch in each run.
-
-The manifest's own SHA-256 is checked first. `npm run mutants:tenant` runs `scripts/mutants/run-tenant-mutants.mjs`.
-
-**Witness log.** `tests/witness.ts` logs every witness check (label, actual, expected, with undefined encoded as `{"$undefined":true}`) and every error a witness caught through `outcome()` to the file named by `WITNESS_LOG`. It logs whether or not the check passed. The gate compares these observations with the manifest, so a label alone is never enough.
-
-**Control.** The unpatched tree must pass all of the following:
-- `npm run typecheck` and `npm run build` (`tsc --outDir dist`; `dist/src/guarded-executor.js` must exist);
-- jest exiting 0, with no signal and no timeout, every test passing;
-- every witness logging exactly its manifest control values and exactly its accepted control errors.
-
-**Technical soundness of a mutant.** All of the following must hold:
-- the patch applies;
-- typecheck and build pass;
-- jest exits 0 or 1, with no signal and no timeout, and writes its JSON result;
-- no suite execution error;
-- the **test inventory is identical to the control's**: the same number of tests and the same test ids (file, describe path and title).
-
-**Detection.** All of the following must hold:
-- jest exits 1;
-- every named witness fails with `WitnessAssertionError`;
-- every label logs exactly its manifest mutant value;
-- the failed labels are exactly those whose mutant value differs from the control value;
-- the errors the witness caught are exactly the accepted mutant errors.
-
-**Unexpected failures.** A label value that is neither the control nor the mutant value, or a caught error the manifest does not accept, is an unexpected failure. It is reported with its details (value, error name and message) as a technical failure and is never check-point evidence.
-
-**Never a detection; these are technical failures (exit 2):**
-- a patch that does not apply;
-- a typecheck or build error;
-- a load error;
-- a changed test inventory;
-- a jest exit status other than 0 or 1, a signal or a timeout;
-- a failure that is not a `WitnessAssertionError`;
-- an unexpected value or error;
-- a failing control.
-
-**Evidence kinds:**
-- **`check_point`:** a check label changes from its control value to its mutant value; the value is a stage, boundary, reason or call count.
-- **`containment_effect`:** an effect label changes in runtime state: tool calls, managed state, returned content or the cancellation signal.
-- **`both`:** both of the above in the same run.
-- **`component_check_point`:** a component test's check label changes; this is never production-path evidence.
-
-A changed rejection code alone is never containment. Safeguards that mask a check point are kept.
-
-### Gate regressions
-
-`npm run mutants:tenant:regressions` (`scripts/mutants/gate-regressions.mjs`) runs the gate on three fixed, hash-checked manifests in `mutants/tenant/regressions/` and requires their exit statuses:
-
-| Case | Patch | Required gate result |
-|---|---|---|
-| R1-inventory | the M27e patch plus deletion of an unrelated test (582 → 581 tests) | technical failure, exit 2 (test inventory differs) |
-| R2-syntax | an unexpected `SyntaxError` on the request path; the M27e witness stage becomes undefined | technical failure, exit 2 (unexpected value and unaccepted caught error) |
-| R3-m27e | the real M27e mutant | detected at stage `start` (control `request`), exit 0 |
+The runtime-test mutants are named in [`mutants/tenant/manifest.json`](../mutants/tenant/manifest.json) before any run. `npm run mutants:tenant` runs them through the shared gate, `scripts/mutants/run-mutant-gate.mjs`. Its manifest format, control, technical-soundness, detection and evidence-kind rules, and its own regressions (`npm run mutants:tenant:regressions`) are in [mutant-gate.md](mutant-gate.md).
 
 | Mutant | Removes | Witness | Kind | Kept safeguards that still contain the effect |
 |---|---|---|---|---|
@@ -156,6 +99,6 @@ M27f is a check point the plan did not list separately: the runtime has an early
 
 ## Not provided
 
-- Ancestor chains, delegated authority and descendant coverage (package 1b).
+- Holder-to-holder delegation. Issuer-attested ancestor chains and descendant coverage are package 1b: [ancestor-chains.md](ancestor-chains.md).
 - Tenants as separate trust domains for keys or audit. One issuer key and one executor serve all tenants.
 - Persistent, distributed or cross-process tenant revocation.

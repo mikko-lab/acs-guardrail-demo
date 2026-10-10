@@ -1,6 +1,6 @@
 --- a/src/authority-revocation.ts
 +++ b/src/authority-revocation.ts
-@@ -169,7 +169,7 @@
+@@ -180,7 +180,7 @@
    /** True if the session is already bound to a different tenant. */
    sessionTenantConflicts(sessionId: string, tenantId: string): boolean {
      const bound = this.sessionTenants.get(sessionId);

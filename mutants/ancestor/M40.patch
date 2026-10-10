@@ -1,0 +1,10 @@
+--- a/src/capability-grant.ts
++++ b/src/capability-grant.ts
+@@ -164,7 +164,6 @@
+     for (const member of raw) {
+       const id = member && typeof member === "object" ? (member as Record<string, unknown>).capability_id : undefined;
+       if (typeof id !== "string") continue;
+-      if (seen.has(id)) throw new CapabilityVerificationError("CHAIN_REPEATED_ID", `Validation Error: capability_id ${id} occurs more than once in the chain`);
+       seen.add(id);
+     }
+     const leaf = this.#verifyGrant(leafRaw, ctx, 0);

@@ -1,0 +1,11 @@
+--- a/src/capability-grant.ts
++++ b/src/capability-grant.ts
+@@ -157,7 +157,7 @@
+       ancestorsRaw = envelope.ancestors;
+     }
+     const raw = [leafRaw, ...ancestorsRaw];
+-    if (raw.length > MAX_CHAIN_LENGTH) {
++    if (false && raw.length > MAX_CHAIN_LENGTH) {
+       throw new CapabilityVerificationError("CHAIN_TOO_DEEP", `Validation Error: chain has ${raw.length} grants; at most ${MAX_CHAIN_LENGTH} (leaf included) are allowed`);
+     }
+     const seen = new Set<string>();

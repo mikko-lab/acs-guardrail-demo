@@ -1,11 +1,11 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -515,7 +515,7 @@
+@@ -539,7 +539,7 @@
      const revoked = this.#revocationAt("delivery", outcome.resultRequestId, {
        session_id: outcome.authority.sessionId,
        capability_id: outcome.authority.capabilityId,
 -      tenant_id: outcome.authority.tenantId,
 +      tenant_id: undefined,
+       ancestor_capability_ids: outcome.authority.ancestorIds,
        tool: outcome.result.tool.name,
      }, { request_id_ref: outcome.requestIdRef, boundary: "api_return" });
-     return revoked ? this.#withheldForRevocation(outcome, revoked) : outcome.result;

@@ -1,7 +1,7 @@
 --- a/src/guarded-executor.ts
 +++ b/src/guarded-executor.ts
-@@ -337,7 +337,7 @@
-     }
+@@ -356,7 +356,7 @@
+     const ancestorIds: readonly string[] = Object.freeze(verifiedChain.ancestors.map(a => a.capability_id));
  
      // The tenant comes only from the verified grant. A request's own tenant_id claim must match it (tenancy mode).
 -    const tenantId = tenantOf(verifiedCapability);

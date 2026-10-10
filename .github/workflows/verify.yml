@@ -38,8 +38,8 @@ jobs:
       # Named mutants, witnesses and expected assertions are fixed in mutants/tenant/manifest.json (hash-checked).
       # Exit 0 only if the control passes and every mutant is detected by its named witness with its evidence kind.
       - run: npm run mutants:tenant
-      # The gate's own regressions: an inventory change and an unexpected error must be technical failures (exit 2);
-      # the real M27e mutant must still be detected.
+      # The shared gate's own regressions: an inventory change, an unexpected error and a crash of the gate must be
+      # technical failures (exit 2); the real M27e mutant must still be detected.
       - run: npm run mutants:tenant:regressions
       - uses: actions/upload-artifact@v4
         if: always()
@@ -48,4 +48,25 @@ jobs:
           path: |
             out/mutants-tenant/report.json
             out/mutant-gate-regressions/
+          if-no-files-found: warn
+
+  ancestor-mutants:
+    name: ancestor mutant gate (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Named mutants, witnesses (and the valid-chain control witness) are fixed in mutants/ancestor/manifest.json
+      # (hash-checked). Same shared gate and rules as the tenant gate (docs/mutant-gate.md).
+      - run: npm run mutants:ancestor
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ancestor-mutant-report
+          path: out/mutants-ancestor/report.json
           if-no-files-found: warn
