@@ -137,7 +137,7 @@ OCSF export does not replace the original audit evidence and does not provide im
 `npm run verify` runs the TypeScript typecheck and Jest suite. The current verification result is:
 
 - **32 test suites passed**
-- **740 tests passed**
+- **746 tests passed**
 - **0 snapshots**
 
 The major tested categories are:

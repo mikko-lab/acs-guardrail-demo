@@ -225,6 +225,24 @@ function deepFreeze<T>(value: T): T {
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 /**
+ * The runtime-owned copy of an untrusted tool-call request in permit mode: a JSON copy taken once at entry, then
+ * deep-frozen. Signature verification, replay, capability resolution, the Guardian decision and the lineage bindings
+ * all read this one object. The caller's object is never read again, so a caller (or any callback holding the
+ * caller's object) cannot change the request after it was taken; and because the copy is frozen, a callback that is
+ * handed the copy itself (the Guardian) cannot change the operation it evaluates. A write attempt throws in strict
+ * code and has no effect otherwise.
+ */
+export function ownedRequestSnapshot(input: unknown): unknown {
+  let copy: unknown;
+  try {
+    copy = JSON.parse(JSON.stringify(input));
+  } catch {
+    throw new Error("Validation Error: request must be a JSON value");
+  }
+  return deepFreeze(copy);
+}
+
+/**
  * Prepares the bindings of a lineage from a verified request and its verified chain. Everything is copied and frozen
  * here, so no later callback (audit sink, Guardian) can change what the lineage binds.
  */

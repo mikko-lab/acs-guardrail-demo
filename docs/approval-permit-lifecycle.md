@@ -64,7 +64,8 @@ Both values are in the lineage snapshot's `bindings`, so the approval UI shows a
   covered_by: { revocation_id, reason } | null }
 ```
 
-- The bindings are copied and deep-frozen in `process()` right after the chain is verified and bound, before the first callback (the `capability_verified` audit, the Guardian, the `guardian_decision` audit). No callback can change what a lineage binds.
+- **The request is runtime-owned.** In permit mode `process()` takes one JSON copy of the request at entry and deep-freezes it, before schema validation, signature verification and the first callback. Signature, replay, capability resolution, the Guardian decision and the lineage bindings all read this one object; the caller's object is never read again. The Guardian is handed the frozen copy, so it cannot change the operation it evaluates (a write attempt throws, and `process()` is denied). Without this, a callback holding the caller's object could rewrite the tool before the Guardian decided, so that an `update_record` lineage would receive the policy approval given to `read_record` (regression L17).
+- The bindings are computed from that snapshot right after the chain is verified and bound, before the first callback (the `capability_verified` audit, the Guardian, the `guardian_decision` audit), and are frozen. No callback can change what a lineage binds.
 - Revocation is not a lifecycle state. `covered_by` is derived from the registry at read time.
 - All `*_seq` values and `revoke()`'s `effective_sequence` come from **one** monotonic authority sequence (D13), so approvals, issues, consumptions and revocations are totally ordered by their effective points. `authoritySequence()` reads its current value.
 - Expiry is evaluated by operations and recorded by them (D8). A read never changes state.

@@ -59,7 +59,7 @@ import {
   ApprovalReceipt, argumentsDigest, chainValidityAt, chainValidityEnd, compareStartBindings, DEFAULT_PERMIT_TTL_MS,
   DEFAULT_POLICY_APPROVAL_TTL_MS, draftLineage, LifecycleDeniedError, LifecycleDenialReason, LifecycleMode, LifecycleModeError,
   LifecycleOptions, LifecycleStage, lineageIdOf, LineageAuthority, LineageDraft, LineageRecord, LineageSnapshot,
-  matchesLineageSnapshot, PermitReceipt, RejectionReceipt, snapshotLineage, startExecutionAuthority,
+  matchesLineageSnapshot, ownedRequestSnapshot, PermitReceipt, RejectionReceipt, snapshotLineage, startExecutionAuthority,
 } from "./approval-lifecycle";
 
 export interface CapabilityLookupContext {
@@ -336,8 +336,9 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
   }
 
   async #process(input: unknown): Promise<ProcessResult | PermitProcessResult> {
-    // Step 0 — Schema validation
-    const request = this.#validateToolCallRequest(input);
+    // Step 0 — Schema validation. Permit mode validates, verifies, evaluates and binds one runtime-owned, frozen
+    // snapshot of the request, never the caller's object (docs/approval-permit-lifecycle.md §3.2).
+    const request = this.#validateToolCallRequest(this.#mode === "permit" ? ownedRequestSnapshot(input) : input);
     const { params } = request;
 
     // Step 0.5 — Signature verification

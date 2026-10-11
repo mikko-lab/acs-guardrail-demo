@@ -680,9 +680,11 @@ describe("L14 aliasing and input mutation", () => {
     const f = fixture("l14");
     const tool = toolDouble("update_record");
     const evaluate = Guardian.prototype.evaluate;
+    let guardianWrite = "not attempted";
     jest.spyOn(f.ctx.guardian, "evaluate").mockImplementation(function (this: Guardian, request) {
       const decision = evaluate.call(this, request);
-      (request.params.payload.arguments as Record<string, unknown>).n = { value: 666 };
+      // The Guardian is handed the runtime-owned frozen snapshot: the write is rejected and changes nothing.
+      try { (request.params.payload.arguments as Record<string, unknown>).n = { value: 666 }; guardianWrite = "applied"; } catch (e) { guardianWrite = e instanceof TypeError ? "rejected" : "error"; }
       return decision;
     });
     onAudit(f.ctx, "capability_verified", meta => { if (meta) (meta as Record<string, unknown>).capability_id = "forged"; });
@@ -707,7 +709,51 @@ describe("L14 aliasing and input mutation", () => {
       ["LC-L14-start", verdict(o), "ok"],
       ["LC-L14-tool-args", tool.args, [{ n: 1 }]],
       ["LC-L14-reads", reads, 1],
+      ["LC-L14-guardian-write", guardianWrite, "rejected"],
     );
+  });
+});
+
+describe("L17 the request process() evaluates is runtime-owned (no approval bypass by mutation)", () => {
+  /**
+   * The caller keeps a reference to the signed update_record request and rewrites its tool to read_record from a
+   * callback before the Guardian decides. Without a runtime-owned snapshot the Guardian sees read_record (ALLOW) while
+   * the lineage binds update_record, so the update would get a policy approval and run without a human. The fixed path
+   * keeps the original ASK (pending lineage) or rejects the mutation attempt; it never creates an approved update
+   * lineage, and issue + start never call the update tool.
+   */
+  const SITES = ["control", "capability_verified", "provider", "guardian"] as const;
+  const EXPECTED: Record<typeof SITES[number], [string, string, number]> = {
+    control: ["ok", "pending", 0],
+    capability_verified: ["ok", "pending", 0],
+    provider: ["ok", "pending", 0],
+    // The Guardian receives the frozen snapshot: its write attempt throws, process() is denied, no lineage.
+    guardian: ["error", "none", 0],
+  };
+
+  it.each(SITES)("[LC-L17] %s: no policy-approved update lineage and no update call", async site => {
+    const f = fixture(`l17-${site}`);
+    const update = toolDouble("update_record");
+    const read = toolDouble("read_record");
+    const r = req(f);
+    const rewrite = (target: AcsToolCallRequest) => { (target.params.payload.tool as { name: string }).name = "read_record"; };
+    if (site === "capability_verified") onAudit(f.ctx, "capability_verified", () => rewrite(r));
+    if (site === "provider") onNextResolve(f.ctx, () => rewrite(r));
+    if (site === "guardian") {
+      const evaluate = Guardian.prototype.evaluate;
+      jest.spyOn(f.ctx.guardian, "evaluate").mockImplementation(function (this: Guardian, request) { rewrite(request); return evaluate.call(this, request); });
+    }
+    const created = await settle(f.ctx.executor.process(r));
+    jest.restoreAllMocks();
+    const lineage = f.ctx.executor.lineages()[0];
+    if (lineage?.state === "approved") {
+      attempt(() => f.ctx.executor.issuePermit({ lineage_id: lineage.lineage_id }));
+      await settle(start(f, lineage.lineage_id));
+    }
+    witness([`LC-L17-${site}`, [created.ok ? "ok" : "error", lineage?.state ?? "none", update.calls], EXPECTED[site]]);
+    if (site === "guardian") expect(!created.ok && created.error).toBeInstanceOf(TypeError);
+    expect(read.calls).toBe(0);
+    if (lineage) expect(lineage.bindings.tool).toBe("update_record");
   });
 });
 

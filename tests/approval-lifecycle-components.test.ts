@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { canonicalize } from "json-canonicalize";
 import {
   argumentsDigest, authorityFingerprint, chainValidityAt, chainValidityEnd, compareStartBindings, draftLineage,
-  matchesLineageSnapshot, requestDigest, startExecutionAuthority, StartBindings,
+  matchesLineageSnapshot, ownedRequestSnapshot, requestDigest, startExecutionAuthority, StartBindings,
 } from "../src/approval-lifecycle";
 import { ApprovalGrantVerifier, ApprovalVerificationError } from "../src/approval-verifier";
 import { capabilityFingerprint, type CapabilityGrant } from "../src/capability-grant";
@@ -111,6 +111,28 @@ describe("lineage draft: bindings are frozen copies", () => {
     expect(Object.isFrozen(draft.bindings)).toBe(true);
     expect(Object.isFrozen(draft.bindings.leaf)).toBe(true);
     expect(Object.isFrozen(draft.bindings.leaf.allowed_tools)).toBe(true);
+  });
+});
+
+describe("runtime-owned request snapshot (permit-mode process())", () => {
+  it("is an independent, deep-frozen copy; later changes to the input do not reach it and writes to it fail", () => {
+    const input = { params: { payload: { tool: { name: "update_record" }, arguments: { n: { value: 1 } } } } };
+    const owned = ownedRequestSnapshot(input) as typeof input;
+    input.params.payload.tool.name = "read_record";
+    expect(owned.params.payload.tool.name).toBe("update_record");
+    expect(() => { owned.params.payload.tool.name = "read_record"; }).toThrow(TypeError);
+    expect(() => { (owned.params.payload.arguments as Record<string, unknown>).n = { value: 2 }; }).toThrow(TypeError);
+    expect(Object.isFrozen(owned.params.payload.arguments.n)).toBe(true);
+  });
+
+  it("reads getters once and rejects input that is not a JSON value", () => {
+    let reads = 0;
+    const input = { get tool() { reads++; return reads === 1 ? "update_record" : "read_record"; } };
+    const owned = ownedRequestSnapshot(input) as { tool: string };
+    expect([owned.tool, owned.tool, reads]).toEqual(["update_record", "update_record", 1]);
+    expect(() => ownedRequestSnapshot({ n: BigInt(1) })).toThrow(/JSON value/);
+    const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic;
+    expect(() => ownedRequestSnapshot(cyclic)).toThrow(/JSON value/);
   });
 });
 

@@ -2,7 +2,7 @@
 
 This document maps architectural security invariants to automated evidence across the repository, including evaluation, runtime-authority, incident, correlation, and metrics test suites.
 
-**Current verified baseline:** 740 automated tests, 32 Jest suites, 0 snapshots, TypeScript typecheck and build clean.
+**Current verified baseline:** 746 automated tests, 32 Jest suites, 0 snapshots, TypeScript typecheck and build clean.
 
 ## A. Request Policy
 - **ALLOW proceeds to execution**: `tests/evals/request-policy.test.ts` (`EVAL-A1`)
@@ -138,6 +138,7 @@ Specification: [approval-permit-lifecycle.md](approval-permit-lifecycle.md). Evi
 - **ApprovalGrantV3 binds lineage, request digest, authority fingerprint, request id, tool, approver and decision; no cross-lineage replay; re-entrant approve**: grant verification cases, `B3`
 - **Audit claims and audit failures never replace or undo a transition**: `L13`, `L13-throw`
 - **Aliasing: a mutating Guardian, a mutating audit sink, frozen snapshots, a getter-based start input**: `L14`
+- **The request process() verifies, evaluates and binds is one runtime-owned frozen snapshot: rewriting the caller's request from the `capability_verified` sink or the provider, or the Guardian's own write attempt, never yields a policy-approved update lineage or an update call**: `L17` (control, `capability_verified`, provider, Guardian)
 - **Chain validity after the last callback of create, approve, issue and start**: `L16-create`, `L16-approve`, `L16-issue`, `L16-start`
 - **Existing containment applies to a lineage start (cancellation, delivery withheld, permit stays consumed)**: containment case
 - **Component check points (no production-path separation, plan §8.2 M55, M56, M71): the session, agent and tenant start comparisons; the execution authority comes from the lineage snapshot**: `LC-C-comparator-*`, `LC-C-execution-authority`; digest canonicalization, authority fingerprint, strict snapshot comparison, chain validity, `ApprovalGrantV3` verification
