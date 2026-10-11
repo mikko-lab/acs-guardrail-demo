@@ -15,6 +15,7 @@
  *   RL9-unchanged     a production-code change that changes nothing (comment) -> 1 (not detected)
  *   RL10-kinds        M67 (check_and_lifecycle) and M71 (component_check_point) -> 0, and the report counts neither as
  *                     containment evidence
+ *   RL11-no-log       M53 plus a witness helper that writes no witness log    -> 2 (witness log missing)
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -39,6 +40,7 @@ const cases = [
     return sameList(s.containment_evidence, []) && sameList(s.lifecycle_evidence, ["M67"]) && sameList(s.evidence.component_check_point, ["M71"])
       ? "" : `report counts ${JSON.stringify({ containment: s.containment_evidence, lifecycle: s.lifecycle_evidence, component: s.evidence.component_check_point })}`;
   }],
+  ["RL11-no-log", 2, "witness log missing"],
 ];
 let failed = 0;
 for (const [id, expected, reason, extra = [], check] of cases) {

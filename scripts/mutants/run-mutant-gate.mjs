@@ -30,7 +30,7 @@
  *   must pass and log exactly the witness-log entries (checks and caught errors) it logs in the control run, unless the
  *   mutant pins it in "collateral" with its exact status. A pinned collateral observation must occur exactly as pinned.
  *   Anything else is an unexpected failure (technical, exit 2): a witness's failure never redeems an otherwise
- *   unexpected run. Manifests without "whole_run" keep the earlier rule (other failures are diagnostics only).
+ *   unexpected run. A missing witness log (control or mutant) is a technical failure. Manifests without "whole_run" keep the earlier rule (other failures are diagnostics only).
  *
  * Evidence kinds: check_point, containment_effect, both, component_check_point, lifecycle_effect and
  * check_and_lifecycle. Lifecycle state (approval and permit transitions) is reported as lifecycle evidence and is never
@@ -148,6 +148,9 @@ function evaluateTree(dir, jestOkStatuses) {
   const tests = result.testResults.flatMap(s => s.assertionResults.map(a => ({ file: s.name.slice(s.name.indexOf("/tests/") + 1), ...a })));
   for (const t of tests) { t.id = `${t.file} :: ${t.ancestorTitles.join(" > ")} :: ${t.title}`; t.key = `${t.ancestorTitles.join(" ")} ${t.title}`; }
   const inventory = tests.map(t => t.id).sort();
+  // Under the strict whole-run rule a missing witness log is a technical failure in its own right: without it no
+  // witness or whole-run observation can be compared.
+  if (strict && !existsSync(witnessLog)) return { issue: "witness log missing: jest wrote no WITNESS_LOG observations" };
   const log = existsSync(witnessLog) ? readFileSync(witnessLog, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)) : [];
   return { status: jest.status, result, tests, inventory, log };
 }

@@ -52,7 +52,7 @@ The manifest also lists the package's recorded coverage gaps, which the report r
 - the errors the witness caught are exactly the accepted mutant errors;
 - every `control` witness still passes, with exactly its values and accepted errors.
 
-**Whole run (strict manifests).** A manifest with `"whole_run": "strict"` (the lifecycle manifest) adds a whole-run rule. Every test that is not a named witness must pass and must log exactly the witness-log entries (check values and caught errors) it logs in the control run. The only exception is the mutant's `collateral` list, which pins such tests by test id with their exact status. A pinned observation must occur exactly as pinned. Anything else is an unexpected failure and a technical failure (exit 2), whatever the witnesses show: a witness's failure never redeems an otherwise unexpected run. Manifests without `whole_run` (tenant, ancestor and their regressions) keep the earlier rule, under which failures of tests that are not witnesses are diagnostics.
+**Whole run (strict manifests).** A manifest with `"whole_run": "strict"` (the lifecycle manifest) adds a whole-run rule. Every test that is not a named witness must pass and must log exactly the witness-log entries (check values and caught errors) it logs in the control run. The only exception is the mutant's `collateral` list, which pins such tests by test id with their exact status. A pinned observation must occur exactly as pinned. Anything else is an unexpected failure and a technical failure (exit 2), whatever the witnesses show: a witness's failure never redeems an otherwise unexpected run. A missing witness log, in the control or the mutant run, is a technical failure too. Manifests without `whole_run` (tenant, ancestor and their regressions) keep the earlier rule, under which failures of tests that are not witnesses are diagnostics.
 
 **Unexpected failures.** A label value that is neither the control nor the mutant value, or a caught error the manifest does not accept, is an unexpected failure. It is reported with its details (value, error name and message) as a technical failure and is never check-point evidence. A `control` witness that changes under the mutant is a technical failure too: the mutant breaks more than its named safeguard.
 
@@ -97,7 +97,7 @@ Failures of tests that are not named witnesses are recorded in the report as dia
 
 ## Lifecycle gate regressions
 
-`npm run mutants:lifecycle:regressions` (`scripts/mutants/lifecycle-gate-regressions.mjs`) runs the gate on ten fixed, hash-checked manifests in `mutants/lifecycle/regressions/`, all under the strict whole-run rule:
+`npm run mutants:lifecycle:regressions` (`scripts/mutants/lifecycle-gate-regressions.mjs`) runs the gate on eleven fixed, hash-checked manifests in `mutants/lifecycle/regressions/`, all under the strict whole-run rule:
 
 | Case | Input | Required gate result |
 |---|---|---|
@@ -111,6 +111,7 @@ Failures of tests that are not named witnesses are recorded in the report as dia
 | RL8-signal | M53 plus a jest configuration that kills its own process with SIGKILL | technical failure, exit 2 (killed by signal) |
 | RL9-unchanged | a production-code change that changes no behaviour (a comment) | not detected, exit 1 |
 | RL10-kinds | M67 (`check_and_lifecycle`) and M71 (`component_check_point`) | detected, exit 0; the report's `containment_evidence` is empty, `lifecycle_evidence` is `["M67"]` and `component_check_point` is `["M71"]` |
+| RL11-no-log | M53 plus a witness helper that writes no witness log | technical failure, exit 2 (witness log missing) |
 
 ## Determinism
 
