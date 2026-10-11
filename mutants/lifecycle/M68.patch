@@ -1,0 +1,13 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..09f0496 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1323,7 +1323,7 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+    */
+   #finalFence(record: LineageRecord, stage: Exclude<LifecycleStage, "create">, requestId: string, expiresAtMs: number, expire: () => Error, authority: LineageAuthority = record.authority): void {
+     const b = record.bindings;
+-    this.#denyIfLineageRevoked(stage, requestId, authority, b.tool, "final", record.lineageId);
++    if (stage !== "approval") this.#denyIfLineageRevoked(stage, requestId, authority, b.tool, "final", record.lineageId);
+     const nowMs = this.clock.nowMs();
+     const validity = chainValidityAt([b.leaf, ...b.ancestors], nowMs);
+     if (validity) throw this.#lifecycleDenial(stage, validity, record, requestId);

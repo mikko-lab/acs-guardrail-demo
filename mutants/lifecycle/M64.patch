@@ -1,0 +1,12 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..4ae4e97 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1290,6 +1290,7 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+         // Before the effective point every failure is a denial and the permit is unchanged; after it, the start
+         // happened, the permit stays consumed and the failure becomes the execution's result.
+         if (!consumed) throw error;
++        record.permitState = "issued";
+         exitStatus = "failure";
+         outputs = [{ value: { error: "Tool execution failed", code: "tool_execution_failed" } }];
+         this.audit.record(requestId, "tool_execution_blocked", { error: "failed" });

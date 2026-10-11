@@ -12,7 +12,10 @@
     "verify": "npm run typecheck && npm run build && npm test",
     "mutants:tenant": "node scripts/mutants/run-mutant-gate.mjs --manifest mutants/tenant/manifest.json",
     "mutants:ancestor": "node scripts/mutants/run-mutant-gate.mjs --manifest mutants/ancestor/manifest.json",
-    "mutants:tenant:regressions": "node scripts/mutants/gate-regressions.mjs"
+    "mutants:tenant:regressions": "node scripts/mutants/gate-regressions.mjs",
+    "mutants:lifecycle": "node scripts/mutants/run-mutant-gate.mjs --manifest mutants/lifecycle/manifest.json",
+    "mutants:lifecycle:regressions": "node scripts/mutants/lifecycle-gate-regressions.mjs",
+    "mutants:lifecycle:determinism": "node scripts/mutants/witness-determinism.mjs --runs 3"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

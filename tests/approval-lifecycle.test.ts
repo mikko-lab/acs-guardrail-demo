@@ -413,7 +413,13 @@ describe("L6 the provider's chain changes (snapshot comparison at approve, issue
     const id = await issued(f);
     serveChain(asTenancy(f.ctx), f.session, variant(f, kind));
     const o = await settle(start(f, id));
-    witness(["LC-L6-start", verdict(o), "chain_snapshot_mismatch"], ["LC-L6-start-state", snap(f, id).state, "issued"], ["LC-L6-start-calls", tool.calls, 0]);
+    witness(
+      ["LC-L6-start", verdict(o), "chain_snapshot_mismatch"],
+      ["LC-L6-start-state", snap(f, id).state, "issued"],
+      ["LC-L6-start-calls", tool.calls, 0],
+      // The authority a started execution would be bound to (none in the control): always the lineage's chain A.
+      ["LC-L6-start-execution-capability", f.ctx.executor.getExecution("exec-1")?.capability_id, undefined],
+    );
   });
 
   it("a single grant without ancestors is compared too: a re-issued grant for the same context is another authority", async () => {

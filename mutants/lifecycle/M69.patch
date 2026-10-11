@@ -1,0 +1,12 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..369f0ad 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1070,7 +1070,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+ 
+     // F(create): revocation, chain validity; the lineage is new, so the state check is "still absent".
+     const nowMs = this.clock.nowMs();
+-    this.#denyIfLineageRevoked("request", requestId, draft.authority, draft.bindings.tool, "final");
+     const validity = chainValidityAt([draft.bindings.leaf, ...draft.bindings.ancestors], nowMs);
+     if (validity) throw this.#lifecycleDenial("create", validity, undefined, requestId);
+     const record = new LineageRecord(`lineage-${++this.#lineageSeq}`, draft, approver, this.#revocations.nextSequence(), nowMs, nowMs + approvalTtlMs);

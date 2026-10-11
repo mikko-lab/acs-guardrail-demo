@@ -39,8 +39,8 @@ describe("binding comparator (start, §5.1)", () => {
     witness([`LC-C-comparator-${field}`, compareStartBindings(lineage, { ...lineage, ...change }), field]);
   });
 
-  it("an absent tenant on one side is a difference (tenancy and non-tenancy authorities never compare equal)", () => {
-    expect(compareStartBindings(lineage, { ...lineage, tenant_id: undefined })).toBe("tenant");
+  it("[LC-C-tenant-absent] an absent tenant on one side is a difference (tenancy and non-tenancy authorities never compare equal)", () => {
+    witness(["LC-C-comparator-tenant-absent", compareStartBindings(lineage, { ...lineage, tenant_id: undefined }), "tenant"]);
   });
 });
 

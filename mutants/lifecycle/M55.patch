@@ -1,0 +1,13 @@
+diff --git a/src/approval-lifecycle.ts b/src/approval-lifecycle.ts
+index 68aedff..5c9cc80 100644
+--- a/src/approval-lifecycle.ts
++++ b/src/approval-lifecycle.ts
+@@ -121,8 +121,6 @@ export interface StartBindings {
+  * imply an equal digest, and each field comparison stays the only check that separates its field.
+  */
+ export function compareStartBindings(lineage: StartBindings, candidate: StartBindings): BindingField | null {
+-  if (candidate.session_id !== lineage.session_id) return "session";
+-  if (candidate.agent_id !== lineage.agent_id) return "agent";
+   if (candidate.tenant_id !== lineage.tenant_id) return "tenant";
+   if (candidate.tool !== lineage.tool) return "tool";
+   if (candidate.arguments_digest !== lineage.arguments_digest) return "arguments";

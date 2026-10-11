@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Shared runtime-test mutant gate (docs/mutant-gate.md). One manifest per package: mutants/tenant/manifest.json
- * (tenant scope, package 1a) and mutants/ancestor/manifest.json (ancestor chains, package 1b).
+ * (tenant scope, package 1a), mutants/ancestor/manifest.json (ancestor chains, package 1b) and
+ * mutants/lifecycle/manifest.json (approval-permit lifecycle, G3/G4).
  *
  *   node scripts/mutants/run-mutant-gate.mjs --manifest <manifest.json> [--out <dir>] [--only <id>]
  *
@@ -25,6 +26,16 @@
  *   control value: under the mutant it must still pass with exactly those values and errors. Otherwise the mutant
  *   breaks more than its named safeguard, which is a technical failure.
  *
+ * Whole run (manifest "whole_run": "strict", used by the lifecycle manifest): every test that is not a named witness
+ *   must pass and log exactly the witness-log entries (checks and caught errors) it logs in the control run, unless the
+ *   mutant pins it in "collateral" with its exact status. A pinned collateral observation must occur exactly as pinned.
+ *   Anything else is an unexpected failure (technical, exit 2): a witness's failure never redeems an otherwise
+ *   unexpected run. Manifests without "whole_run" keep the earlier rule (other failures are diagnostics only).
+ *
+ * Evidence kinds: check_point, containment_effect, both, component_check_point, lifecycle_effect and
+ * check_and_lifecycle. Lifecycle state (approval and permit transitions) is reported as lifecycle evidence and is never
+ * counted as containment.
+ *
  * Any exception inside the gate itself (a crash) exits 2, never 1.
  *
  * Exit: 0 all detected; 1 some mutant not detected; 2 technical failure (manifest, control, patch, typecheck, build,
@@ -33,7 +44,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { constants as osConstants, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
@@ -60,17 +71,27 @@ const manifestBytes = readFileSync(manifestPath);
 const expectedManifestSha = readFileSync(manifestPath.replace(/\.json$/, ".sha256"), "utf8").trim();
 if (sha256(manifestBytes) !== expectedManifestSha) fail(2, `manifest SHA-256 ${sha256(manifestBytes)} does not match ${expectedManifestSha}`);
 const manifest = JSON.parse(manifestBytes.toString("utf8"));
-const KINDS = { check_point: ["check"], containment_effect: ["effect"], both: ["check", "effect"], component_check_point: ["check"] };
+const KINDS = {
+  check_point: ["check"], containment_effect: ["effect"], both: ["check", "effect"], component_check_point: ["check"],
+  lifecycle_effect: ["lifecycle"], check_and_lifecycle: ["check", "lifecycle"],
+};
+const PARTS = ["check", "effect", "lifecycle"];
 if (!Array.isArray(manifest.mutants) || manifest.mutants.length === 0) fail(2, "manifest names no mutants");
 if (!Array.isArray(manifest.recorded_gaps)) fail(2, "manifest has no recorded_gaps list");
+if (manifest.whole_run !== undefined && manifest.whole_run !== "strict") fail(2, `unknown whole_run mode ${manifest.whole_run}`);
+const strict = manifest.whole_run === "strict";
 const isControl = w => w.role === "control";
 for (const m of manifest.mutants) {
   if (!KINDS[m.kind]) fail(2, `${m.id}: unknown evidence kind ${m.kind}`);
   if (sha256(readFileSync(join(root, m.patch))) !== m.patch_sha256) fail(2, `${m.id}: patch SHA-256 does not match the manifest`);
   if (!m.witnesses.some(w => !isControl(w))) fail(2, `${m.id}: no witness`);
+  if (strict && (!Array.isArray(m.collateral) || m.collateral.some(c => typeof c.test !== "string" || !["passed", "failed"].includes(c.status)))) {
+    fail(2, `${m.id}: a strict manifest must pin the mutant's collateral observations ({ test, status })`);
+  }
   for (const w of m.witnesses) {
     if (w.role !== undefined && !isControl(w)) fail(2, `${m.id}: unknown witness role ${w.role}`);
     if (!Array.isArray(w.labels) || w.labels.length === 0) fail(2, `${m.id}: witness ${w.test} names no labels`);
+    if (w.labels.some(l => !PARTS.includes(l.part))) fail(2, `${m.id}: witness ${w.test} has a label with an unknown part`);
     if (isControl(w)) {
       if (w.labels.some(l => !isDeepStrictEqual(l.control, l.mutant))) fail(2, `${m.id}: control witness ${w.test} must keep every value`);
       continue;
@@ -99,6 +120,10 @@ const run = (cmd, argv, cwd, env = {}, timeout = 10 * 60_000) =>
 const procIssue = (name, p, okStatuses) => {
   if (p.error) return `${name}: ${p.error.code === "ETIMEDOUT" ? "timed out" : p.error.message}`;
   if (p.signal) return `${name}: killed by signal ${p.signal}`;
+  if (typeof p.status === "number" && p.status > 128 && osConstants.signals) {
+    const signal = Object.keys(osConstants.signals).find(k => osConstants.signals[k] === p.status - 128);
+    if (signal) return `${name}: killed by signal ${signal} (exit status ${p.status})`;
+  }
   if (!okStatuses.includes(p.status)) return `${name}: exit status ${p.status} (${(p.stdout + p.stderr).split("\n").filter(Boolean).slice(0, 3).join(" | ")})`;
   return undefined;
 };
@@ -112,14 +137,17 @@ function evaluateTree(dir, jestOkStatuses) {
   if (buildIssue) return { issue: buildIssue };
   const json = join(dir, "jest-result.json");
   const witnessLog = join(dir, "witness-log.jsonl");
-  const jest = run("npx", ["jest", "--ci", "--json", "--outputFile", json], dir, { WITNESS_LOG: witnessLog }, JEST_TIMEOUT_MS);
+  // jest runs as the direct child (no npx or shell in between), so a timeout or a signal reaches the jest process itself
+  // and is reported as such.
+  const jest = run(process.execPath, [join(dir, "node_modules/jest/bin/jest.js"), "--ci", "--json", "--outputFile", json], dir, { WITNESS_LOG: witnessLog }, JEST_TIMEOUT_MS);
   const jestIssue = procIssue("jest", jest, jestOkStatuses);
   if (jestIssue) return { issue: jestIssue };
   let result;
   try { result = JSON.parse(readFileSync(json, "utf8")); } catch { return { issue: "jest wrote no JSON result" }; }
   if (result.numRuntimeErrorTestSuites !== 0) return { issue: `${result.numRuntimeErrorTestSuites} suite execution errors` };
   const tests = result.testResults.flatMap(s => s.assertionResults.map(a => ({ file: s.name.slice(s.name.indexOf("/tests/") + 1), ...a })));
-  const inventory = tests.map(t => `${t.file} :: ${t.ancestorTitles.join(" > ")} :: ${t.title}`).sort();
+  for (const t of tests) { t.id = `${t.file} :: ${t.ancestorTitles.join(" > ")} :: ${t.title}`; t.key = `${t.ancestorTitles.join(" ")} ${t.title}`; }
+  const inventory = tests.map(t => t.id).sort();
   const log = existsSync(witnessLog) ? readFileSync(witnessLog, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)) : [];
   return { status: jest.status, result, tests, inventory, log };
 }
@@ -128,6 +156,27 @@ const witnessEntries = (obs, w) => obs.log.filter(e => e.test === `${w.describe}
 const errorsMatch = (observed, accepted) =>
   observed.length === accepted.length && observed.every((e, i) => `${e.name}: ${e.message}`.startsWith(accepted[i]));
 const describeErrors = errs => errs.map(e => `${e.name}: ${e.message}`.slice(0, 160));
+const logByTest = obs => { const by = new Map(); for (const e of obs.log) { if (!by.has(e.test)) by.set(e.test, []); by.get(e.test).push(e); } return by; };
+/**
+ * Strict whole-run check: the tests (other than the named witnesses) whose status or witness-log entries differ from the
+ * control must be exactly the mutant's pinned collateral, each with its pinned status. Returns a problem, if any.
+ */
+function wholeRunIssue(m, obs) {
+  const named = t => m.witnesses.some(w => t.file === w.file && t.title === w.test && t.ancestorTitles.join(" ") === w.describe);
+  const controlLog = logByTest(control), mutantLog = logByTest(obs);
+  const controlStatus = new Map(control.tests.map(t => [t.id, t.status]));
+  const affected = obs.tests
+    .filter(t => !named(t))
+    .filter(t => t.status !== controlStatus.get(t.id) || !isDeepStrictEqual(mutantLog.get(t.key) ?? [], controlLog.get(t.key) ?? []))
+    .map(t => ({ test: t.id, status: t.status }));
+  const key = c => `${c.status} ${c.test}`;
+  const pinned = new Set(m.collateral.map(key)), seen = new Set(affected.map(key));
+  const unexpected = affected.filter(c => !pinned.has(key(c)));
+  const missing = m.collateral.filter(c => !seen.has(key(c)));
+  if (unexpected.length) return { detail: `unexpected failure or changed observation outside the named witnesses: ${JSON.stringify(unexpected.slice(0, 3))}`, affected };
+  if (missing.length) return { detail: `pinned collateral did not occur as pinned: ${JSON.stringify(missing.slice(0, 3))}`, affected };
+  return { affected };
+}
 
 // 3. Control.
 const report = { manifest: manifestPath.slice(root.length + 1), manifest_sha256: expectedManifestSha, control: null, mutants: [] };
@@ -197,6 +246,11 @@ for (const m of manifest.mutants) {
       const allMutantValues = w.labels.every(l => isDeepStrictEqual(values[l.label][0], l.mutant));
       if (!(t?.status === "failed" && allMutantValues && isDeepStrictEqual(failedLabels, expectedFailed))) detected = false;
     }
+    if (!entry.status && strict) {
+      const whole = wholeRunIssue(m, obs);
+      entry.collateral = whole.affected;
+      if (whole.detail) technicalFailure(whole.detail);
+    }
     if (!entry.status) entry.status = detected ? "detected" : "not_detected";
   }
   if (entry.status === "technical_failure") technical++;
@@ -210,9 +264,15 @@ report.summary = {
   detected: report.mutants.filter(e => e.status === "detected").length,
   not_detected: undetected,
   technical_failures: technical,
-  evidence: { both: byKind("both"), containment_effect: byKind("containment_effect"), check_point: byKind("check_point"), component_check_point: byKind("component_check_point") },
+  evidence: {
+    both: byKind("both"), containment_effect: byKind("containment_effect"), check_point: byKind("check_point"),
+    component_check_point: byKind("component_check_point"), lifecycle_effect: byKind("lifecycle_effect"), check_and_lifecycle: byKind("check_and_lifecycle"),
+  },
+  // Containment evidence is a tool call, managed state, returned content or the cancellation signal only. Lifecycle
+  // state and component check points are never counted here.
   containment_evidence: [...byKind("both"), ...byKind("containment_effect")],
-  check_point_evidence_production_path: [...byKind("both"), ...byKind("check_point")],
+  lifecycle_evidence: [...byKind("lifecycle_effect"), ...byKind("check_and_lifecycle")],
+  check_point_evidence_production_path: [...byKind("both"), ...byKind("check_point"), ...byKind("check_and_lifecycle")],
   recorded_gaps: manifest.recorded_gaps,
 };
 mkdirSync(outDir, { recursive: true });
