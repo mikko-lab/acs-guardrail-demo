@@ -58,6 +58,10 @@ Invalid signatures, mismatched request/session/tool/approver bindings, unsupport
 
 Verification of an approval signature demonstrates that the configured approval authority signed the claim; it does not prove the physical identity or intent of a human person, nor does this repository integrate with a generic enterprise identity provider.
 
+## Approval–permit lifecycle (permit mode)
+
+An executor created with `{ lifecycle: "permit" }` (the optional last constructor argument) separates approval, permit issuance and start. `process()` never starts a tool in permit mode: a Guardian `ASK` creates a `pending` lineage and `ALLOW` an `approved` one (approver `policy`); each lineage binds the request (agent, session, tenant, tool, arguments digest) and the verified grant chain, frozen before the first callback. `approve()` / `reject()` take a human `ApprovalGrantV3`, which additionally signs the `lineage_id`, the request digest and the authority fingerprint; `issuePermit()` issues one single-use permit; `start()` takes a fresh signed request, compares it field by field with the lineage and consumes the permit only at the start effective point, immediately before the tool call, so of concurrent or re-entrant starts exactly one runs. Every operation re-checks revocation and chain validity at its own final fence after its last callback, and a revocation covers pending approvals and unused permits (listed in the receipt). Approval and permits never restore revoked or invalid authority. Lineage snapshots (`getLineage()`, `lineages()`) are frozen copies, and all transitions share one sequence with revocations. Legacy mode stays the default and is unchanged. See [docs/approval-permit-lifecycle.md](docs/approval-permit-lifecycle.md).
+
 ## Execution correlation and result gating
 
 Execution results are correlated to the originating request using the session, request reference, and exact tool name. Missing, consumed, cross-session, or mismatched references fail closed. Request authorization does not imply result authorization: the Result Guardian evaluates the correlated result before delivery. A result denial withholds raw output, returns a blocked representation, records `tool_result_withheld`, and does not record `tool_result_delivered`.
@@ -132,8 +136,8 @@ OCSF export does not replace the original audit evidence and does not provide im
 
 `npm run verify` runs the TypeScript typecheck and Jest suite. The current verification result is:
 
-- **28 test suites passed**
-- **549 tests passed**
+- **32 test suites passed**
+- **740 tests passed**
 - **0 snapshots**
 
 The major tested categories are:
@@ -144,7 +148,7 @@ The major tested categories are:
 - capability authority and fail-closed scope checks;
 - explicit authority revocation at the request, approval, start and delivery boundaries;
 - cooperative containment: cancellation requests, the commit fence and terminal evidence of managed executions;
-- human approval binding and lifecycle behavior;
+- human approval binding and lifecycle behavior, including the permit-mode approval–permit lifecycle and single-use permits;
 - execution permits;
 - concurrent authority isolation;
 - result correlation;
@@ -156,7 +160,7 @@ The major tested categories are:
 - incident evidence and deterministic classification; and
 - verified OCSF 1.8.0 export (integrity gate, mapping, metadata allowlist, JSONL determinism).
 
-Relevant focused coverage includes `tests/runtime-authority.test.ts`, `tests/evals/authority-adversarial.test.ts`, `tests/evals/concurrent-authority.test.ts`, `tests/authority-revocation.test.ts`, `tests/cooperative-containment.test.ts`, and `tests/audit.test.ts`.
+Relevant focused coverage includes `tests/approval-lifecycle.test.ts`, `tests/runtime-authority.test.ts`, `tests/evals/authority-adversarial.test.ts`, `tests/evals/concurrent-authority.test.ts`, `tests/authority-revocation.test.ts`, `tests/cooperative-containment.test.ts`, and `tests/audit.test.ts`.
 
 ## Evidence links
 
@@ -164,6 +168,7 @@ For exact mappings from claims to implementation and tests, see:
 
 - [docs/invariants-evidence.md](docs/invariants-evidence.md)
 - [docs/authority-revocation.md](docs/authority-revocation.md)
+- [docs/approval-permit-lifecycle.md](docs/approval-permit-lifecycle.md)
 - [docs/tenant-scope.md](docs/tenant-scope.md)
 - [docs/ancestor-chains.md](docs/ancestor-chains.md)
 - [docs/mutant-gate.md](docs/mutant-gate.md)
@@ -186,7 +191,7 @@ The crosswalk distinguishes pinned normative requirements, underspecified pinned
 
 - This is a reference/demo implementation, not production infrastructure.
 - No full ACS conformance or certification claim is made.
-- Runtime, replay, correlation, pending-action, and audit state are in memory; there is no durable persistence across process restart.
+- Runtime, replay, correlation, pending-action, lineage and audit state are in memory; there is no durable persistence across process restart.
 - The audit hash chain is tamper-evident for the supplied verified stream, but there is no immutable storage, durable append-only backend, non-repudiation, external anchoring, SIEM integration, or distributed verification.
 - There is no external identity provider, independent workload-identity provider, institutional identity proof, or physical-human identity/intent proof.
 - Authority revocation covers capability (including, in tenancy mode, the descendants of an issuer-attested ancestor), session and (tenancy mode) tenant scopes in the memory of one executor instance only; there is no persistent, distributed or cross-process revocation, no holder-to-holder delegation, and no distributed capability store. Revocation does not stop running tools. Cooperative containment fences only effects performed through `ctx.commit()` on the in-memory managed state of one executor; it does not stop non-cooperating code, fence network requests, external transactions or other effects outside the commit fence, or track unregistered background work.

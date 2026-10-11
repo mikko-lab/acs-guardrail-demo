@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added
+- **Approval–permit lifecycle (permit mode, G3/G4):** opt-in with the new optional constructor argument `{ lifecycle: "permit", permitTtlMs?, policyApprovalTtlMs? }`. Implements the approved plan `agent-control-evals` `docs/revocation/approval-permit-lifecycle-plan.md` @ `2e459ad` (D1–D20). See `docs/approval-permit-lifecycle.md`.
+  - **Lineages.** In permit mode `process()` creates a lineage and starts nothing: Guardian ASK → `{ status: "pending", lineage_id }`, ALLOW → `{ status: "approved", lineage_id }` (approver `policy`), DENY → no lineage. The bindings (agent, session, tenant, tool, arguments digest, chain snapshot; request id, request digest, authority fingerprint) are copied and frozen before the first callback after verification.
+  - **Operations.** `approve(ApprovalGrantV3)`, `reject(ApprovalGrantV3)`, `issuePermit({ lineage_id })` (synchronous) and `start({ lineage_id, request })` with a fresh signed request; reads `getLineage()`, `lineages()` (deep-frozen snapshot copies) and `authoritySequence()`.
+  - **Final fences.** Every operation, creation included, re-checks revocation of every bound scope and the chain's validity window after its last callback, then its own expiry and the state check-and-set, in one synchronous segment. Start consumes the single-use permit only inside the gate's final guard, immediately before the tool call (no reservation); of concurrent or re-entrant starts exactly one runs. A denied operation changes no state except an expiry it observed; a start that passed the effective point keeps the permit consumed.
+  - **Bindings.** Approve and reject compare the V3 grant (lineage, request id, request digest, authority fingerprint, tool, approver, decision). Start compares session, agent, tenant, tool and arguments digest field by field, and the provider's answer with the lineage's chain snapshot (leaf and every ancestor, by content fingerprint). The execution is always bound to the lineage's authority.
+  - **Revocation.** `RevocationStage` gains `issue`; `AuthorityRevokedError` gains `check` (`early` / `final`). In permit mode the receipt adds `pending_lineages`, `approved_lineages` and `unused_permits`. Lifecycle transitions and revocations share one monotonic sequence (`AuthorityRevocationRegistry.nextSequence()`).
+  - **`ApprovalGrantV3`** and `ApprovalGrantVerifier.verifyV3()` with the codes `LINEAGE_MISMATCH`, `REQUEST_DIGEST_MISMATCH`, `AUTHORITY_FINGERPRINT_MISMATCH`.
+  - **Errors.** `LifecycleDeniedError { stage, reason, lineage_id, detail }` and `LifecycleModeError` (permit-mode `resolveApproval()`, legacy-mode lifecycle methods).
+  - **Audit and OCSF.** New event types `approval_granted`, `permit_issued`, `permit_expired`, `lifecycle_operation_denied`; `lineage_id` (and `check`) on the existing events of the permit-mode paths; lifecycle counts on `authority_revoked`. The OCSF allowlists list exactly these keys.
+  - **Evidence.** `tests/approval-lifecycle.test.ts` (83 tests: L1–L16 with their variants, the transition table, grant verification, the unobservable-settlement contract) and `tests/approval-lifecycle-components.test.ts` (29 tests). No lifecycle mutant gate yet; that is a separate step.
+
+### Changed
+- `GuardedExecutor` is generic in its lifecycle mode (`GuardedExecutor<M extends LifecycleMode = "legacy">`, inferred from the options). Legacy code keeps the unchanged `ProcessResult`.
+- `process()` step 0 (schema validation) and the result-request submission are factored into private helpers shared with `start()`; legacy behaviour is unchanged and every tenant and ancestor mutant patch applies unchanged.
+- `tests/ocsf-mapper.test.ts`: the allowlist inventory lists the four new event types.
+
 ## [v0.5.0] - 2026-10-10
 
 ### Summary

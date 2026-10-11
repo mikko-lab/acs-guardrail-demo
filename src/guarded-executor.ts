@@ -55,6 +55,12 @@ import * as crypto from "crypto";
 import { CapabilityGrantVerifier, CapabilityContext, CapabilityVerificationError, CapabilityGrant, VerifiedCapabilityChain, capabilityFingerprint, tenantOf } from "./capability-grant";
 import { AuthorityRevocationRegistry, CheckedAuthority, parseRevocationTarget, RevocationMatch, RevocationTarget, RevocationTargetError } from "./authority-revocation";
 import { ExecutionSnapshot, ExecutionTerminal, ManagedExecution, ManagedStateStore, ReadonlyManagedState } from "./managed-execution";
+import {
+  ApprovalReceipt, argumentsDigest, chainValidityAt, chainValidityEnd, compareStartBindings, DEFAULT_PERMIT_TTL_MS,
+  DEFAULT_POLICY_APPROVAL_TTL_MS, draftLineage, LifecycleDeniedError, LifecycleDenialReason, LifecycleMode, LifecycleModeError,
+  LifecycleOptions, LifecycleStage, lineageIdOf, LineageAuthority, LineageDraft, LineageRecord, LineageSnapshot,
+  matchesLineageSnapshot, PermitReceipt, RejectionReceipt, snapshotLineage, startExecutionAuthority,
+} from "./approval-lifecycle";
 
 export interface CapabilityLookupContext {
   agent_id: string;
@@ -71,6 +77,21 @@ export interface CapabilityProvider {
 export type ProcessResult =
   | { status: "executed"; result: AcsToolCallResult }
   | { status: "pending" };
+
+/**
+ * process() in permit mode (docs/approval-permit-lifecycle.md) never executes: it returns "pending" (Guardian ASK) or
+ * "approved" (Guardian ALLOW) with the new lineage_id. audit_recorded is false if the audit record after the
+ * lineage's creation failed; the lineage exists regardless.
+ */
+export type PermitProcessResult =
+  | { status: "pending"; lineage_id: string; audit_recorded: boolean }
+  | { status: "approved"; lineage_id: string; audit_recorded: boolean };
+
+/** The result type of process() for an executor mode; legacy mode keeps ProcessResult unchanged. */
+export type ProcessResultFor<M extends LifecycleMode> = M extends "permit" ? PermitProcessResult : ProcessResult;
+
+/** start() result: the tool ran under the lineage's permit (its result may be withheld or a failure). */
+export interface StartResult { status: "executed"; result: AcsToolCallResult; lineage_id: string }
 
 interface PendingAction {
   createdAtMs: number;
@@ -95,20 +116,23 @@ type ResultOutcome =
  */
 interface BoundAuthority { sessionId: string; capabilityId: string; tenantId: string | undefined; ancestorIds: readonly string[] }
 
-/** Boundary at which revoked authority was enforced. */
-export type RevocationStage = "request" | "approval" | "start" | "delivery";
+/** Boundary at which revoked authority was enforced. "issue" exists only in permit mode. */
+export type RevocationStage = "request" | "approval" | "issue" | "start" | "delivery";
 
 export class AuthorityRevokedError extends Error {
   readonly code = "AUTHORITY_REVOKED";
   readonly stage: RevocationStage;
   readonly reason: RevocationMatch["reason"];
   readonly revocation_id: string;
-  constructor(stage: RevocationStage, match: RevocationMatch) {
-    super(`Execution blocked (${stage}): authority revoked (${match.reason}, ${match.record.revocation_id})`);
+  /** Permit mode: which check of the stage denied, the early check or the final fence (docs/approval-permit-lifecycle.md). */
+  readonly check: "early" | "final" | undefined;
+  constructor(stage: RevocationStage, match: RevocationMatch, check?: "early" | "final") {
+    super(`Execution blocked (${stage}${check ? `/${check}` : ""}): authority revoked (${match.reason}, ${match.record.revocation_id})`);
     this.name = "AuthorityRevokedError";
     this.stage = stage;
     this.reason = match.reason;
     this.revocation_id = match.record.revocation_id;
+    this.check = check;
   }
 }
 
@@ -133,6 +157,10 @@ export interface RevocationReceiptV1 {
   persistence: "in_memory_single_runtime_instance";
   /** False if recording the authority_revoked audit event failed; the revocation is in effect regardless. */
   audit_recorded: boolean;
+  /** Permit mode only: lineage_ids covered at the effective point that were pending, approved, or issued and unused. */
+  pending_lineages?: string[];
+  approved_lineages?: string[];
+  unused_permits?: string[];
 }
 
 function capabilityRejectionReason(err: unknown): string {
@@ -161,7 +189,11 @@ function capabilityRejectionReason(err: unknown): string {
 import { ApprovalGrantVerifier, ApprovalGrantV1, ApprovalVerificationError } from "./approval-verifier";
 import { Clock } from "./replay-guard";
 
-export class GuardedExecutor {
+/**
+ * M is the lifecycle mode ("legacy" by default). It is inferred from the constructor's options, so an executor built
+ * with { lifecycle: "permit" } has the permit-mode process() result type and existing code keeps ProcessResult.
+ */
+export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
   private readonly schemaValidator: SchemaValidator;
   private readonly signatureService: SignatureService;
   private readonly replayGuard: ReplayGuard;
@@ -187,6 +219,12 @@ export class GuardedExecutor {
   #terminalLog: ExecutionTerminal[] = [];
   #executionSeq = 0;
   #commitSeq = 0;
+  readonly #mode: LifecycleMode;
+  readonly #permitTtlMs: number;
+  readonly #policyApprovalTtlMs: number;
+  #lineages = new Map<string, LineageRecord>();
+  #lineageSeq = 0;
+  #permitSeq = 0;
 
   // Keyed by: `${session_id}:${request_id}`
   private readonly pendingActions: Map<string, PendingAction> = new Map();
@@ -202,7 +240,8 @@ export class GuardedExecutor {
     clock: Clock = { nowMs: () => Date.now() },
     approvalFutureSkewMs: number = 30000,
     capabilityProvider: CapabilityProvider,
-    capabilityVerifier: CapabilityGrantVerifier
+    capabilityVerifier: CapabilityGrantVerifier,
+    options: LifecycleOptions & { lifecycle?: M } = {}
   ) {
     this.schemaValidator = schemaValidator;
     this.signatureService = signatureService;
@@ -226,6 +265,21 @@ export class GuardedExecutor {
     }
     this.approvalFutureSkewMs = approvalFutureSkewMs;
     this.#gate = new ExecutionGate(audit, this.#permitAuthority);
+    const mode = options.lifecycle ?? "legacy";
+    if (mode !== "legacy" && mode !== "permit") throw new Error("lifecycle must be 'legacy' or 'permit'");
+    this.#mode = mode;
+    const ttl = (name: string, value: number | undefined, fallback: number): number => {
+      if (value === undefined) return fallback;
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive finite number`);
+      return value;
+    };
+    this.#permitTtlMs = ttl("permitTtlMs", options.permitTtlMs, DEFAULT_PERMIT_TTL_MS);
+    this.#policyApprovalTtlMs = ttl("policyApprovalTtlMs", options.policyApprovalTtlMs, DEFAULT_POLICY_APPROVAL_TTL_MS);
+  }
+
+  /** The executor's lifecycle mode, fixed at construction. */
+  get lifecycleMode(): LifecycleMode {
+    return this.#mode;
   }
 
   /**
@@ -248,15 +302,14 @@ export class GuardedExecutor {
     return response;
   }
 
-  async process(input: unknown): Promise<ProcessResult> {
-    // Step 0 — Schema validation
-    let request: import("./acs-types").AcsToolCallRequest;
+  /** Step 0 of process() and start(): schema validation of an untrusted tool-call request. */
+  #validateToolCallRequest(input: unknown): import("./acs-types").AcsToolCallRequest {
     try {
       const validated = this.schemaValidator.validateRequest(input);
       if (validated.method !== "steps/toolCallRequest") {
         throw new Error("Expected toolCallRequest");
       }
-      request = validated as import("./acs-types").AcsToolCallRequest;
+      return validated as import("./acs-types").AcsToolCallRequest;
     } catch (error: unknown) {
       if (error instanceof AddressableSchemaError) {
         const rawResponse: import("./acs-types").AcsResponseEnvelope = {
@@ -275,6 +328,16 @@ export class GuardedExecutor {
       }
       throw error;
     }
+  }
+
+  process(input: unknown): Promise<ProcessResultFor<M>> {
+    // The same promise object: no Promise turn is added between the delivery check and the public fulfilment.
+    return this.#process(input) as Promise<ProcessResultFor<M>>;
+  }
+
+  async #process(input: unknown): Promise<ProcessResult | PermitProcessResult> {
+    // Step 0 — Schema validation
+    const request = this.#validateToolCallRequest(input);
     const { params } = request;
 
     // Step 0.5 — Signature verification
@@ -390,6 +453,11 @@ export class GuardedExecutor {
       tool: requestedTool,
     });
 
+    // Permit mode: the lineage bindings are copied and frozen here, before the first callback after verification
+    // (capability_verified audit, Guardian, guardian_decision audit), so no callback can change what is bound.
+    const lineageDraft = this.#mode === "permit"
+      ? draftLineage({ agentId: expectedAgentId, sessionId: expectedSessionId, requestId: params.request_id, tool: requestedTool, arguments: params.payload.arguments, leaf: verifiedCapability, ancestors: verifiedChain.ancestors })
+      : undefined;
     this.audit.record(params.request_id, "capability_verified", {
       capability_id: verifiedCapability.capability_id,
       agent_id: expectedAgentId,
@@ -414,6 +482,9 @@ export class GuardedExecutor {
       this.audit.record(params.request_id, "tool_execution_blocked", { reason: "denied" });
       throw new Error(`Execution blocked (deny): ${response.result.reasoning ?? response.result.reason_codes?.[0]}`);
     }
+
+    // Permit mode: ASK and ALLOW both create a lineage at the creation fence; process() never starts a tool.
+    if (lineageDraft) return this.#createLineage(params.request_id, response, lineageDraft);
 
     if (response.result.decision === "ask") {
       const askDetails = response.result.ask_details;
@@ -530,7 +601,7 @@ export class GuardedExecutor {
   }
 
   /**
-   * Delivery effective point. Called synchronously by process() and resolveApproval() after their last await,
+   * Delivery effective point. Called synchronously by process(), start() and resolveApproval() after their last await,
    * directly in their return statement, so the check is the last runtime action before the public promise is
    * fulfilled with the result. No callback or Promise transition remains between this check and the hand-over.
    */
@@ -612,6 +683,19 @@ export class GuardedExecutor {
       this.audit.record(originalRequestId, "tool_execution_blocked", { error: "failed" });
     }
 
+    return this.#submitToolResult(request, exitStatus, outputs, authority);
+  }
+
+  /** Builds, signs and processes the runtime's own tool-call result request for a finished (or failed) execution. */
+  #submitToolResult(
+    request: import("./acs-types").AcsToolCallRequest,
+    exitStatus: import("./acs-types").AcsToolCallResult["exit_status"],
+    outputs: import("./acs-types").AcsToolCallResult["outputs"],
+    authority: BoundAuthority
+  ): Promise<ResultOutcome> {
+    const { params } = request;
+    const sessionId = params.metadata.session_id;
+    const toolName = params.payload.tool.name;
     const resultRequest: import("./acs-types").AcsToolCallResultRequest = {
       jsonrpc: "2.0",
       method: "steps/toolCallResult",
@@ -626,7 +710,7 @@ export class GuardedExecutor {
         },
         payload: {
           tool: { name: toolName },
-          request_id_ref: originalRequestId,
+          request_id_ref: params.request_id,
           exit_status: exitStatus,
           outputs
         }
@@ -645,6 +729,7 @@ export class GuardedExecutor {
    * @param skewMs The maximum allowed future skew for issued_at. Default 30000ms (30s).
    */
   async resolveApproval(input: unknown): Promise<import("./acs-types").AcsToolCallResult | void> {
+    if (this.#mode === "permit") throw new LifecycleModeError("resolveApproval", "permit");
     if (!input || typeof input !== "object" || Array.isArray(input)) {
       throw new Error("Validation Error: input must be a JSON object");
     }
@@ -920,6 +1005,12 @@ export class GuardedExecutor {
       persistence: "in_memory_single_runtime_instance",
       audit_recorded: true,
     };
+    // Permit mode: the cut's reach into the lifecycle (lineages covered at the effective point, by state).
+    const lifecycle = this.#mode === "permit" ? this.#coveredLineages(covered) : undefined;
+    if (lifecycle) {
+      receipt.enforced_at = ["request", "approval", "issue", "start", "delivery"];
+      Object.assign(receipt, lifecycle);
+    }
     try {
       this.audit.record(record.revocation_id, "authority_revoked", {
         revocation_id: record.revocation_id,
@@ -932,6 +1023,7 @@ export class GuardedExecutor {
         effective_at: record.effective_at,
         pending_approvals: pending_approvals.length,
         in_flight_executions: in_flight_executions.length,
+        ...(lifecycle ? { pending_lineages: lifecycle.pending_lineages.length, approved_lineages: lifecycle.approved_lineages.length, unused_permits: lifecycle.unused_permits.length } : {}),
       });
     } catch {
       // The revocation is already in effect; report the missing evidence instead of undoing it.
@@ -945,6 +1037,455 @@ export class GuardedExecutor {
       }
     }
     return receipt;
+  }
+
+  // ── Approval-permit lifecycle (permit mode, docs/approval-permit-lifecycle.md) ────────────────────────────────────
+
+  /**
+   * Creation of a lineage at the end of process() in permit mode. The creation fence F(create) runs here, after the
+   * last callback of process() (the guardian_decision audit): revocation of every bound scope and chain validity on
+   * the executor clock, then the record is created in the same synchronous segment. Nothing is started.
+   */
+  #createLineage(requestId: string, response: AcsResponseEnvelope, draft: LineageDraft): PermitProcessResult {
+    let approver: { type: "human" | "policy"; id: string };
+    let approvalTtlMs: number;
+    if (response.result.decision === "ask") {
+      const askDetails = response.result.ask_details;
+      if (!askDetails) throw new Error("Missing ask_details for ASK decision");
+      if (askDetails.approver.type !== "human") {
+        this.audit.record(requestId, "tool_execution_blocked", { reason: "unsupported_approver_type" });
+        throw new Error("Local profile requires human approval only; agent/service is unsupported.");
+      }
+      if (askDetails.timeout_disposition === "allow") {
+        this.audit.record(requestId, "tool_execution_blocked", { reason: "timeout_disposition_allow_rejected" });
+        throw new Error("Local profile requires timeout_disposition to be deny or absent; allow is deliberately unsupported.");
+      }
+      approver = { type: "human", id: askDetails.approver.id };
+      approvalTtlMs = askDetails.timeout_seconds * 1000;
+    } else {
+      approver = { type: "policy", id: "guardian" };
+      approvalTtlMs = this.#policyApprovalTtlMs;
+    }
+
+    // F(create): revocation, chain validity; the lineage is new, so the state check is "still absent".
+    const nowMs = this.clock.nowMs();
+    this.#denyIfLineageRevoked("request", requestId, draft.authority, draft.bindings.tool, "final");
+    const validity = chainValidityAt([draft.bindings.leaf, ...draft.bindings.ancestors], nowMs);
+    if (validity) throw this.#lifecycleDenial("create", validity, undefined, requestId);
+    const record = new LineageRecord(`lineage-${++this.#lineageSeq}`, draft, approver, this.#revocations.nextSequence(), nowMs, nowMs + approvalTtlMs);
+    if (approver.type === "policy") {
+      record.approvalState = "approved";
+      record.approvedSeq = this.#revocations.nextSequence();
+      record.approvedBy = approver;
+      record.decidedAt = new Date(nowMs).toISOString();
+    }
+    this.#lineages.set(record.lineageId, record);
+
+    // After the effective point: an audit failure is reported, it never undoes the creation.
+    const audit_recorded = this.#recordAfterTransition(requestId, approver.type === "human" ? "approval_requested" : "approval_granted", {
+      session_id: draft.bindings.session_id,
+      lineage_id: record.lineageId,
+      ...(approver.type === "policy" ? { approver_type: "policy", approved_seq: record.approvedSeq } : {}),
+    });
+    return approver.type === "human"
+      ? { status: "pending", lineage_id: record.lineageId, audit_recorded }
+      : { status: "approved", lineage_id: record.lineageId, audit_recorded };
+  }
+
+  /**
+   * Approve a pending lineage with a human ApprovalGrantV3 (decision "approve"). Synchronous: no Promise turn exists
+   * between the final fence and the transition. Order (plan §5.4): grant verification, early revocation, snapshot-chain
+   * validity, provider re-resolution (the last callback), snapshot comparison, verification and binding of the
+   * provider's chain, then F(approve) (revocation, chain validity, approval expiry) and the transition pending -> approved.
+   */
+  approve(input: unknown): ApprovalReceipt {
+    this.#requirePermitMode("approve");
+    const { record, grant } = this.#verifyDecision(input, "approve");
+    const b = record.bindings;
+    this.#reverifyLineageAuthority(record, "approval");
+    this.#finalFence(record, "approval", b.request_id, record.approvalExpiresAtMs, () => this.#expireApproval(record, "approval"));
+    if (record.approvalState !== "pending") throw this.#lifecycleDenial("approval", "not_pending", record, b.request_id);
+    record.approvalState = "approved";
+    record.approvedSeq = this.#revocations.nextSequence();
+    record.approvedBy = { type: "human", id: grant.approver.id };
+    record.decidedAt = new Date(this.clock.nowMs()).toISOString();
+    const audit_recorded = this.#recordAfterTransition(b.request_id, "approval_granted", {
+      approver_type: "human", approver_id: grant.approver.id, session_id: b.session_id, request_id: b.request_id,
+      lineage_id: record.lineageId, approved_seq: record.approvedSeq,
+    });
+    return { lineage_id: record.lineageId, decision: "approved", approved_seq: record.approvedSeq, approver: { type: "human", id: grant.approver.id }, audit_recorded };
+  }
+
+  /**
+   * Reject a pending lineage with a human ApprovalGrantV3 (decision "reject"). A reject only removes authority, so
+   * revocation and validity are not checked; the state must still be pending.
+   */
+  reject(input: unknown): RejectionReceipt {
+    this.#requirePermitMode("reject");
+    const { record, grant } = this.#verifyDecision(input, "reject");
+    const b = record.bindings;
+    if (record.approvalState !== "pending") throw this.#lifecycleDenial("approval", "not_pending", record, b.request_id);
+    record.approvalState = "rejected";
+    record.decidedAt = new Date(this.clock.nowMs()).toISOString();
+    const audit_recorded = this.#recordAfterTransition(b.request_id, "human_rejection", {
+      approver_type: "human", approver_id: grant.approver.id, session_id: b.session_id, request_id: b.request_id, lineage_id: record.lineageId,
+    });
+    return { lineage_id: record.lineageId, decision: "rejected", approver: { type: "human", id: grant.approver.id }, audit_recorded };
+  }
+
+  /**
+   * Issue the single-use permit of an approved lineage. Synchronous. Order (plan §5.4): state, early revocation,
+   * snapshot-chain validity, provider re-resolution (the last callback), snapshot comparison, verification and
+   * binding, then F(issue) (revocation, chain validity, approval expiry) and the transition approved -> issued.
+   */
+  issuePermit(input: unknown): PermitReceipt {
+    this.#requirePermitMode("issuePermit");
+    const record = this.#lineageFor(lineageIdOf(input, "issue"), "issue");
+    const b = record.bindings;
+    if (record.state !== "approved") throw this.#lifecycleDenial("issue", "not_approved", record, b.request_id);
+    this.#reverifyLineageAuthority(record, "issue");
+    this.#finalFence(record, "issue", b.request_id, record.approvalExpiresAtMs, () => this.#expireApproval(record, "issue"));
+    if (record.state !== "approved") throw this.#lifecycleDenial("issue", "not_approved", record, b.request_id);
+    const nowMs = this.clock.nowMs();
+    record.permitState = "issued";
+    record.permitId = `permit-${++this.#permitSeq}`;
+    record.permitExpiresAtMs = Math.min(nowMs + this.#permitTtlMs, chainValidityEnd([b.leaf, ...b.ancestors]));
+    record.issuedSeq = this.#revocations.nextSequence();
+    const expires_at = new Date(record.permitExpiresAtMs).toISOString();
+    const audit_recorded = this.#recordAfterTransition(b.request_id, "permit_issued", {
+      session_id: b.session_id, lineage_id: record.lineageId, permit_id: record.permitId, issued_seq: record.issuedSeq, expires_at,
+    });
+    return { lineage_id: record.lineageId, permit_id: record.permitId, issued_seq: record.issuedSeq, expires_at, audit_recorded };
+  }
+
+  /**
+   * Start the approved request of an issued lineage with a fresh signed request R′ ({ lineage_id, request }). R′ goes
+   * through schema, signature and replay checks like any request and must carry an unused request_id. The lineage
+   * permit is consumed only at the start effective point: inside the gate's final guard, after the
+   * tool_execution_started audit, immediately before the tool function call. A start denied before that point
+   * leaves the permit unchanged; a start that passed it consumed the permit even if the tool then fails.
+   */
+  async start(input: unknown): Promise<StartResult> {
+    this.#requirePermitMode("start");
+    const record = this.#lineageFor(lineageIdOf(input, "start"), "start");
+    const b = record.bindings;
+    // Copied once at entry: getters, proxies or later caller mutation cannot change what is checked or invoked.
+    let entry: unknown;
+    try {
+      entry = JSON.parse(JSON.stringify((input as Record<string, unknown>).request));
+    } catch {
+      throw this.#lifecycleDenial("start", "malformed_lifecycle_call", record, "unknown", { sub_reason: "request is not JSON" });
+    }
+    const request = this.#validateToolCallRequest(entry);
+    const { params } = request;
+    const requestId = params.request_id;
+    const sessionId = params.metadata.session_id;
+    const agentId = params.metadata.agent_id || "unknown";
+    const tool = params.payload.tool.name;
+
+    this.signatureService.verifyRequest(request);
+    this.replayGuard.check(request);
+    this.audit.record(requestId, "tool_call_requested", { session_id: sessionId, tool, lineage_id: record.lineageId });
+
+    // Request-stage revocation of R′'s session and its bound tenant, before the provider is asked.
+    this.#denyIfRevoked("request", requestId, { session_id: sessionId, tenant_id: this.#revocations.sessionTenant(sessionId), tool });
+
+    // Provider for R′'s context; its answer must be the lineage's chain snapshot (the only authority comparison at start).
+    let raw: unknown;
+    try {
+      raw = this.capabilityProvider.resolve({ agent_id: agentId, session_id: sessionId, request_id: requestId, tool });
+    } catch (e: any) {
+      throw this.#lifecycleDenial("start", "capability_provider_error", record, requestId, { sub_reason: String(e?.message ?? e) });
+    }
+    if (!raw) throw this.#lifecycleDenial("start", "missing_capability", record, requestId);
+    if (!matchesLineageSnapshot(raw, b.leaf, b.ancestors)) throw this.#lifecycleDenial("start", "chain_snapshot_mismatch", record, requestId);
+    let verified!: VerifiedCapabilityChain;
+    try {
+      verified = this.capabilityVerifier.verifyChain(raw, { expectedAgentId: agentId, expectedSessionId: sessionId, requestedTool: tool });
+    } catch (err: any) {
+      throw this.#lifecycleDenial("start", capabilityRejectionReason(err) as LifecycleDenialReason, record, requestId);
+    }
+    const verifiedTenant = tenantOf(verified.leaf);
+    if (this.#tenancy && params.tenant_id !== undefined && params.tenant_id !== verifiedTenant) {
+      throw this.#lifecycleDenial("start", "tenant_mismatch", record, requestId);
+    }
+    const conflict = this.#bindVerifiedChain(verified);
+    if (conflict) throw this.#lifecycleDenial("start", conflict, record, requestId);
+    const verifiedAncestorIds = verified.ancestors.map(a => a.capability_id);
+    this.#denyIfRevoked("request", requestId, { session_id: sessionId, capability_id: verified.leaf.capability_id, tenant_id: verifiedTenant, ancestor_capability_ids: verifiedAncestorIds, tool });
+    this.audit.record(requestId, "capability_verified", {
+      capability_id: verified.leaf.capability_id,
+      agent_id: agentId,
+      session_id: sessionId,
+      ...(verifiedTenant !== undefined ? { tenant_id: verifiedTenant } : {}),
+      ...(verifiedAncestorIds.length > 0 ? { ancestor_capability_ids: verifiedAncestorIds } : {}),
+      tool,
+      lineage_id: record.lineageId,
+    });
+
+    // Binding comparisons of R′, field by field (request_digest is not compared at start).
+    const field = compareStartBindings(b, { session_id: sessionId, agent_id: agentId, tenant_id: verifiedTenant, tool, arguments_digest: argumentsDigest(params.payload.arguments) });
+    if (field) throw this.#lifecycleDenial("start", "lineage_binding_mismatch", record, requestId, { field });
+
+    // Early lineage-state check (fail fast only; it changes nothing). Expiry is part of F(start) only.
+    this.#assertPermitUsable(record, requestId);
+
+    // The execution is bound to the lineage's authority (its chain snapshot), never to the provider's answer.
+    const authority: BoundAuthority = startExecutionAuthority(record.draft, verified);
+    this.#denyIfLineageRevoked("start", requestId, authority, tool, "early", record.lineageId);
+
+    const outcome = await this.#startLineageExecution(record, request, authority);
+    // Nothing may run between the hand-over check and the return that fulfils the public promise.
+    return { status: "executed", result: this.#handOver(outcome), lineage_id: record.lineageId };
+  }
+
+  /** A frozen snapshot copy of one lineage, or undefined. */
+  getLineage(lineageId: string): LineageSnapshot | undefined {
+    this.#requirePermitMode("getLineage");
+    const record = this.#lineages.get(lineageId);
+    return record ? snapshotLineage(record, this.#coveredBy(record.authority)) : undefined;
+  }
+
+  /** Frozen snapshot copies of every lineage, in creation order. */
+  lineages(): LineageSnapshot[] {
+    this.#requirePermitMode("lineages");
+    return [...this.#lineages.values()].map(record => snapshotLineage(record, this.#coveredBy(record.authority)));
+  }
+
+  /** The last allocated value of the authority sequence shared by revocations and lifecycle transitions. */
+  authoritySequence(): number {
+    return this.#revocations.currentSequence();
+  }
+
+  async #startLineageExecution(record: LineageRecord, request: import("./acs-types").AcsToolCallRequest, authority: BoundAuthority): Promise<ResultOutcome> {
+    const { params } = request;
+    const sessionId = params.metadata.session_id;
+    const toolName = params.payload.tool.name;
+    const requestId = params.request_id;
+    const flight = ++this.#inFlightSeq;
+    this.#inFlight.set(flight, { sessionId, requestId, capabilityId: authority.capabilityId, tenantId: authority.tenantId, ancestorIds: authority.ancestorIds });
+    try {
+      let consumed = false;
+      let exitStatus: "success" | "failure" | "blocked" | "timeout" = "success";
+      let outputs: import("./acs-types").AcsToolCallResult["outputs"] = [];
+      try {
+        this.correlation.registerExecution(sessionId, requestId, toolName);
+        const permit = this.#gate.mintPermit(this.#permitAuthority, sessionId, requestId, toolName);
+        // Start effective point: F(start) and the consumption run inside the gate's final guard, after every callback
+        // of the start path (including the tool_execution_started audit), and the managed execution is created and
+        // the tool function called in the same synchronous segment.
+        const result = await this.#gate.execute(request, permit, () => {
+          this.#finalStartFence(record, requestId, authority);
+          consumed = true;
+          return (toolFn, args) => {
+            const execution = this.#startManagedExecution(requestId, authority);
+            record.executionId = execution.id;
+            return execution.invoke(toolFn, args);
+          };
+        });
+        outputs = result.outputs || [{ value: result }];
+        exitStatus = result.exit_status || "success";
+      } catch (error: unknown) {
+        // Before the effective point every failure is a denial and the permit is unchanged; after it, the start
+        // happened, the permit stays consumed and the failure becomes the execution's result.
+        if (!consumed) throw error;
+        exitStatus = "failure";
+        outputs = [{ value: { error: "Tool execution failed", code: "tool_execution_failed" } }];
+        this.audit.record(requestId, "tool_execution_blocked", { error: "failed" });
+      }
+      return await this.#submitToolResult(request, exitStatus, outputs, authority);
+    } finally {
+      this.#inFlight.delete(flight);
+    }
+  }
+
+  /** F(start) and the consumption: revocation, chain validity, permit expiry, then the state check-and-set. No callback. */
+  #finalStartFence(record: LineageRecord, requestId: string, authority: BoundAuthority): void {
+    this.#finalFence(record, "start", requestId, record.permitExpiresAtMs ?? Infinity, () => this.#expirePermit(record, requestId), authority);
+    if (record.permitState !== "issued") throw this.#lifecycleDenial("start", record.permitState === "consumed" ? "permit_consumed" : "permit_not_issued", record, requestId);
+    record.permitState = "consumed";
+    record.consumedSeq = this.#revocations.nextSequence();
+    record.startRequestId = requestId;
+  }
+
+  #assertPermitUsable(record: LineageRecord, requestId: string): void {
+    const state = record.state;
+    if (state === "consumed") throw this.#lifecycleDenial("start", "permit_consumed", record, requestId);
+    if (state === "permit_expired") throw this.#lifecycleDenial("start", "permit_expired", record, requestId);
+    if (state !== "issued") throw this.#lifecycleDenial("start", "permit_not_issued", record, requestId);
+  }
+
+  /**
+   * The final fence F(op) of approve, issue and start, on the executor clock: revocation of every bound scope, chain
+   * validity of the lineage's snapshot, the operation's own expiry. The caller's state check-and-set follows in the
+   * same synchronous segment.
+   */
+  #finalFence(record: LineageRecord, stage: Exclude<LifecycleStage, "create">, requestId: string, expiresAtMs: number, expire: () => Error, authority: LineageAuthority = record.authority): void {
+    const b = record.bindings;
+    this.#denyIfLineageRevoked(stage, requestId, authority, b.tool, "final", record.lineageId);
+    const nowMs = this.clock.nowMs();
+    const validity = chainValidityAt([b.leaf, ...b.ancestors], nowMs);
+    if (validity) throw this.#lifecycleDenial(stage, validity, record, requestId);
+    if (nowMs >= expiresAtMs) throw expire();
+  }
+
+  /**
+   * Re-verification of a lineage's authority at approve and issue (§5.2): early revocation, current validity of the
+   * snapshot chain, provider re-resolution for the original context, the strict snapshot comparison on the raw
+   * answer, verification and first-seen binding of the answer. The answer is evidence only; it never replaces the
+   * lineage's authority.
+   */
+  #reverifyLineageAuthority(record: LineageRecord, stage: "approval" | "issue"): void {
+    const b = record.bindings;
+    const requestId = b.request_id;
+    this.#denyIfLineageRevoked(stage, requestId, record.authority, b.tool, "early", record.lineageId);
+    const ctx: CapabilityContext = { expectedAgentId: b.agent_id, expectedSessionId: b.session_id, requestedTool: b.tool };
+    try {
+      this.capabilityVerifier.verifyChain(b.ancestors.length > 0 ? { kind: "capability_chain", leaf: b.leaf, ancestors: [...b.ancestors] } : b.leaf, ctx);
+    } catch (err: any) {
+      throw this.#lifecycleDenial(stage, capabilityRejectionReason(err) as LifecycleDenialReason, record, requestId);
+    }
+    let raw: unknown;
+    try {
+      raw = this.capabilityProvider.resolve({ agent_id: b.agent_id, session_id: b.session_id, request_id: requestId, tool: b.tool });
+    } catch (e: any) {
+      throw this.#lifecycleDenial(stage, "capability_provider_error", record, requestId, { sub_reason: String(e?.message ?? e) });
+    }
+    if (!raw) throw this.#lifecycleDenial(stage, "missing_capability", record, requestId);
+    if (!matchesLineageSnapshot(raw, b.leaf, b.ancestors)) throw this.#lifecycleDenial(stage, "chain_snapshot_mismatch", record, requestId);
+    let current!: VerifiedCapabilityChain;
+    try {
+      current = this.capabilityVerifier.verifyChain(raw, ctx);
+    } catch (err: any) {
+      throw this.#lifecycleDenial(stage, capabilityRejectionReason(err) as LifecycleDenialReason, record, requestId);
+    }
+    if (tenantOf(current.leaf) !== b.tenant_id) throw this.#lifecycleDenial(stage, "tenant_mismatch", record, requestId);
+    const conflict = this.#bindVerifiedChain(current);
+    if (conflict) throw this.#lifecycleDenial(stage, conflict, record, requestId);
+  }
+
+  /** Lineage lookup, state precondition and ApprovalGrantV3 verification shared by approve() and reject(). */
+  #verifyDecision(input: unknown, decision: "approve" | "reject"): { record: LineageRecord; grant: import("./approval-verifier").ApprovalGrantV3 } {
+    const record = this.#lineageFor(lineageIdOf(input, "approval"), "approval");
+    const b = record.bindings;
+    if (record.approvalState !== "pending") throw this.#lifecycleDenial("approval", "not_pending", record, b.request_id);
+    let grant: import("./approval-verifier").ApprovalGrantV3;
+    try {
+      grant = this.approvalVerifier.verifyV3(input, {
+        expectedLineageId: record.lineageId,
+        expectedSessionId: b.session_id,
+        expectedRequestId: b.request_id,
+        expectedTool: b.tool,
+        expectedRequestDigest: b.request_digest,
+        expectedAuthorityFingerprint: b.authority_fingerprint,
+        expectedApproverType: "human",
+        expectedApproverId: record.approver.id,
+      });
+    } catch (err: any) {
+      const sub_reason = err instanceof ApprovalVerificationError ? err.code.toLowerCase() : "approval_verification_failed";
+      try {
+        this.audit.record(b.request_id, "approval_verification_failed", { reason: sub_reason, session_id: b.session_id, expected_tool: b.tool, lineage_id: record.lineageId });
+      } catch {
+        // The denial does not depend on evidence being written.
+      }
+      throw this.#lifecycleDenial("approval", "approval_verification_failed", record, b.request_id, { sub_reason });
+    }
+    const verificationFailed = (sub_reason: string) => this.#lifecycleDenial("approval", "approval_verification_failed", record, b.request_id, { sub_reason });
+    if (grant.decision !== decision) throw verificationFailed("decision_mismatch");
+    const issuedAtMs = Date.parse(grant.issued_at);
+    if (issuedAtMs < record.createdAtMs) throw verificationFailed("issued_before_request");
+    if (issuedAtMs > this.clock.nowMs() + this.approvalFutureSkewMs) throw verificationFailed("issued_in_future");
+    return { record, grant };
+  }
+
+  #requirePermitMode(operation: string): void {
+    if (this.#mode !== "permit") throw new LifecycleModeError(operation, this.#mode);
+  }
+
+  #lineageFor(lineageId: string, stage: LifecycleStage): LineageRecord {
+    const record = this.#lineages.get(lineageId);
+    if (!record) throw this.#lifecycleDenial(stage, "unknown_lineage", undefined, "unknown", { sub_reason: lineageId });
+    return record;
+  }
+
+  /** Records the observed approval expiry (the only state change a denied operation makes) and returns the denial. */
+  #expireApproval(record: LineageRecord, stage: "approval" | "issue"): LifecycleDeniedError {
+    if (record.approvalState === "pending" || (record.approvalState === "approved" && record.permitState === "none")) {
+      record.approvalState = "expired";
+      try {
+        this.audit.record(record.bindings.request_id, "approval_expired", { session_id: record.bindings.session_id, lineage_id: record.lineageId });
+      } catch {
+        // The recorded expiry stands without its audit record.
+      }
+    }
+    return this.#lifecycleDenial(stage, "approval_expired", record, record.bindings.request_id);
+  }
+
+  #expirePermit(record: LineageRecord, requestId: string): LifecycleDeniedError {
+    if (record.permitState === "issued") {
+      record.permitState = "expired";
+      try {
+        this.audit.record(requestId, "permit_expired", { session_id: record.bindings.session_id, lineage_id: record.lineageId, permit_id: record.permitId });
+      } catch {
+        // The recorded expiry stands without its audit record.
+      }
+    }
+    return this.#lifecycleDenial("start", "permit_expired", record, requestId);
+  }
+
+  /** Records the denial (best effort) and returns the typed error. A denial never depends on evidence being written. */
+  #lifecycleDenial(stage: LifecycleStage, reason: LifecycleDenialReason, record: LineageRecord | undefined, requestId: string, detail?: { field?: import("./approval-lifecycle").BindingField; sub_reason?: string }): LifecycleDeniedError {
+    const error = new LifecycleDeniedError(stage, reason, record?.lineageId, detail);
+    try {
+      this.audit.record(requestId, "lifecycle_operation_denied", {
+        stage,
+        reason,
+        ...(detail?.field ? { field: detail.field } : {}),
+        ...(record ? { lineage_id: record.lineageId, session_id: record.bindings.session_id } : {}),
+      });
+    } catch {
+      // Enforcement does not depend on evidence being written.
+    }
+    return error;
+  }
+
+  /** An audit record after an effective point: a failure is reported as missing evidence and never undoes the transition. */
+  #recordAfterTransition(requestId: string, type: import("./acs-types").AuditEventType, metadata: Record<string, unknown>): boolean {
+    try {
+      this.audit.record(requestId, type, metadata);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #denyIfLineageRevoked(stage: Exclude<RevocationStage, "delivery">, requestId: string, authority: LineageAuthority, tool: string, check: "early" | "final", lineageId?: string): void {
+    const match = this.#revocationAt(stage, requestId, {
+      session_id: authority.sessionId,
+      capability_id: authority.capabilityId,
+      tenant_id: authority.tenantId,
+      ancestor_capability_ids: authority.ancestorIds,
+      tool,
+    }, { check, ...(lineageId ? { lineage_id: lineageId } : {}) });
+    if (match) throw new AuthorityRevokedError(stage, match, check);
+  }
+
+  #coveredBy(authority: LineageAuthority): { revocation_id: string; reason: string } | null {
+    const match = this.#revocations.check({ session_id: authority.sessionId, capability_id: authority.capabilityId, tenant_id: authority.tenantId, ancestor_capability_ids: authority.ancestorIds });
+    return match ? { revocation_id: match.record.revocation_id, reason: match.reason } : null;
+  }
+
+  #coveredLineages(covered: (sessionId: string, capabilityId: string, tenantId: string | undefined, ancestorIds: readonly string[]) => boolean) {
+    const lists = { pending_lineages: [] as string[], approved_lineages: [] as string[], unused_permits: [] as string[] };
+    for (const record of this.#lineages.values()) {
+      const a = record.authority;
+      if (!covered(a.sessionId, a.capabilityId, a.tenantId, a.ancestorIds)) continue;
+      const state = record.state;
+      if (state === "pending") lists.pending_lineages.push(record.lineageId);
+      else if (state === "approved") lists.approved_lineages.push(record.lineageId);
+      else if (state === "issued") lists.unused_permits.push(record.lineageId);
+    }
+    return lists;
   }
 
   /** Read-only view of the runtime-managed state that ctx.commit() writes (the only A2 commit target). */
