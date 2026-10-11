@@ -192,6 +192,7 @@ for (const m of manifest.mutants) for (const w of m.witnesses) {
   const t = findTest(control, w);
   if (!t || t.status !== "passed") fail(2, `control: witness ${w.test} of ${m.id} is ${t ? t.status : "missing"}`);
   const entries = witnessEntries(control, w);
+  if (entries.length === 0) fail(2, `control: named witness ${w.test} of ${m.id} logged no observations`);
   for (const l of w.labels) {
     const seen = entries.filter(e => e.kind === "check" && e.label === l.label);
     if (seen.length !== 1 || !isDeepStrictEqual(seen[0].actual, l.control)) fail(2, `control: ${m.id} label ${l.label} logged ${JSON.stringify(seen.map(e => e.actual))}, manifest control value ${JSON.stringify(l.control)}`);
@@ -222,6 +223,7 @@ for (const m of manifest.mutants) {
     for (const w of controls) {
       const t = findTest(obs, w);
       const entries = witnessEntries(obs, w);
+      if (entries.length === 0) { technicalFailure(`named witness ${w.test} logged no observations`); break; }
       const errs = entries.filter(e => e.kind === "error");
       const values = Object.fromEntries(w.labels.map(l => [l.label, entries.filter(e => e.kind === "check" && e.label === l.label).map(e => e.actual)]));
       entry.witnesses.push({ test: w.test, role: "control", status: t?.status ?? "missing", values, caught_errors: describeErrors(errs) });
@@ -235,6 +237,7 @@ for (const m of manifest.mutants) {
       const t = findTest(obs, w);
       const firstLine = ((t?.failureMessages ?? []).join("\n").trimStart().split("\n")[0] ?? "");
       const entries = witnessEntries(obs, w);
+      if (entries.length === 0) { technicalFailure(`named witness ${w.test} logged no observations`); break; }
       const errs = entries.filter(e => e.kind === "error");
       const values = Object.fromEntries(w.labels.map(l => [l.label, entries.filter(e => e.kind === "check" && e.label === l.label).map(e => e.actual)]));
       const failedLabels = [...firstLine.matchAll(/WITNESS\[([^\]]+)\]/g)].map(x => x[1]).sort();

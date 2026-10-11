@@ -16,6 +16,7 @@
  *   RL10-kinds        M67 (check_and_lifecycle) and M71 (component_check_point) -> 0, and the report counts neither as
  *                     containment evidence
  *   RL11-no-log       M53 plus a witness helper that writes no witness log    -> 2 (witness log missing)
+ *   RL12-no-witness   M53 plus an L4c witness that never logs (the log exists) -> 2 (named witness logged no observations)
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -41,6 +42,7 @@ const cases = [
       ? "" : `report counts ${JSON.stringify({ containment: s.containment_evidence, lifecycle: s.lifecycle_evidence, component: s.evidence.component_check_point })}`;
   }],
   ["RL11-no-log", 2, "witness log missing"],
+  ["RL12-no-witness", 2, "logged no observations"],
 ];
 let failed = 0;
 for (const [id, expected, reason, extra = [], check] of cases) {

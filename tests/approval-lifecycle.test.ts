@@ -311,9 +311,17 @@ describe("L5 binding comparisons of the fresh start request R′", () => {
     const t2 = toolDouble("read_record");
     const id = await issued(f);
     const wrong = await settle(start(f, id, { tool: "read_record" }));
-    witness(["LC-L5-tool", verdict(wrong), "lineage_binding_mismatch:tool"], ["LC-L5-tool-state", snap(f, id).state, "issued"], ["LC-L5-tool-T2-calls", t2.calls, 0]);
+    const stateAfterWrong = snap(f, id).state;
+    const t2AfterWrong = t2.calls;
     const right = await settle(start(f, id));
-    witness(["LC-L5-tool-follow", verdict(right), "ok"], ["LC-L5-tool-T1-calls", t1.calls, 1]);
+    // One witness call: the mismatching start and the correct start that follows are observed in the same run.
+    witness(
+      ["LC-L5-tool", verdict(wrong), "lineage_binding_mismatch:tool"],
+      ["LC-L5-tool-state", stateAfterWrong, "issued"],
+      ["LC-L5-tool-T2-calls", t2AfterWrong, 0],
+      ["LC-L5-tool-follow", verdict(right), "ok"],
+      ["LC-L5-tool-T1-calls", t1.calls, 1],
+    );
   });
 
   it("[LC-L5-arguments] R′ with { n: 2 } instead of { n: 1 }: lineage_binding_mismatch:arguments; the correct start follows", async () => {
@@ -321,9 +329,17 @@ describe("L5 binding comparisons of the fresh start request R′", () => {
     const tool = toolDouble("update_record");
     const id = await issued(f);
     const wrong = await settle(start(f, id, { args: { n: 2 } }));
-    witness(["LC-L5-arguments", verdict(wrong), "lineage_binding_mismatch:arguments"], ["LC-L5-arguments-state", snap(f, id).state, "issued"], ["LC-L5-arguments-calls", tool.calls, 0]);
+    const stateAfterWrong = snap(f, id).state;
+    const callsAfterWrong = tool.calls;
     const right = await settle(start(f, id));
-    witness(["LC-L5-arguments-follow", verdict(right), "ok"], ["LC-L5-arguments-args", tool.args, [{ n: 1 }]]);
+    // One witness call: the mismatching start and the correct start that follows are observed in the same run.
+    witness(
+      ["LC-L5-arguments", verdict(wrong), "lineage_binding_mismatch:arguments"],
+      ["LC-L5-arguments-state", stateAfterWrong, "issued"],
+      ["LC-L5-arguments-calls", callsAfterWrong, 0],
+      ["LC-L5-arguments-follow", verdict(right), "ok"],
+      ["LC-L5-arguments-args", tool.args, [{ n: 1 }]],
+    );
   });
 
   it("[LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch", async () => {
