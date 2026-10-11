@@ -6,7 +6,7 @@ One gate, `scripts/mutants/run-mutant-gate.mjs`, checks the runtime-test mutants
 |---|---|---|---|
 | Tenant scope (1a) | [`mutants/tenant/manifest.json`](../mutants/tenant/manifest.json) | `npm run mutants:tenant` | [tenant-scope.md](tenant-scope.md#mutant-gate) |
 | Ancestor chains (1b) | [`mutants/ancestor/manifest.json`](../mutants/ancestor/manifest.json) | `npm run mutants:ancestor` | [ancestor-chains.md](ancestor-chains.md#mutant-gate) |
-| Approval–permit lifecycle (G3/G4) | [`mutants/lifecycle/manifest.json`](../mutants/lifecycle/manifest.json) | `npm run mutants:lifecycle` | [approval-permit-lifecycle.md](approval-permit-lifecycle.md#mutant-gate) |
+| Approval–permit lifecycle (G3/G4) | [`mutants/lifecycle/manifest.json`](../mutants/lifecycle/manifest.json) | `npm run mutants:lifecycle` | [approval-permit-lifecycle.md](approval-permit-lifecycle.md#8-mutant-gate) |
 
 ```
 node scripts/mutants/run-mutant-gate.mjs --manifest <manifest.json> [--out <dir>] [--only <mutant id>]
@@ -50,9 +50,10 @@ The manifest also lists the package's recorded coverage gaps, which the report r
 - every label logs exactly its manifest mutant value;
 - the failed labels are exactly those whose mutant value differs from the control value;
 - the errors the witness caught are exactly the accepted mutant errors;
+- a witness that logs exactly its control values (the mutant changed nothing it observes) must catch exactly its accepted control errors, and the mutant is then not detected (exit 1);
 - every `control` witness still passes, with exactly its values and accepted errors.
 
-**Whole run (strict manifests).** A manifest with `"whole_run": "strict"` (the lifecycle manifest) adds a whole-run rule. Every test that is not a named witness must pass and must log exactly the witness-log entries (check values and caught errors) it logs in the control run. The only exception is the mutant's `collateral` list, which pins such tests by test id with their exact status. A pinned observation must occur exactly as pinned. Anything else is an unexpected failure and a technical failure (exit 2), whatever the witnesses show: a witness's failure never redeems an otherwise unexpected run. A missing witness log, in the control or the mutant run, is a technical failure too, and so is a named witness that logs no observation at all (under every manifest). Manifests without `whole_run` (tenant, ancestor and their regressions) keep the earlier rule, under which failures of tests that are not witnesses are diagnostics.
+**Whole run (strict manifests).** A manifest with `"whole_run": "strict"` (the lifecycle manifest) adds a whole-run rule. Every test that is not a named witness must pass and must log exactly the witness-log entries (check values and caught errors) it logs in the control run. The only exception is the mutant's `collateral` list, which pins such tests by test id with their exact status. A pinned observation must occur exactly as pinned. Anything else is an unexpected failure and a technical failure (exit 2), whatever the witnesses show: a witness's failure never redeems an otherwise unexpected run. A missing witness log, in the control or the mutant run, is a technical failure too, and so is a named witness that logs no observation at all (under every manifest). Manifests without `whole_run` (tenant, ancestor and their regressions) keep the earlier rule, under which failures of tests that are not witnesses are diagnostics. **Gate debt:** the tenant and ancestor manifests have not been moved to the strict rule, so their passing runs do not show that the rest of the suite stayed unaffected under their mutants. Their green results are not evidence for the strict rule.
 
 **Unexpected failures.** A label value that is neither the control nor the mutant value, or a caught error the manifest does not accept, is an unexpected failure. It is reported with its details (value, error name and message) as a technical failure and is never check-point evidence. A `control` witness that changes under the mutant is a technical failure too: the mutant breaks more than its named safeguard.
 

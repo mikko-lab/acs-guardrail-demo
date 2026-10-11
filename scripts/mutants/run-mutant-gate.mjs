@@ -20,6 +20,8 @@
  *   detection: jest exits 1; every witness fails with WitnessAssertionError; every label logs exactly its mutant
  *     value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors
  *     are exactly the accepted mutant errors.
+ *   A witness that logs exactly its control values must catch exactly its control errors; the mutant is then not
+ *   detected (exit 1), never a technical failure.
  *   A witness value that is neither the control nor the mutant value, or an unaccepted caught error, is an
  *   unexpected failure: technical, never evidence.
  *   A witness with role "control" (for example the valid-chain control) names labels whose mutant value equals the
@@ -247,7 +249,11 @@ for (const m of manifest.mutants) {
       // Unexpected observations are technical failures, never evidence.
       const unexpectedValue = w.labels.find(l => values[l.label].length !== 1 || !(isDeepStrictEqual(values[l.label][0], l.mutant) || isDeepStrictEqual(values[l.label][0], l.control)));
       if (unexpectedValue) { technicalFailure(`${w.test}: label ${unexpectedValue.label} logged ${JSON.stringify(values[unexpectedValue.label])}, neither control ${JSON.stringify(unexpectedValue.control)} nor mutant ${JSON.stringify(unexpectedValue.mutant)}`); break; }
-      if (!errorsMatch(errs, w.errors.mutant)) { technicalFailure(`${w.test}: unexpected caught errors ${JSON.stringify(witnessReport.caught_errors)}, accepted ${JSON.stringify(w.errors.mutant)}`); break; }
+      // A witness that logs exactly its control values (the mutant changed nothing it observes) must catch exactly its
+      // control errors and is then simply not detected; otherwise it must catch exactly the accepted mutant errors.
+      const allControlValues = w.labels.every(l => isDeepStrictEqual(values[l.label][0], l.control));
+      const acceptedErrors = allControlValues ? w.errors.control : w.errors.mutant;
+      if (!errorsMatch(errs, acceptedErrors)) { technicalFailure(`${w.test}: unexpected caught errors ${JSON.stringify(witnessReport.caught_errors)}, accepted ${JSON.stringify(acceptedErrors)}`); break; }
       if (t?.status === "failed" && !firstLine.startsWith("WitnessAssertionError:")) { technicalFailure(`${w.test} failed without a WitnessAssertionError: ${firstLine.slice(0, 200)}`); break; }
       const allMutantValues = w.labels.every(l => isDeepStrictEqual(values[l.label][0], l.mutant));
       if (!(t?.status === "failed" && allMutantValues && isDeepStrictEqual(failedLabels, expectedFailed))) detected = false;

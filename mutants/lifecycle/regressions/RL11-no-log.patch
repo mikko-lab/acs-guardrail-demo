@@ -1,0 +1,25 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..0164cde 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1303,7 +1303,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+   /** F(start) and the consumption: revocation, chain validity, permit expiry, then the state check-and-set. No callback. */
+   #finalStartFence(record: LineageRecord, requestId: string, authority: BoundAuthority): void {
+     this.#finalFence(record, "start", requestId, record.permitExpiresAtMs ?? Infinity, () => this.#expirePermit(record, requestId), authority);
+-    if (record.permitState !== "issued") throw this.#lifecycleDenial("start", record.permitState === "consumed" ? "permit_consumed" : "permit_not_issued", record, requestId);
+     record.permitState = "consumed";
+     record.consumedSeq = this.#revocations.nextSequence();
+     record.startRequestId = requestId;
+diff --git a/tests/witness.ts b/tests/witness.ts
+index 65ea27b..ebe6da9 100644
+--- a/tests/witness.ts
++++ b/tests/witness.ts
+@@ -29,7 +29,7 @@ const encode = (value: unknown): unknown =>
+     : value;
+ 
+ function log(entry: Record<string, unknown>): void {
+-  const file = process.env.WITNESS_LOG;
++  const file = process.env.WITNESS_LOG_DISABLED_BY_RL11;
+   if (!file) return;
+   const test = expect.getState().currentTestName ?? "";
+   appendFileSync(file, JSON.stringify({ test, ...entry }) + "\n");

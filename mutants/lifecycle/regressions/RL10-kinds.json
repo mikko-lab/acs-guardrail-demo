@@ -1,0 +1,176 @@
+{
+  "version": 3,
+  "description": "lifecycle gate regression: the real M67 (check_and_lifecycle) and M71 (component_check_point) mutants; expected: detected, exit 0, with no containment evidence in the report",
+  "whole_run": "strict",
+  "gate_rules": {
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists; every witness logs observations, exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors",
+    "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral, which must occur exactly as pinned (test id and status); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
+    "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never evidence",
+    "kinds": {
+      "check_point": "its check labels change (decision, stage, check or reason)",
+      "containment_effect": "its effect labels change (tool calls, tool arguments, the execution's bound authority)",
+      "both": "check and effect labels change in the same run",
+      "lifecycle_effect": "its lifecycle labels change (approval or permit state, lineage count); never containment",
+      "check_and_lifecycle": "check and lifecycle labels change in the same run; never containment",
+      "component_check_point": "the component test's check labels change; never production-path evidence"
+    },
+    "claimed_kind": "the kind is the evidence claimed for the mutant (the plan's kind); a label of another part that also changes is recorded under observed_beyond_kind and is not counted",
+    "control_witness": "a witness with role control keeps every label value under the mutant; it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)"
+  },
+  "recorded_gaps": [],
+  "mutants": [
+    {
+      "id": "M67",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M67",
+      "removes": "the reject transition: a reject leaves the lineage pending",
+      "patch": "mutants/lifecycle/M67.patch",
+      "patch_sha256": "5a53ca077d0756aaa9dedad5d9d7fa309861723f037f13eee14cc0bc94432a4f",
+      "witness_input": "L10: reject, then a valid approve grant, issue and start",
+      "kept_safeguards": "approve's state check (pending still passes); grant verification",
+      "observed_beyond_kind": "L10 continues with issue and start, so the tool is also called (LC-L10-calls 0 -> 1). The plan's kind (check and lifecycle) is the claimed evidence; the tool call is recorded, not counted as containment.",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L10 reject",
+          "test": "[LC-L10] reject, then approve, issue, start: not_pending, not_approved, permit_not_issued",
+          "labels": [
+            {
+              "label": "LC-L10",
+              "part": "check",
+              "control": [
+                "not_pending",
+                "not_approved",
+                "permit_not_issued"
+              ],
+              "mutant": [
+                "ok",
+                "ok",
+                "ok"
+              ]
+            },
+            {
+              "label": "LC-L10-state",
+              "part": "lifecycle",
+              "control": "rejected",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L10-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle approval denied: not_pending [lineage-1]",
+              "LifecycleDeniedError: Lifecycle issue denied: not_approved [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: permit_not_issued [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L10 reject :: a reject of a revoked lineage is allowed (a reject only removes authority)",
+          "status": "failed"
+        }
+      ]
+    },
+    {
+      "id": "M71",
+      "kind": "component_check_point",
+      "plan_row": "M71",
+      "removes": "the binding of a start's execution to the lineage's authority: the execution authority is built from the provider's verified chain for R' (authority substitution)",
+      "patch": "mutants/lifecycle/M71.patch",
+      "patch_sha256": "311c2481cc129a8c200a7e11fb0e6f54088eecb83bf5acdc3b323f5f5128832a",
+      "witness_input": "component: startExecutionAuthority with the lineage snapshot A and a provider chain B",
+      "kept_safeguards": "the snapshot comparison at start: it denies any R' whose provider answer differs from the snapshot, and an equal answer builds the identical authority; L3 keeps its values (control witness)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle-components.test.ts",
+          "describe": "execution binding source (M71)",
+          "test": "[LC-C-execution-authority] the execution authority of a start is the lineage's snapshot A, even for a provider answer B",
+          "labels": [
+            {
+              "label": "LC-C-execution-authority",
+              "part": "check",
+              "control": [
+                "A-L",
+                [
+                  "A-I"
+                ],
+                "t1",
+                "s1"
+              ],
+              "mutant": [
+                "B-L",
+                [
+                  "B-I"
+                ],
+                "t9",
+                "s1"
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L3 valid lifecycle and the shared authority sequence",
+          "test": "[LC-L3] approve, issue, start: receipts in order with increasing *_seq; one tool call; permit consumed by the started execution",
+          "role": "control",
+          "labels": [
+            {
+              "label": "LC-L3-decision",
+              "part": "check",
+              "control": "ok",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L3-tool-calls",
+              "part": "effect",
+              "control": 1,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L3-state",
+              "part": "lifecycle",
+              "control": "consumed",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L3-seq",
+              "part": "lifecycle",
+              "control": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "mutant": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": []
+    }
+  ]
+}

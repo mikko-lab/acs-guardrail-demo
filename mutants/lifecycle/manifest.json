@@ -1352,7 +1352,7 @@
           "labels": [
             {
               "label": "LC-L9-permit",
-              "part": "lifecycle",
+              "part": "check",
               "control": "permit_expired",
               "mutant": "ok"
             },

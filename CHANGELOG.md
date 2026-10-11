@@ -12,9 +12,19 @@
   - **`ApprovalGrantV3`** and `ApprovalGrantVerifier.verifyV3()` with the codes `LINEAGE_MISMATCH`, `REQUEST_DIGEST_MISMATCH`, `AUTHORITY_FINGERPRINT_MISMATCH`.
   - **Errors.** `LifecycleDeniedError { stage, reason, lineage_id, detail }` and `LifecycleModeError` (permit-mode `resolveApproval()`, legacy-mode lifecycle methods).
   - **Audit and OCSF.** New event types `approval_granted`, `permit_issued`, `permit_expired`, `lifecycle_operation_denied`; `lineage_id` (and `check`) on the existing events of the permit-mode paths; lifecycle counts on `authority_revoked`. The OCSF allowlists list exactly these keys.
-  - **Evidence.** `tests/approval-lifecycle.test.ts` (87 tests: L1–L17 with their variants, the transition table, grant verification, the unobservable-settlement contract) and `tests/approval-lifecycle-components.test.ts` (31 tests). No lifecycle mutant gate yet; that is a separate step.
+  - **Evidence.** `tests/approval-lifecycle.test.ts` (87 tests: L1–L17 with their variants, the transition table, grant verification, the unobservable-settlement contract) and `tests/approval-lifecycle-components.test.ts` (31 tests). `tests/approval-lifecycle.test.ts` L5-tool and L5-arguments now assert their mismatching and their correct start in one witness call, L6-start records the started execution's authority, and the absent-tenant comparator test is a witness.
+- **Lifecycle mutant gate:** `mutants/lifecycle/manifest.json` (hash-checked) with M53–M71 of the approved plan and its named variants (M58, M61 and M62 with inputs (i) and (iii); M70 for create and start), 26 entries. Every entry pins its patch against the unchanged `src/` of `20a32e6`, the removed check, the kept safeguards, the witness input, each witness label's exact control and mutant value, the accepted caught errors, the claimed evidence kind and the collateral observations outside the named witnesses. `npm run mutants:lifecycle` runs it under the new strict whole-run rule. Recorded gaps: M55, M56 and M71 (component check points only) and M70 at approve and issue (masked). See `docs/approval-permit-lifecycle.md` §8.
+  - **Gate regressions** RL1–RL12 (`npm run mutants:lifecycle:regressions`): detection, inventory change, unexpected value, unexpected caught error, an unrelated failing test, gate crash, timeout, signal, a change without behaviour, evidence kinds, a missing witness log and a named witness that logs nothing.
+  - **Determinism:** `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
+  - **CI:** a `lifecycle mutant gate (Node 22)` job runs all three.
 
 ### Changed
+- **Shared mutant gate** (`scripts/mutants/run-mutant-gate.mjs`):
+  - **Evidence kinds.** New kinds `lifecycle_effect` and `check_and_lifecycle`, reported as `lifecycle_evidence` and never as containment.
+  - **Strict whole run.** An opt-in rule (`"whole_run": "strict"`): every test that is not a named witness must pass with its control observations, except the mutant's pinned collateral. A missing witness log is a technical failure.
+  - **Witnesses that log nothing.** A named witness that logs no observation is reported as such under every manifest. It was already a technical failure before.
+  - **Direct jest launch.** jest now runs as the gate's direct child, without `npx` or a shell in between, so a timeout or signal reaches jest itself and is reported. An exit status above 128 is reported as the signal it encodes.
+  - **Existing manifests.** The tenant and ancestor manifests and R1–R4 are unchanged. They do not use the strict rule, so their failures of tests that are not witnesses remain diagnostics.
 - `GuardedExecutor` is generic in its lifecycle mode (`GuardedExecutor<M extends LifecycleMode = "legacy">`, inferred from the options). Legacy code keeps the unchanged `ProcessResult`.
 - `process()` step 0 (schema validation) and the result-request submission are factored into private helpers shared with `start()`; legacy behaviour is unchanged and every tenant and ancestor mutant patch applies unchanged.
 - `tests/ocsf-mapper.test.ts`: the allowlist inventory lists the four new event types.
