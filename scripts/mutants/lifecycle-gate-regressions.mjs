@@ -17,6 +17,11 @@
  *                     containment evidence
  *   RL11-no-log       M53 plus a witness helper that writes no witness log    -> 2 (witness log missing)
  *   RL12-no-witness   M53 plus an L4c witness that never logs (the log exists) -> 2 (named witness logged no observations)
+ *   RL13-collateral-syntax    M58 plus the pinned collateral L5-session failing with a SyntaxError -> 2 (collateral differs)
+ *   RL14-collateral-assertion M64 plus the pinned collateral L11-unobservable failing with a SyntaxError at its
+ *                             assertion, same observations                                     -> 2 (assertion differs)
+ *   RL15-error-suffix         M57 plus a suffix outside the manifest in the L2b witnesses' caught errors -> 2 (unexpected caught errors)
+ *   RL16-m58, RL17-m57        the real M58 and M57 mutants (controls of RL13 and RL15)         -> 0 (detected)
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -43,6 +48,11 @@ const cases = [
   }],
   ["RL11-no-log", 2, "witness log missing"],
   ["RL12-no-witness", 2, "logged no observations"],
+  ["RL13-collateral-syntax", 2, "collateral tests/approval-lifecycle.test.ts :: L5 binding comparisons"],
+  ["RL14-collateral-assertion", 2, "assertion failure"],
+  ["RL15-error-suffix", 2, "unexpected caught errors"],
+  ["RL16-m58", 0, "detected"],
+  ["RL17-m57", 0, "detected"],
 ];
 let failed = 0;
 for (const [id, expected, reason, extra = [], check] of cases) {

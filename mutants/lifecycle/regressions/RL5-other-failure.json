@@ -5,8 +5,8 @@
   "gate_rules": {
     "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists; every witness logs observations, exactly its labels' control values and exactly its accepted control errors",
     "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists; the test inventory (count and every test id) is identical to the control's; no suite execution error",
-    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors",
-    "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral, which must occur exactly as pinned (test id and status); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
+    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors; a witness that logs exactly its control values must catch exactly its control errors and the mutant is then not detected (exit 1)",
+    "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral; each pinned collateral test must show exactly its pinned status, its pinned witness-log observations (check values and caught errors, compared exactly) and, when it fails, its pinned assertion failure (jest failure messages without colour codes, cut before the first stack frame); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
     "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never evidence",
     "kinds": {
       "check_point": "its check labels change (decision, stage, check or reason)",
@@ -18,7 +18,8 @@
     },
     "claimed_kind": "the kind is the evidence claimed for the mutant (the plan's kind); a label of another part that also changes is recorded under observed_beyond_kind and is not counted",
     "control_witness": "a witness with role control keeps every label value under the mutant; it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
-    "crash": "any exception inside the gate itself is a technical failure (exit 2)"
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)",
+    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised"
   },
   "recorded_gaps": [],
   "mutants": [

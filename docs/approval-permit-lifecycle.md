@@ -196,7 +196,7 @@ New audit event types: `approval_granted`, `permit_issued`, `permit_expired`, `l
 - the check it removes, the kept safeguards and the witness input;
 - each witness label's exact control and mutant value, and the exact errors each witness may catch;
 - the claimed evidence kind;
-- the collateral observations outside the named witnesses.
+- the collateral observations outside the named witnesses: for each such test its status, witness-log observations and, when it fails, its assertion failure.
 
 The manifest uses the strict whole-run rule: every other test must pass with its control observations, so a witness never redeems an unexpected failure elsewhere.
 
@@ -236,7 +236,7 @@ Evidence kinds follow the plan (§8): `lifecycle_effect` and `check_and_lifecycl
 - M70 at approve and issue is masked; at this head the patched trees pass all tests.
 - The eval-gate mutants of plan §8.1 (M12–M14, M24, M25, M49–M52) belong to the later eval integration.
 
-`npm run mutants:lifecycle:regressions` checks the gate itself under the strict rule (RL1–RL12, [mutant-gate.md](mutant-gate.md#lifecycle-gate-regressions)). `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
+`npm run mutants:lifecycle:regressions` checks the gate itself under the strict rule (RL1–RL17, [mutant-gate.md](mutant-gate.md#lifecycle-gate-regressions)). `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
 
 ## 9. Compatibility
 

@@ -32,7 +32,10 @@
  *   must pass and log exactly the witness-log entries (checks and caught errors) it logs in the control run, unless the
  *   mutant pins it in "collateral" with its exact status. A pinned collateral observation must occur exactly as pinned.
  *   Anything else is an unexpected failure (technical, exit 2): a witness's failure never redeems an otherwise
- *   unexpected run. A missing witness log (control or mutant) is a technical failure. Manifests without "whole_run" keep the earlier rule (other failures are diagnostics only).
+ *   unexpected run. A missing witness log (control or mutant) is a technical failure. A pinned collateral test must show
+ *   exactly its pinned status, witness-log observations and (when failed) assertion failure (failure messages without
+ *   colour codes, cut before the first stack frame). Under the strict rule caught errors are compared exactly, never by
+ *   prefix. Manifests without "whole_run" keep the earlier rule (other failures are diagnostics only).
  *
  * Evidence kinds: check_point, containment_effect, both, component_check_point, lifecycle_effect and
  * check_and_lifecycle. Lifecycle state (approval and permit transitions) is reported as lifecycle evidence and is never
@@ -87,8 +90,9 @@ for (const m of manifest.mutants) {
   if (!KINDS[m.kind]) fail(2, `${m.id}: unknown evidence kind ${m.kind}`);
   if (sha256(readFileSync(join(root, m.patch))) !== m.patch_sha256) fail(2, `${m.id}: patch SHA-256 does not match the manifest`);
   if (!m.witnesses.some(w => !isControl(w))) fail(2, `${m.id}: no witness`);
-  if (strict && (!Array.isArray(m.collateral) || m.collateral.some(c => typeof c.test !== "string" || !["passed", "failed"].includes(c.status)))) {
-    fail(2, `${m.id}: a strict manifest must pin the mutant's collateral observations ({ test, status })`);
+  if (strict && (!Array.isArray(m.collateral) || m.collateral.some(c => typeof c.test !== "string" || !["passed", "failed"].includes(c.status)
+    || !Array.isArray(c.observations) || (c.status === "failed" ? typeof c.assertion !== "string" || c.assertion.length === 0 : c.assertion !== undefined)))) {
+    fail(2, `${m.id}: a strict manifest must pin each collateral test's status, witness-log observations and (when it fails) assertion failure`);
   }
   for (const w of m.witnesses) {
     if (w.role !== undefined && !isControl(w)) fail(2, `${m.id}: unknown witness role ${w.role}`);
@@ -158,13 +162,34 @@ function evaluateTree(dir, jestOkStatuses) {
 }
 const findTest = (obs, w) => obs.tests.find(t => t.file === w.file && t.title === w.test && t.ancestorTitles.join(" ") === w.describe);
 const witnessEntries = (obs, w) => obs.log.filter(e => e.test === `${w.describe} ${w.test}`);
+/**
+ * Caught errors against the manifest's accepted errors, in order. Under the strict whole-run rule every error must
+ * equal its accepted text exactly ("Name: message"); no free message prefix is accepted. Manifests without the strict
+ * rule keep the earlier prefix comparison (gate debt, docs/mutant-gate.md).
+ */
+const errorText = e => `${e.name}: ${e.message}`;
 const errorsMatch = (observed, accepted) =>
-  observed.length === accepted.length && observed.every((e, i) => `${e.name}: ${e.message}`.startsWith(accepted[i]));
+  observed.length === accepted.length && observed.every((e, i) => strict ? errorText(e) === accepted[i] : errorText(e).startsWith(accepted[i]));
 const describeErrors = errs => errs.map(e => `${e.name}: ${e.message}`.slice(0, 160));
+const stripAnsi = text => text.replace(/\u001b\[[0-9;]*m/g, "");
+/**
+ * The assertion failure of a failed test, normalised for comparison: jest's failure messages without colour codes,
+ * cut before the first stack frame (stack frames name the gate's temporary work directory). Nothing else is removed.
+ */
+const assertionOf = t => {
+  const lines = stripAnsi((t.failureMessages ?? []).join("\n")).split("\n");
+  const frame = lines.findIndex(l => /^\s+at /.test(l));
+  return (frame < 0 ? lines : lines.slice(0, frame)).join("\n").trim();
+};
+/** Witness-log entries of one test without the test name: { kind, label, actual, expected } or { kind, name, message }. */
+const observationsOf = (log, key) => (log.get(key) ?? []).map(({ test: _test, ...rest }) => rest);
 const logByTest = obs => { const by = new Map(); for (const e of obs.log) { if (!by.has(e.test)) by.set(e.test, []); by.get(e.test).push(e); } return by; };
 /**
- * Strict whole-run check: the tests (other than the named witnesses) whose status or witness-log entries differ from the
- * control must be exactly the mutant's pinned collateral, each with its pinned status. Returns a problem, if any.
+ * Strict whole-run check: the tests (other than the named witnesses) whose status or witness-log observations differ
+ * from the control must be exactly the mutant's pinned collateral. Each pinned collateral test must show exactly its
+ * pinned status, its pinned witness-log observations (check values and caught errors, compared exactly) and, when it
+ * fails, its pinned assertion failure. A collateral test that fails differently (another assertion, a SyntaxError, a
+ * crash) is unexpected. Returns a problem, if any.
  */
 function wholeRunIssue(m, obs) {
   const named = t => m.witnesses.some(w => t.file === w.file && t.title === w.test && t.ancestorTitles.join(" ") === w.describe);
@@ -172,14 +197,19 @@ function wholeRunIssue(m, obs) {
   const controlStatus = new Map(control.tests.map(t => [t.id, t.status]));
   const affected = obs.tests
     .filter(t => !named(t))
-    .filter(t => t.status !== controlStatus.get(t.id) || !isDeepStrictEqual(mutantLog.get(t.key) ?? [], controlLog.get(t.key) ?? []))
-    .map(t => ({ test: t.id, status: t.status }));
-  const key = c => `${c.status} ${c.test}`;
-  const pinned = new Set(m.collateral.map(key)), seen = new Set(affected.map(key));
-  const unexpected = affected.filter(c => !pinned.has(key(c)));
-  const missing = m.collateral.filter(c => !seen.has(key(c)));
-  if (unexpected.length) return { detail: `unexpected failure or changed observation outside the named witnesses: ${JSON.stringify(unexpected.slice(0, 3))}`, affected };
-  if (missing.length) return { detail: `pinned collateral did not occur as pinned: ${JSON.stringify(missing.slice(0, 3))}`, affected };
+    .filter(t => t.status !== controlStatus.get(t.id) || !isDeepStrictEqual(observationsOf(mutantLog, t.key), observationsOf(controlLog, t.key)))
+    .map(t => ({ test: t.id, status: t.status, observations: observationsOf(mutantLog, t.key), ...(t.status === "failed" ? { assertion: assertionOf(t) } : {}) }));
+  const pinned = new Map(m.collateral.map(c => [c.test, c]));
+  const seen = new Set(affected.map(c => c.test));
+  for (const c of affected) {
+    const p = pinned.get(c.test);
+    if (!p) return { detail: `unexpected failure or changed observation outside the named witnesses: ${JSON.stringify({ test: c.test, status: c.status, assertion: c.assertion?.slice(0, 200) })}`, affected };
+    if (p.status !== c.status) return { detail: `collateral ${c.test}: status ${c.status}, pinned ${p.status}`, affected };
+    if (!isDeepStrictEqual(c.observations, p.observations)) return { detail: `collateral ${c.test}: witness-log observations ${JSON.stringify(c.observations).slice(0, 300)} differ from the pinned ${JSON.stringify(p.observations).slice(0, 300)}`, affected };
+    if (c.status === "failed" && c.assertion !== p.assertion) return { detail: `collateral ${c.test}: assertion failure ${JSON.stringify(c.assertion.slice(0, 300))} differs from the pinned ${JSON.stringify((p.assertion ?? "").slice(0, 300))}`, affected };
+  }
+  const missing = m.collateral.filter(c => !seen.has(c.test));
+  if (missing.length) return { detail: `pinned collateral did not occur as pinned: ${JSON.stringify(missing.map(c => ({ test: c.test, status: c.status })).slice(0, 3))}`, affected };
   return { affected };
 }
 

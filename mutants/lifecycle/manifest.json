@@ -7,8 +7,8 @@
   "gate_rules": {
     "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists; every witness logs observations, exactly its labels' control values and exactly its accepted control errors",
     "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists; the test inventory (count and every test id) is identical to the control's; no suite execution error",
-    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors",
-    "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral, which must occur exactly as pinned (test id and status); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
+    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors; a witness that logs exactly its control values must catch exactly its control errors and the mutant is then not detected (exit 1)",
+    "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral; each pinned collateral test must show exactly its pinned status, its pinned witness-log observations (check values and caught errors, compared exactly) and, when it fails, its pinned assertion failure (jest failure messages without colour codes, cut before the first stack frame); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
     "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never evidence",
     "kinds": {
       "check_point": "its check labels change (decision, stage, check or reason)",
@@ -20,7 +20,8 @@
     },
     "claimed_kind": "the kind is the evidence claimed for the mutant (the plan's kind); a label of another part that also changes is recorded under observed_beyond_kind and is not counted",
     "control_witness": "a witness with role control keeps every label value under the mutant; it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
-    "crash": "any exception inside the gate itself is a technical failure (exit 2)"
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)",
+    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised"
   },
   "recorded_gaps": [
     "M55: the session and agent comparisons of R' have no production-path witness; component_check_point only (the snapshot comparison and grant verification reject first).",
@@ -349,10 +350,10 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (capability_revoked, capability:l2b-capability"
+              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (capability_revoked, capability:l2b-capability-L)"
             ],
             "mutant": [
-              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (capability_revoked, capability:l2b-capability"
+              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (capability_revoked, capability:l2b-capability-L)"
             ]
           }
         },
@@ -415,10 +416,10 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (session_revoked, session:c8c5e0f2-1d93-a7b7-b"
+              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (session_revoked, session:c8c5e0f2-1d93-a7b7-b5f5-50eaa97a3453)"
             ],
             "mutant": [
-              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (session_revoked, session:c8c5e0f2-1d93-a7b7-b"
+              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (session_revoked, session:c8c5e0f2-1d93-a7b7-b5f5-50eaa97a3453)"
             ]
           }
         },
@@ -511,19 +512,153 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:session [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session",
+              "actual": [
+                "lineage_binding_mismatch:session",
+                "capability_session_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-session] expected [\"chain_snapshot_mismatch\",\"capability_session_mismatch\"] received [\"lineage_binding_mismatch:session\",\"capability_session_mismatch\"]"
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-agent] R′ for another agent: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_agent_mismatch",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:agent [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent",
+              "actual": [
+                "lineage_binding_mismatch:agent",
+                "capability_agent_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-agent] expected [\"chain_snapshot_mismatch\",\"capability_agent_mismatch\"] received [\"lineage_binding_mismatch:agent\",\"capability_agent_mismatch\"]"
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (i) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (iii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
       ]
     },
@@ -584,19 +719,146 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:session [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session",
+              "actual": [
+                "lineage_binding_mismatch:session",
+                "capability_session_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-session] expected [\"chain_snapshot_mismatch\",\"capability_session_mismatch\"] received [\"lineage_binding_mismatch:session\",\"capability_session_mismatch\"]"
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-agent] R′ for another agent: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_agent_mismatch",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:agent [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent",
+              "actual": [
+                "lineage_binding_mismatch:agent",
+                "capability_agent_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-agent] expected [\"chain_snapshot_mismatch\",\"capability_agent_mismatch\"] received [\"lineage_binding_mismatch:agent\",\"capability_agent_mismatch\"]"
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (ii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "consumed",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 1,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": "l6s-ii-L",
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-start-state] expected \"issued\" received \"consumed\"; WITNESS[LC-L6-start-calls] expected 0 received 1; WITNESS[LC-L6-start-execution-capability] expected {\"$undefined\":true} received \"l6s-ii-L\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (iii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
       ]
     },
@@ -657,19 +919,146 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:session [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session",
+              "actual": [
+                "lineage_binding_mismatch:session",
+                "capability_session_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-session] expected [\"chain_snapshot_mismatch\",\"capability_session_mismatch\"] received [\"lineage_binding_mismatch:session\",\"capability_session_mismatch\"]"
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-agent] R′ for another agent: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_agent_mismatch",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:agent [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent",
+              "actual": [
+                "lineage_binding_mismatch:agent",
+                "capability_agent_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-agent] expected [\"chain_snapshot_mismatch\",\"capability_agent_mismatch\"] received [\"lineage_binding_mismatch:agent\",\"capability_agent_mismatch\"]"
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (i) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (ii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "consumed",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 1,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": "l6s-ii-L",
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-start-state] expected \"issued\" received \"consumed\"; WITNESS[LC-L6-start-calls] expected 0 received 1; WITNESS[LC-L6-start-execution-capability] expected {\"$undefined\":true} received \"l6s-ii-L\""
         }
       ]
     },
@@ -732,7 +1121,16 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle-components.test.ts :: binding comparator (start, §5.1) :: [LC-C-tool] a differing { tool: 'read_record' } field is reported as that field",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-C-comparator-tool",
+              "actual": null,
+              "expected": "tool"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-C-comparator-tool] expected \"tool\" received null"
         }
       ]
     },
@@ -803,7 +1201,16 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle-components.test.ts :: binding comparator (start, §5.1) :: [LC-C-arguments] a differing {\n  arguments_digest: 'c2fe9b703cbc6faaa7ff11c3cfca3e443be3300ae3eaa22ffbe50d77bd1730d7'\n} field is reported as that field",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-C-comparator-arguments",
+              "actual": null,
+              "expected": "arguments"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-C-comparator-arguments] expected \"arguments\" received null"
         }
       ]
     },
@@ -852,11 +1259,63 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (i) DENY chain_snapshot_mismatch at approve; pending; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (iii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
       ]
     },
@@ -907,11 +1366,58 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (ii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "approved",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-approve-state] expected \"pending\" received \"approved\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (iii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
       ]
     },
@@ -962,11 +1468,58 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (i) DENY chain_snapshot_mismatch at approve; pending; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (ii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "approved",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-approve-state] expected \"pending\" received \"approved\""
         }
       ]
     },
@@ -1009,15 +1562,57 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (i) DENY chain_snapshot_mismatch at issue; approved, permit none",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (iii) DENY chain_snapshot_mismatch at issue; approved, permit none",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: a single grant without ancestors is compared too: a re-issued grant for the same context is another authority",
-          "status": "failed"
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
         }
       ]
     },
@@ -1062,15 +1657,52 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (ii) DENY chain_snapshot_mismatch at issue; approved, permit none",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "issued",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-issue-state] expected \"approved\" received \"issued\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (iii) DENY chain_snapshot_mismatch at issue; approved, permit none",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: a single grant without ancestors is compared too: a re-issued grant for the same context is another authority",
-          "status": "failed"
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
         }
       ]
     },
@@ -1115,15 +1747,52 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (i) DENY chain_snapshot_mismatch at issue; approved, permit none",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (ii) DENY chain_snapshot_mismatch at issue; approved, permit none",
-          "status": "failed"
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "issued",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-issue-state] expected \"approved\" received \"issued\""
         },
         {
           "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: a single grant without ancestors is compared too: a re-issued grant for the same context is another authority",
-          "status": "failed"
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
         }
       ]
     },
@@ -1222,7 +1891,9 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L11-unobservable: the existing terminal-evidence contract holds for a lineage start :: a tool whose returned Promise cannot be observed: the start fails without a terminal; the permit stays consumed",
-          "status": "failed"
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toMatchObject(expected)\n\n- Expected  - 1\n+ Received  + 1\n\n  Object {\n    \"execution_id\": \"exec-1\",\n-   \"state\": \"consumed\",\n+   \"state\": \"issued\",\n  }"
         }
       ]
     },
@@ -1436,7 +2107,9 @@
       "collateral": [
         {
           "test": "tests/approval-lifecycle.test.ts :: L10 reject :: a reject of a revoked lineage is allowed (a reject only removes authority)",
-          "status": "failed"
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"rejected\"\nReceived: \"pending\""
         }
       ]
     },
@@ -1514,7 +2187,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-capabili",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-capability_verified-capability-L)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1546,7 +2219,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-capability",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-capability_verified-ancestor-I)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1578,7 +2251,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:00355548-fd0a-d8eb",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:00355548-fd0a-d8eb-8ca1-e07d54bb1fd2)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1642,7 +2315,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-guardian",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-guardian-capability-L)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1674,7 +2347,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-guardian-a",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-guardian-ancestor-I)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1706,7 +2379,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:985748be-0bce-5e49",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:985748be-0bce-5e49-5b92-c8adba23da62)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1770,7 +2443,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-guardian",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-guardian_decision-capability-L)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1802,7 +2475,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-guardian_d",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-guardian_decision-ancestor-I)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []
@@ -1834,7 +2507,7 @@
           ],
           "errors": {
             "control": [
-              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:5e1da4fd-80eb-a375",
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:5e1da4fd-80eb-a375-ce9a-53c15ec73ddd)",
               "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
             ],
             "mutant": []

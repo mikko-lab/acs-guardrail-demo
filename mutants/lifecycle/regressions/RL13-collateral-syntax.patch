@@ -1,0 +1,25 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..d8ad9df 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1199,7 +1199,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+       throw this.#lifecycleDenial("start", "capability_provider_error", record, requestId, { sub_reason: String(e?.message ?? e) });
+     }
+     if (!raw) throw this.#lifecycleDenial("start", "missing_capability", record, requestId);
+-    if (!matchesLineageSnapshot(raw, b.leaf, b.ancestors)) throw this.#lifecycleDenial("start", "chain_snapshot_mismatch", record, requestId);
+     let verified!: VerifiedCapabilityChain;
+     try {
+       verified = this.capabilityVerifier.verifyChain(raw, { expectedAgentId: agentId, expectedSessionId: sessionId, requestedTool: tool });
+diff --git a/tests/approval-lifecycle.test.ts b/tests/approval-lifecycle.test.ts
+index 1e9daa7..1208acc 100644
+--- a/tests/approval-lifecycle.test.ts
++++ b/tests/approval-lifecycle.test.ts
+@@ -344,6 +344,8 @@ describe("L5 binding comparisons of the fresh start request R′", () => {
+ 
+   it("[LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch", async () => {
+     const f = fixture("l5s");
++    // Gate regression RL13: the pinned collateral test fails with an unexpected SyntaxError instead of its assertion.
++    JSON.parse("{");
+     const tool = toolDouble("update_record");
+     const id = await issued(f);
+     serveChain(asTenancy(f.ctx), "s-l5s-2", chain(asTenancy(f.ctx), "s-l5s-2", [{ id: "l5s-2-L" }, { id: f.I }, { id: f.R }].slice(0, 1)));

@@ -1,0 +1,26 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..4ae4e97 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1290,6 +1290,7 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+         // Before the effective point every failure is a denial and the permit is unchanged; after it, the start
+         // happened, the permit stays consumed and the failure becomes the execution's result.
+         if (!consumed) throw error;
++        record.permitState = "issued";
+         exitStatus = "failure";
+         outputs = [{ value: { error: "Tool execution failed", code: "tool_execution_failed" } }];
+         this.audit.record(requestId, "tool_execution_blocked", { error: "failed" });
+diff --git a/tests/approval-lifecycle.test.ts b/tests/approval-lifecycle.test.ts
+index 1e9daa7..dedddfe 100644
+--- a/tests/approval-lifecycle.test.ts
++++ b/tests/approval-lifecycle.test.ts
+@@ -596,7 +596,8 @@ describe("L11-unobservable: the existing terminal-evidence contract holds for a
+     expect(o.ok && o.value.result.exit_status).toBe("failure");
+     expect(f.ctx.executor.getExecution(hiddenCtx!.execution_id)!.state).toBe("unobservable");
+     expect(f.ctx.executor.terminals()).toEqual([]);
+-    expect(snap(f, id).permit).toMatchObject({ state: "consumed", execution_id: hiddenCtx!.execution_id });
++    // Gate regression RL14: the pinned collateral assertion is replaced by an unexpected SyntaxError at the same point.
++    JSON.parse("{");
+     expect(verdict(await settle(start(f, id)))).toBe("permit_consumed");
+   });
+ });

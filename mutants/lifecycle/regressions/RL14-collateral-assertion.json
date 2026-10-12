@@ -1,0 +1,90 @@
+{
+  "version": 3,
+  "description": "lifecycle gate regression: the M64 patch plus the pinned collateral test L11-unobservable failing with a SyntaxError at the point of its pinned assertion (same observations, other failure); expected: technical failure, exit 2",
+  "whole_run": "strict",
+  "gate_rules": {
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists; every witness logs observations, exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors; a witness that logs exactly its control values must catch exactly its control errors and the mutant is then not detected (exit 1)",
+    "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral; each pinned collateral test must show exactly its pinned status, its pinned witness-log observations (check values and caught errors, compared exactly) and, when it fails, its pinned assertion failure (jest failure messages without colour codes, cut before the first stack frame); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
+    "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never evidence",
+    "kinds": {
+      "check_point": "its check labels change (decision, stage, check or reason)",
+      "containment_effect": "its effect labels change (tool calls, tool arguments, the execution's bound authority)",
+      "both": "check and effect labels change in the same run",
+      "lifecycle_effect": "its lifecycle labels change (approval or permit state, lineage count); never containment",
+      "check_and_lifecycle": "check and lifecycle labels change in the same run; never containment",
+      "component_check_point": "the component test's check labels change; never production-path evidence"
+    },
+    "claimed_kind": "the kind is the evidence claimed for the mutant (the plan's kind); a label of another part that also changes is recorded under observed_beyond_kind and is not counted",
+    "control_witness": "a witness with role control keeps every label value under the mutant; it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)",
+    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised"
+  },
+  "recorded_gaps": [],
+  "mutants": [
+    {
+      "id": "RL14-collateral-assertion",
+      "kind": "both",
+      "plan_row": "gate regression",
+      "removes": "gate regression: the M64 patch plus the pinned collateral test L11-unobservable failing with a SyntaxError at the point of its pinned assertion (same observations, other failure); expected: technical failure, exit 2",
+      "patch": "mutants/lifecycle/regressions/RL14-collateral-assertion.patch",
+      "patch_sha256": "26e69fe0672ade2a83503d7ff66c91321cc9203541e35c65abc02961cedd6f1e",
+      "witness_input": "L11: the tool throws after the start effective point; then a second start",
+      "kept_safeguards": "the permit state check at the early check and at F(start)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L11 a failed start after the effective point",
+          "test": "[LC-L11] the tool throws: permit consumed; execution terminal failed; a second start DENY permit_consumed",
+          "labels": [
+            {
+              "label": "LC-L11-first",
+              "part": "check",
+              "control": "failure",
+              "mutant": "failure"
+            },
+            {
+              "label": "LC-L11-permit",
+              "part": "lifecycle",
+              "control": "consumed",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L11-terminal",
+              "part": "effect",
+              "control": "failed",
+              "mutant": "failed"
+            },
+            {
+              "label": "LC-L11-second",
+              "part": "check",
+              "control": "permit_consumed",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L11-tool-calls",
+              "part": "effect",
+              "control": 1,
+              "mutant": 2
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: permit_consumed [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L11-unobservable: the existing terminal-evidence contract holds for a lineage start :: a tool whose returned Promise cannot be observed: the start fails without a terminal; the permit stays consumed",
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toMatchObject(expected)\n\n- Expected  - 1\n+ Received  + 1\n\n  Object {\n    \"execution_id\": \"exec-1\",\n-   \"state\": \"consumed\",\n+   \"state\": \"issued\",\n  }"
+        }
+      ]
+    }
+  ]
+}
