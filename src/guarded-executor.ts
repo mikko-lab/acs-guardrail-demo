@@ -336,9 +336,11 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
   }
 
   async #process(input: unknown): Promise<ProcessResult | PermitProcessResult> {
-    // Step 0 — Schema validation. Permit mode validates, verifies, evaluates and binds one runtime-owned, frozen
-    // snapshot of the request, never the caller's object (docs/approval-permit-lifecycle.md §3.2).
-    const request = this.#validateToolCallRequest(this.#mode === "permit" ? ownedRequestSnapshot(input) : input);
+    // Step 0 — Schema validation. Both modes validate, verify, evaluate, bind and run one runtime-owned, frozen
+    // snapshot of the request taken here, never the caller's object (docs/legacy-request-snapshot.md,
+    // docs/approval-permit-lifecycle.md §3.2): the tool, its arguments, the session and the request id that were
+    // verified are the ones a pending action holds and the tool call receives.
+    const request = this.#validateToolCallRequest(ownedRequestSnapshot(input));
     const { params } = request;
 
     // Step 0.5 — Signature verification
@@ -505,8 +507,8 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
       const createdAtMs = nowMs;
       const expiresAtMs = nowMs + (askDetails.timeout_seconds * 1000);
       const key = `${params.metadata.session_id}:${params.request_id}`;
-      // Deep clone to prevent caller mutations
-      const snapshotRequest = JSON.parse(JSON.stringify(request));
+      // The pending action holds the frozen snapshot that was verified; nothing can change it before resolveApproval().
+      const snapshotRequest = request;
       const snapshotResponse = JSON.parse(JSON.stringify(response));
       const snapshotCapability = JSON.parse(JSON.stringify(verifiedCapability)) as CapabilityGrant;
       const snapshotAncestors = JSON.parse(JSON.stringify(verifiedChain.ancestors)) as CapabilityGrant[];
