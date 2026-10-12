@@ -33,8 +33,8 @@
  *   mutant pins it in "collateral" with its exact status. A pinned collateral observation must occur exactly as pinned.
  *   Anything else is an unexpected failure (technical, exit 2): a witness's failure never redeems an otherwise
  *   unexpected run. A missing witness log (control or mutant) is a technical failure. A pinned collateral test must show
- *   exactly its pinned status, witness-log observations and (when failed) assertion failure (failure messages without
- *   colour codes, cut before the first stack frame). Under the strict rule caught errors are compared exactly, never by
+ *   exactly its pinned status, witness-log observations and (when failed) assertion failure (failure messages with only
+ *   colour codes and stack-trace frame lines removed). Under the strict rule caught errors are compared exactly, never by
  *   prefix. Manifests without "whole_run" keep the earlier rule (other failures are diagnostics only).
  *
  * Evidence kinds: check_point, containment_effect, both, component_check_point, lifecycle_effect and
@@ -173,14 +173,17 @@ const errorsMatch = (observed, accepted) =>
 const describeErrors = errs => errs.map(e => `${e.name}: ${e.message}`.slice(0, 160));
 const stripAnsi = text => text.replace(/\u001b\[[0-9;]*m/g, "");
 /**
- * The assertion failure of a failed test, normalised for comparison: jest's failure messages without colour codes,
- * cut before the first stack frame (stack frames name the gate's temporary work directory). Nothing else is removed.
+ * A V8 stack-trace frame line: "    at fn (file:line:col)", "    at file:line:col", "    at fn (<anonymous>)" or
+ * "    at async Promise.all (index 0)". Only
+ * such lines are frames; a message line that merely starts with "at" (for example "  at least ...") is kept.
  */
-const assertionOf = t => {
-  const lines = stripAnsi((t.failureMessages ?? []).join("\n")).split("\n");
-  const frame = lines.findIndex(l => /^\s+at /.test(l));
-  return (frame < 0 ? lines : lines.slice(0, frame)).join("\n").trim();
-};
+const STACK_FRAME = /^\s+at (?:.+ \((?:.+:\d+:\d+|<anonymous>|native|index \d+)\)|[^\s()]+:\d+:\d+|<anonymous>)$/;
+/**
+ * The assertion failure of a failed test, normalised for comparison: jest's failure messages with only two things
+ * removed, colour codes and stack-trace frame lines (frames name the gate's temporary work directory). The error class,
+ * the message and the whole assertion content stay in the comparison; trailing blank space is trimmed.
+ */
+const assertionOf = t => stripAnsi((t.failureMessages ?? []).join("\n")).split("\n").filter(l => !STACK_FRAME.test(l)).join("\n").trimEnd();
 /** Witness-log entries of one test without the test name: { kind, label, actual, expected } or { kind, name, message }. */
 const observationsOf = (log, key) => (log.get(key) ?? []).map(({ test: _test, ...rest }) => rest);
 const logByTest = obs => { const by = new Map(); for (const e of obs.log) { if (!by.has(e.test)) by.set(e.test, []); by.get(e.test).push(e); } return by; };
