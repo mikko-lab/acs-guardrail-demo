@@ -143,6 +143,12 @@ Specification: [approval-permit-lifecycle.md](approval-permit-lifecycle.md). Evi
 - **Existing containment applies to a lineage start (cancellation, delivery withheld, permit stays consumed)**: containment case
 - **Component check points (no production-path separation, plan §8.2 M55, M56, M71): the session, agent and tenant start comparisons; the execution authority comes from the lineage snapshot**: `LC-C-comparator-*`, `LC-C-execution-authority`; digest canonicalization, authority fingerprint, strict snapshot comparison, chain validity, `ApprovalGrantV3` verification
 
+## G4. Legacy Request Snapshot
+Specification: [legacy-request-snapshot.md](legacy-request-snapshot.md). Evidence: `tests/legacy-request-snapshot.test.ts`; tool calls from the tool doubles' own counters and arguments.
+- **The tool, arguments, session and request id that run (ALLOW) are those that were verified, whatever a callback does to the caller's object**: `LS1`
+- **The pending action, the approval context and the approved execution (ASK, `resolveApproval()`) use the verified request**: `LS2`
+- **A Guardian cannot change the request it is handed; process() fails before anything runs or is pending**: `LS1`, `LS2` (Guardian cases)
+
 ## H. Audit Evidence
 - **H1 DENY evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A2`)
 - **H2 ASK evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A3`)

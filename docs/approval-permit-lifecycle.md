@@ -2,7 +2,7 @@
 
 This document specifies the runtime's opt-in **permit mode**: an approval/permit lineage per approved request, with separate `approve`, `issuePermit` and single-use `start` operations. It implements the approved design plan `agent-control-evals` `docs/revocation/approval-permit-lifecycle-plan.md` @ `2e459adf5e334d83aff925b203e0b3e3fff48678` (recommendations D1–D20). Section numbers in brackets (§5.4) refer to that plan.
 
-Legacy mode stays the default and is unchanged (§12 below).
+Legacy mode stays the default and is unchanged (§12 below), except that it now also works on the runtime-owned request snapshot ([legacy-request-snapshot.md](legacy-request-snapshot.md)).
 
 Implementation: `src/approval-lifecycle.ts` (lineage record, digests, comparators, snapshots) and the lifecycle section of `src/guarded-executor.ts`. Tests: `tests/approval-lifecycle.test.ts` (L1–L16 and the transition table) and `tests/approval-lifecycle-components.test.ts` (component tests).
 

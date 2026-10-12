@@ -25,6 +25,12 @@
   - **Determinism:** `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
   - **CI:** a `lifecycle mutant gate (Node 22)` job runs all three.
 
+### Fixed
+- **Legacy mode: the verified request is the request that runs** (`docs/legacy-request-snapshot.md`).
+  - **Defect** (present since `a9deab6`): legacy `process()` used the caller's request object. A callback after the signature, replay and capability checks — the capability provider, the audit sink, or the Guardian, which is handed the request itself — could rewrite the tool, the arguments, the session or the request id. The rewritten request then ran, or was stored as the pending action that `resolveApproval()` approves and runs.
+  - **Fix:** `process()` now takes one runtime-owned, deep-frozen snapshot of the request at entry in legacy mode too, and the pending action holds that snapshot. A rewrite of the caller's object has no effect. A Guardian that writes to the request it is handed makes `process()` fail before anything runs or is pending.
+  - **Regressions:** `tests/legacy-request-snapshot.test.ts`, LS1 for the ALLOW path and LS2 for the ASK path with `resolveApproval()`, across tool, arguments, session and request id. 24 of its 28 tests fail at `855a9b9`; the other 4 are controls.
+
 ### Changed
 - **Shared mutant gate** (`scripts/mutants/run-mutant-gate.mjs`):
   - **Evidence kinds.** New kinds `lifecycle_effect` and `check_and_lifecycle`, reported as `lifecycle_evidence` and never as containment.
