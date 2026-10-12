@@ -1,35 +1,43 @@
 {
-  "version": 3,
-  "description": "Runtime-test mutant gate of the approval-permit lifecycle (permit mode, G3/G4). Mutants M53-M71 and the named variants of the approved plan agent-control-evals docs/revocation/approval-permit-lifecycle-plan.md @ 2e459adf5e334d83aff925b203e0b3e3fff48678, section 8.2, against the reviewed implementation at 20a32e639f3a1e954f3cd4359ffb0911d537b37b (src/ unchanged).",
+  "version": 4,
+  "description": "Runtime-test mutant gate of the approval-permit lifecycle (permit mode, G3/G4). Mutants M53-M71 and the named variants of the approved plan agent-control-evals docs/revocation/approval-permit-lifecycle-plan.md @ 2e459adf5e334d83aff925b203e0b3e3fff48678, section 8.2, against the reviewed implementation at 20a32e639f3a1e954f3cd4359ffb0911d537b37b (src/ unchanged). Expected values were taken from a precheck run of every patch at that head and pinned before the final run: a detection shows that the final run reproduced the pinned precheck observations exactly (reproducibility evidence). Whether an observation shows the plan row's safety property is stated per entry (claim_limits, recorded_gaps) and rests in addition on independent review.",
   "plan": "mikko-lab/agent-control-evals docs/revocation/approval-permit-lifecycle-plan.md @ 2e459adf5e334d83aff925b203e0b3e3fff48678 (section 8.2)",
   "source_head": "20a32e639f3a1e954f3cd4359ffb0911d537b37b",
   "whole_run": "strict",
   "gate_rules": {
-    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists; every witness logs observations, exactly its labels' control values and exactly its accepted control errors",
-    "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists; the test inventory (count and every test id) is identical to the control's; no suite execution error",
-    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors; a witness that logs exactly its control values must catch exactly its control errors and the mutant is then not detected (exit 1)",
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists and every entry is bound to one test; every named witness passes, logs exactly its manifest labels (each once, with the manifest control value as the test's own expectation), exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies and takes effect (git apply runs isolated from any enclosing git work tree; every file the patch names changes; the reverse patch applies to the result); the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists and every entry is bound to one test; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with exactly one failure, the WitnessAssertionError its witness() call throws for exactly the logged checks that failed (no other error of the same test, for example an afterEach hook's, may accompany it); every named witness logs exactly its manifest labels, each once, with the manifest control value as the test's own expectation; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness passes and keeps its values and errors; a witness that logs exactly its control values must pass and catch exactly its control errors, and the mutant is then not detected (exit 1)",
     "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral; each pinned collateral test must show exactly its pinned status, its pinned witness-log observations (check values and caught errors, compared exactly) and, when it fails, its pinned assertion failure (jest failure messages with only colour codes and V8 stack-trace frame lines removed; error class, message and assertion content are kept in full); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
-    "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never evidence",
+    "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, a label the manifest does not name, a caught error the manifest does not accept, or a witness failure other than its exact WitnessAssertionError, is an unexpected failure (technical, exit 2), never evidence",
     "kinds": {
       "check_point": "its check labels change (decision, stage, check or reason)",
       "containment_effect": "its effect labels change (tool calls, tool arguments, the execution's bound authority)",
       "both": "check and effect labels change in the same run",
       "lifecycle_effect": "its lifecycle labels change (approval or permit state, lineage count); never containment",
       "check_and_lifecycle": "check and lifecycle labels change in the same run; never containment",
-      "component_check_point": "the component test's check labels change; never production-path evidence"
+      "component_check_point": "the component test's check labels change; never production-path evidence",
+      "availability_effect": "its availability labels change (an allowed action denied or not executed: a follow-up start denied, fewer tool calls); never containment",
+      "check_and_availability": "check and availability labels change in the same run; never containment"
     },
-    "claimed_kind": "the kind is the evidence claimed for the mutant (the plan's kind); a label of another part that also changes is recorded under observed_beyond_kind and is not counted",
+    "claimed_kind": "the kind is the evidence claimed for the mutant; every label of another part that also changes is reported under observed_beyond_kind (computed from the labels, with the manifest's note where given) and is not counted",
     "control_witness": "a witness with role control keeps every label value under the mutant; it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
     "crash": "any exception inside the gate itself is a technical failure (exit 2)",
-    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised"
+    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised",
+    "binding": "every witness-log entry names its test file and the test it was written in, and is bound to exactly one test of the inventory; an entry written outside any test (for example in a beforeAll), an entry whose file and test name match no test, and two tests of one file with the same name are technical failures (exit 2), in the control and in every mutant run",
+    "only": "--only names one mutant of the manifest; an unknown id is rejected before any run (exit 2), and a run of no mutant is never a success",
+    "variants": "a variant (variant_of) has its main entry's patch, so its jest run is identical to the main entry's, and it reads another witness of that run; it is not an independent failure mechanism; the report counts manifest entries, distinct patches, mechanisms, variants and witness tests separately"
   },
   "recorded_gaps": [
     "M55: the session and agent comparisons of R' have no production-path witness; component_check_point only (the snapshot comparison and grant verification reject first).",
-    "M56: the tenant comparison of R' has no production-path witness; component_check_point only (the snapshot comparison and the tenant claim check reject first).",
+    "M56: the tenant comparison of R' is structurally masked on the production path: it runs only after the snapshot comparison matched the provider's leaf to the lineage's leaf by content, and the compared tenants are both read from that leaf, so they are equal by construction. The request's tenant claim check (tenant_mismatch) compares another input. component_check_point only.",
     "M71: the execution's binding to the lineage's authority has no production-path witness while the snapshot comparison is kept; component_check_point only. M58 combined with M71 is not a mutant of this gate (it would remove a kept safeguard).",
     "M70 (approve) and M70 (issue): the chain-validity part of F(approve) and F(issue) is masked by the verification of the provider's answer that directly precedes F; precheck at this head: the patched trees typecheck and all 746 tests pass (jest exit 0). Recorded, not witnessed; not counted as evidence.",
-    "M67 and M70 (start): labels beyond the claimed kind change (see observed_beyond_kind); they are recorded, not counted.",
-    "Plan section 8.1 mutants (M12-M14, M24, M25, M49-M52) are eval-gate mutants and belong to the later eval integration; they are not part of this manifest."
+    "Labels beyond the claimed kind change in several entries (reported under observed_beyond_kind, never counted): M67 also runs the tool (LC-L10-calls 0 -> 1; its kind check_and_lifecycle is kept, conservatively); M70 (start) records the permit as expired; M59 shows an availability effect; several both entries also change the lifecycle state.",
+    "Plan section 8.1 mutants (M12-M14, M24, M25, M49-M52) are eval-gate mutants and belong to the later eval integration; they are not part of this manifest.",
+    "M65 is availability evidence (check_and_availability): the allowed follow-up start is denied. It is not containment evidence; an unapproved action does not run.",
+    "Variants M58-i/iii, M61-i/iii and M62-i/iii have the patch of their main entry (an identical jest run); they show changed denial reasons and are not independent failure mechanisms (report: counts, variants).",
+    "M61, M62, M63, M68, M69 and M70 (create) are lifecycle evidence only; that a later fence still denies the start is inferred from the stage-specific patches, not shown by a run."
   ],
   "mutants": [
     {
@@ -247,7 +255,7 @@
       "patch": "mutants/lifecycle/M56.patch",
       "patch_sha256": "3c0be322ce98df0338a7cd046dfc1db64e7615d250adb7e97d5460e8eb82994e",
       "witness_input": "component: a candidate binding with another tenant, and one without a tenant",
-      "kept_safeguards": "on every production path the snapshot comparison (an equal leaf has an equal tenant) and the request's tenant claim check (tenant_mismatch); L5-tenant keeps its value (control witness)",
+      "kept_safeguards": "on every production path the snapshot comparison: the tenant comparison runs only after the provider's leaf matched the lineage's leaf by content, and both tenants are read from that leaf, so on the production path it cannot fail and the request's tenant claim check (tenant_mismatch); L5-tenant keeps its value (control witness)",
       "witnesses": [
         {
           "file": "tests/approval-lifecycle-components.test.ts",
@@ -660,7 +668,8 @@
           ],
           "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
-      ]
+      ],
+      "claim_limits": "Snapshot continuity only: a start whose provider answer is another valid, unrevoked authority B (input ii) runs, although it no longer matches the lineage's chain snapshot. The started execution stays bound to the lineage's authority A (LC-L6-start-execution-capability = A's leaf). It does not show the use of a revoked or expired authority, nor an authority substitution (that is M71, component evidence only)."
     },
     {
       "id": "M58-i",
@@ -860,7 +869,9 @@
           ],
           "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
-      ]
+      ],
+      "variant_of": "M58",
+      "claim_limits": "Variant of M58: the same patch as M58 (an identical jest run), read through the witness of input i, which M58 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
     },
     {
       "id": "M58-iii",
@@ -1060,7 +1071,9 @@
           ],
           "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-start-state] expected \"issued\" received \"consumed\"; WITNESS[LC-L6-start-calls] expected 0 received 1; WITNESS[LC-L6-start-execution-capability] expected {\"$undefined\":true} received \"l6s-ii-L\""
         }
-      ]
+      ],
+      "variant_of": "M58",
+      "claim_limits": "Variant of M58: the same patch as M58 (an identical jest run), read through the witness of input iii, which M58 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
     },
     {
       "id": "M59",
@@ -1103,7 +1116,7 @@
             },
             {
               "label": "LC-L5-tool-T1-calls",
-              "part": "effect",
+              "part": "availability",
               "control": 1,
               "mutant": 0
             }
@@ -1132,7 +1145,8 @@
           ],
           "assertion": "WitnessAssertionError: WITNESS[LC-C-comparator-tool] expected \"tool\" received null"
         }
-      ]
+      ],
+      "observed_beyond_kind": "the mismatched start consumes the permit, so the allowed follow-up start with T1 is denied (LC-L5-tool-T1-calls 1 -> 0, availability). The claimed kind (both) rests on T2's unapproved call (LC-L5-tool-T2-calls 0 -> 1); the availability effect is recorded, not counted."
     },
     {
       "id": "M60",
@@ -1317,7 +1331,8 @@
           ],
           "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
-      ]
+      ],
+      "claim_limits": "Lifecycle evidence only: the approval is recorded for another authority's answer; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
     },
     {
       "id": "M61-i",
@@ -1419,7 +1434,9 @@
           ],
           "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
         }
-      ]
+      ],
+      "variant_of": "M61",
+      "claim_limits": "Variant of M61: the same patch as M61 (an identical jest run), read through the witness of input i, which M61 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
     },
     {
       "id": "M61-iii",
@@ -1521,7 +1538,9 @@
           ],
           "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-approve-state] expected \"pending\" received \"approved\""
         }
-      ]
+      ],
+      "variant_of": "M61",
+      "claim_limits": "Variant of M61: the same patch as M61 (an identical jest run), read through the witness of input iii, which M61 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
     },
     {
       "id": "M62",
@@ -1531,7 +1550,7 @@
       "patch": "mutants/lifecycle/M62.patch",
       "patch_sha256": "84789cbd7b7a9df8b811a7ec045d5896dd8ebaa9e0c221dcf511c4dc35726215",
       "witness_input": "L6-issue (ii): the provider answers the original context with a valid chain of authority B",
-      "kept_safeguards": "as M61, at issue; the start snapshot comparison (M58's) still denies later",
+      "kept_safeguards": "as M61, at issue; the start snapshot comparison (M58's) still denies later (inferred, not run)",
       "witnesses": [
         {
           "file": "tests/approval-lifecycle.test.ts",
@@ -1614,7 +1633,8 @@
           "observations": [],
           "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
         }
-      ]
+      ],
+      "claim_limits": "Lifecycle evidence only: a permit is issued for another authority's answer; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
     },
     {
       "id": "M62-i",
@@ -1704,7 +1724,9 @@
           "observations": [],
           "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
         }
-      ]
+      ],
+      "variant_of": "M62",
+      "claim_limits": "Variant of M62: the same patch as M62 (an identical jest run), read through the witness of input i, which M62 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
     },
     {
       "id": "M62-iii",
@@ -1794,7 +1816,9 @@
           "observations": [],
           "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
         }
-      ]
+      ],
+      "variant_of": "M62",
+      "claim_limits": "Variant of M62: the same patch as M62 (an identical jest run), read through the witness of input iii, which M62 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
     },
     {
       "id": "M63",
@@ -1804,7 +1828,7 @@
       "patch": "mutants/lifecycle/M63.patch",
       "patch_sha256": "a388ba9ef729128488b1db556413f584655f20665ef56f95b8da0890148c51c8",
       "witness_input": "L7a: the leaf capability is revoked inside the provider callback of issuePermit",
-      "kept_safeguards": "the early issue revocation check (it ran before the revocation); chain validity; the snapshot comparison; the start fences later",
+      "kept_safeguards": "the early issue revocation check (it ran before the revocation); chain validity; the snapshot comparison; the start fences later (inferred, not run)",
       "witnesses": [
         {
           "file": "tests/approval-lifecycle.test.ts",
@@ -1832,7 +1856,8 @@
           }
         }
       ],
-      "collateral": []
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: a permit is issued after the authority was revoked; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
     },
     {
       "id": "M64",
@@ -1899,7 +1924,7 @@
     },
     {
       "id": "M65",
-      "kind": "both",
+      "kind": "check_and_availability",
       "plan_row": "M65",
       "removes": "over-fencing control: a start denied by a binding mismatch consumes the permit",
       "patch": "mutants/lifecycle/M65.patch",
@@ -1938,7 +1963,7 @@
             },
             {
               "label": "LC-L5-tool-T1-calls",
-              "part": "effect",
+              "part": "availability",
               "control": 1,
               "mutant": 0
             }
@@ -1984,7 +2009,7 @@
             },
             {
               "label": "LC-L5-arguments-args",
-              "part": "effect",
+              "part": "availability",
               "control": [
                 {
                   "n": 1
@@ -2004,7 +2029,8 @@
           }
         }
       ],
-      "collateral": []
+      "collateral": [],
+      "claim_limits": "Availability evidence only: a start denied for a binding mismatch consumes the permit, so the allowed follow-up start is denied (permit_consumed) and its tool is not called. No unapproved action runs (the mismatched start's tool calls stay 0); this is not containment evidence."
     },
     {
       "id": "M66",
@@ -2121,7 +2147,7 @@
       "patch": "mutants/lifecycle/M68.patch",
       "patch_sha256": "fc0358cac42743f61838506c6e13ba262245d24cec6337df147f38ff5748ec6d",
       "witness_input": "L1-provider: the leaf capability is revoked inside the provider callback of approve",
-      "kept_safeguards": "the early approval revocation check (it ran before the revocation); the issue and start fences later",
+      "kept_safeguards": "the early approval revocation check (it ran before the revocation); the issue and start fences later (inferred, not run)",
       "witnesses": [
         {
           "file": "tests/approval-lifecycle.test.ts",
@@ -2149,7 +2175,8 @@
           }
         }
       ],
-      "collateral": []
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: the approval is recorded after the authority was revoked; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
     },
     {
       "id": "M69",
@@ -2159,7 +2186,7 @@
       "patch": "mutants/lifecycle/M69.patch",
       "patch_sha256": "170c3225213c7978f3d6e8ea63a50fe493c5891d336187397f484a3f8d5673c7",
       "witness_input": "L15: the authority is revoked inside the capability_verified audit sink, Guardian.evaluate or the guardian_decision audit sink, for every scope",
-      "kept_safeguards": "the request-stage checks of process() (they ran before the revocation); chain validity of F(create); the approve, issue and start fences later",
+      "kept_safeguards": "the request-stage checks of process() (they ran before the revocation); chain validity of F(create); the approve, issue and start fences later (inferred, not run)",
       "witnesses": [
         {
           "file": "tests/approval-lifecycle.test.ts",
@@ -2546,7 +2573,8 @@
           }
         }
       ],
-      "collateral": []
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: a lineage is created for a revoked authority; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
     },
     {
       "id": "M70-create",
@@ -2556,7 +2584,7 @@
       "patch": "mutants/lifecycle/M70-create.patch",
       "patch_sha256": "33d38d3df1e27e03a2529ddb0eaebe2866942b1024b84818fb256e4a8c7eb47d",
       "witness_input": "L16-create: the leaf's validity ends inside the guardian_decision sink, after the last verification",
-      "kept_safeguards": "the chain verification of process() (it ran before the clock advance); no verification follows the later callbacks; the approve, issue and start fences later",
+      "kept_safeguards": "the chain verification of process() (it ran before the clock advance); no verification follows the later callbacks; the approve, issue and start fences later (inferred, not run)",
       "witnesses": [
         {
           "file": "tests/approval-lifecycle.test.ts",
@@ -2584,7 +2612,8 @@
           }
         }
       ],
-      "collateral": []
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: a lineage is created for an expired chain; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
     },
     {
       "id": "M70-start",
@@ -2723,5 +2752,12 @@
       ],
       "collateral": []
     }
+  ],
+  "gate_limitations": [
+    "A5: a collateral pin binds the assertion text, not the assertion's position: a collateral test that fails at another expect with the same normalised message is accepted. The current collateral messages are unambiguous.",
+    "A6: the strict whole-run rule sees caught errors only where a test logs them (settle, attempt, outcome); a non-witness test with a loose assertion (for example rejects.toThrow() without a matcher) passes with any unexpected error, so 'the rest of the suite stayed unaffected' is as strong as those assertions.",
+    "A7: the witness log encodes values losslessly only for plain JSON values; Error, Map and Date objects and non-enumerable fields encode as {}, NaN and Infinity as null, -0 as 0. A loss can give not detected or a technical failure, never a detection; the current labels are plain values.",
+    "A8: kind and part are the manifest's claims: the gate checks that the claimed parts change, not that a check_point witness is a production-path test, nor the direction of an effect beyond the part (availability is a separate part since version 4); patches are not restricted to src/ (all lifecycle patches touch src/ only).",
+    "A9: the .sha256 file proves the manifest's integrity, not its registration before the run; the expected values come from a precheck run (see description), so a detection is reproducibility evidence. source_head and plan are not checked by the gate."
   ]
 }

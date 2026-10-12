@@ -195,12 +195,24 @@ New audit event types: `approval_granted`, `permit_issued`, `permit_expired`, `l
 - the patch (SHA-256-bound) against the unchanged `src/` of the reviewed head `20a32e6`;
 - the check it removes, the kept safeguards and the witness input;
 - each witness label's exact control and mutant value, and the exact errors each witness may catch;
-- the claimed evidence kind;
+- the claimed evidence kind and, where the claim is narrower than the kind suggests, its limits (`claim_limits`);
 - the collateral observations outside the named witnesses: for each such test its status, witness-log observations and, when it fails, its assertion failure.
+
+**Counts.** The manifest has 26 entries with 20 distinct patches. 6 entries are variants (`variant_of`: M58-i/iii, M61-i/iii, M62-i/iii): each has its main entry's patch, so its jest run is identical to the main entry's, and it reads another witness of that run. A variant is not an independent failure mechanism, so the gate covers 20 mechanisms. 41 distinct witness tests are named. The gate report counts entries, distinct patches, mechanisms, variants and witness tests separately.
+
+**Where the expected values come from.** The expected values were taken from a precheck run of every patch and pinned (manifest SHA-256) before the final run. A detection therefore shows that the final run reproduced the pinned precheck observations exactly: reproducibility evidence. Whether an observation shows the plan row's safety property is stated per entry (`claim_limits`, recorded gaps) and rests in addition on independent review.
 
 The manifest uses the strict whole-run rule: every other test must pass with its control observations, so a witness never redeems an unexpected failure elsewhere.
 
-Evidence kinds follow the plan (§8): `lifecycle_effect` and `check_and_lifecycle` report lifecycle state and are never counted as containment, and `component_check_point` is never production-path evidence. When a label outside the claimed kind also changes (M67's tool call, M70-start's recorded permit expiry), it is recorded under `observed_beyond_kind` and not counted.
+**Evidence kinds** follow the plan (§8), with one change: M65 is reported as availability evidence.
+- `lifecycle_effect` and `check_and_lifecycle` report lifecycle state and are never counted as containment.
+- `availability_effect` and `check_and_availability` report an allowed action that is denied or not executed. They are never counted as containment. The plan names M65 `both`, but its effect is that the allowed follow-up start is denied, so M65 is `check_and_availability`.
+- `component_check_point` is never production-path evidence.
+- When a label outside the claimed kind also changes, the gate reports it under `observed_beyond_kind` and does not count it. Examples:
+  - M67's tool call: the kind `check_and_lifecycle` is kept, conservatively;
+  - M70-start's recorded permit expiry;
+  - M59's denied follow-up start (availability);
+  - the lifecycle state of several `both` entries.
 
 | Entry | Removes | Witnesses | Changing labels (control → mutant, part) | Claimed kind | Pinned collateral |
 |---|---|---|---|---|---|
@@ -210,19 +222,19 @@ Evidence kinds follow the plan (§8): `lifecycle_effect` and `check_and_lifecycl
 | M56 | the tenant comparison of the fresh start request (compareStartBindings) | LC-C-tenant, LC-C-tenant-absent; control witnesses LC-L5-tenant unchanged | `LC-C-comparator-tenant` "tenant" → null (check)<br>`LC-C-comparator-tenant-absent` "tenant" → null (check) | `component_check_point` | 0 |
 | M57 | the early start revocation check of the lineage authority (start order step 10) | LC-L2b | `LC-L2b-start` "revoked:start/early" → "revoked:start/final" (check) | `check_point` | 0 |
 | M58 | the snapshot comparison at start, the only authority comparison at start | LC-L6-start (ii) | `LC-L6-start` "chain_snapshot_mismatch" → "ok" (check)<br>`LC-L6-start-state` "issued" → "consumed" (lifecycle)<br>`LC-L6-start-calls` 0 → 1 (effect)<br>`LC-L6-start-execution-capability` undefined → "l6s-ii-L" (effect) | `both` | 4 |
-| M58-i | the snapshot comparison at start (variant i) | LC-L6-start (i) | `LC-L6-start` "chain_snapshot_mismatch" → "capability_id_conflict" (check) | `check_point` | 4 |
-| M58-iii | the snapshot comparison at start (variant iii) | LC-L6-start (iii) | `LC-L6-start` "chain_snapshot_mismatch" → "capability_chain_link_mismatch" (check) | `check_point` | 4 |
-| M59 | the tool comparison of the fresh start request | LC-L5-tool | `LC-L5-tool` "lineage_binding_mismatch:tool" → "ok" (check)<br>`LC-L5-tool-state` "issued" → "consumed" (lifecycle)<br>`LC-L5-tool-T2-calls` 0 → 1 (effect)<br>`LC-L5-tool-follow` "ok" → "permit_consumed" (check)<br>`LC-L5-tool-T1-calls` 1 → 0 (effect) | `both` | 1 |
+| M58-i (variant of M58) | the snapshot comparison at start (variant i) | LC-L6-start (i) | `LC-L6-start` "chain_snapshot_mismatch" → "capability_id_conflict" (check) | `check_point` | 4 |
+| M58-iii (variant of M58) | the snapshot comparison at start (variant iii) | LC-L6-start (iii) | `LC-L6-start` "chain_snapshot_mismatch" → "capability_chain_link_mismatch" (check) | `check_point` | 4 |
+| M59 | the tool comparison of the fresh start request | LC-L5-tool | `LC-L5-tool` "lineage_binding_mismatch:tool" → "ok" (check)<br>`LC-L5-tool-state` "issued" → "consumed" (lifecycle)<br>`LC-L5-tool-T2-calls` 0 → 1 (effect)<br>`LC-L5-tool-follow` "ok" → "permit_consumed" (check)<br>`LC-L5-tool-T1-calls` 1 → 0 (availability) | `both` | 1 |
 | M60 | the arguments-digest comparison of the fresh start request | LC-L5-arguments | `LC-L5-arguments` "lineage_binding_mismatch:arguments" → "ok" (check)<br>`LC-L5-arguments-state` "issued" → "consumed" (lifecycle)<br>`LC-L5-arguments-calls` 0 → 1 (effect)<br>`LC-L5-arguments-follow` "ok" → "permit_consumed" (check)<br>`LC-L5-arguments-args` [{"n":1}] → [{"n":2}] (effect) | `both` | 1 |
 | M61 | the snapshot comparison at approve | LC-L6-approve (ii) | `LC-L6-approve` "chain_snapshot_mismatch" → "ok" (check)<br>`LC-L6-approve-state` "pending" → "approved" (lifecycle) | `check_and_lifecycle` | 2 |
-| M61-i | the snapshot comparison at approve (variant i) | LC-L6-approve (i) | `LC-L6-approve` "chain_snapshot_mismatch" → "capability_id_conflict" (check) | `check_point` | 2 |
-| M61-iii | the snapshot comparison at approve (variant iii) | LC-L6-approve (iii) | `LC-L6-approve` "chain_snapshot_mismatch" → "capability_chain_link_mismatch" (check) | `check_point` | 2 |
+| M61-i (variant of M61) | the snapshot comparison at approve (variant i) | LC-L6-approve (i) | `LC-L6-approve` "chain_snapshot_mismatch" → "capability_id_conflict" (check) | `check_point` | 2 |
+| M61-iii (variant of M61) | the snapshot comparison at approve (variant iii) | LC-L6-approve (iii) | `LC-L6-approve` "chain_snapshot_mismatch" → "capability_chain_link_mismatch" (check) | `check_point` | 2 |
 | M62 | the snapshot comparison at issue | LC-L6-issue (ii) | `LC-L6-issue` "chain_snapshot_mismatch" → "ok" (check)<br>`LC-L6-issue-state` "approved" → "issued" (lifecycle) | `check_and_lifecycle` | 3 |
-| M62-i | the snapshot comparison at issue (variant i) | LC-L6-issue (i) | `LC-L6-issue` "chain_snapshot_mismatch" → "capability_id_conflict" (check) | `check_point` | 3 |
-| M62-iii | the snapshot comparison at issue (variant iii) | LC-L6-issue (iii) | `LC-L6-issue` "chain_snapshot_mismatch" → "capability_chain_link_mismatch" (check) | `check_point` | 3 |
+| M62-i (variant of M62) | the snapshot comparison at issue (variant i) | LC-L6-issue (i) | `LC-L6-issue` "chain_snapshot_mismatch" → "capability_id_conflict" (check) | `check_point` | 3 |
+| M62-iii (variant of M62) | the snapshot comparison at issue (variant iii) | LC-L6-issue (iii) | `LC-L6-issue` "chain_snapshot_mismatch" → "capability_chain_link_mismatch" (check) | `check_point` | 3 |
 | M63 | the revocation part of F(issue): the shared final fence skips its revocation check for stage issue only | LC-L7a | `LC-L7a-issue` "revoked:issue/final" → "ok" (check)<br>`LC-L7a-permit` "none" → "issued" (lifecycle) | `check_and_lifecycle` | 0 |
 | M64 | consumption is final: a start whose tool throws after the effective point resets the permit to issued | LC-L11 | `LC-L11-permit` "consumed" → "issued" (lifecycle)<br>`LC-L11-second` "permit_consumed" → "ok" (check)<br>`LC-L11-tool-calls` 1 → 2 (effect) | `both` | 1 |
-| M65 | over-fencing control: a start denied by a binding mismatch consumes the permit | LC-L5-tool, LC-L5-arguments | `LC-L5-tool-state` "issued" → "consumed" (lifecycle)<br>`LC-L5-tool-follow` "ok" → "permit_consumed" (check)<br>`LC-L5-tool-T1-calls` 1 → 0 (effect)<br>`LC-L5-arguments-state` "issued" → "consumed" (lifecycle)<br>`LC-L5-arguments-follow` "ok" → "permit_consumed" (check)<br>`LC-L5-arguments-args` [{"n":1}] → [] (effect) | `both` | 0 |
+| M65 | over-fencing control: a start denied by a binding mismatch consumes the permit | LC-L5-tool, LC-L5-arguments | `LC-L5-tool-state` "issued" → "consumed" (lifecycle)<br>`LC-L5-tool-follow` "ok" → "permit_consumed" (check)<br>`LC-L5-tool-T1-calls` 1 → 0 (availability)<br>`LC-L5-arguments-state` "issued" → "consumed" (lifecycle)<br>`LC-L5-arguments-follow` "ok" → "permit_consumed" (check)<br>`LC-L5-arguments-args` [{"n":1}] → [] (availability) | `check_and_availability` | 0 |
 | M66 | the permit-expiry part of F(start): the shared final fence skips the operation's own expiry for stage start only | LC-L9-permit | `LC-L9-permit` "permit_expired" → "ok" (check)<br>`LC-L9-permit-state` "permit_expired" → "consumed" (lifecycle)<br>`LC-L9-permit-calls` 0 → 1 (effect) | `both` | 0 |
 | M67 | the reject transition: a reject leaves the lineage pending | LC-L10 | `LC-L10` ["not_pending","not_approved","permit_not_issued"] → ["ok","ok","ok"] (check)<br>`LC-L10-state` "rejected" → "consumed" (lifecycle)<br>`LC-L10-calls` 0 → 1 (effect) | `check_and_lifecycle` | 1 |
 | M68 | the revocation part of F(approve): the shared final fence skips its revocation check for stage approval only | LC-L1-provider | `LC-L1p-approve` "revoked:approval/final" → "ok" (check)<br>`LC-L1p-state` "pending" → "approved" (lifecycle) | `check_and_lifecycle` | 0 |
@@ -231,12 +243,27 @@ Evidence kinds follow the plan (§8): `lifecycle_effect` and `check_and_lifecycl
 | M70-start | the chain-validity part of F(start): the shared final fence skips chain validity for stage start only | LC-L16-start | `LC-L16-start` "capability_expired" → "permit_expired" (check)<br>`LC-L16-start-permit` "issued" → "expired" (lifecycle) | `check_point` | 0 |
 | M71 | the binding of a start's execution to the lineage's authority: the execution authority is built from the provider's verified chain for R' (authority substitution) | LC-C-execution-authority; control witnesses LC-L3 unchanged | `LC-C-execution-authority` ["A-L",["A-I"],"t1","s1"] → ["B-L",["B-I"],"t9","s1"] (check) | `component_check_point` | 0 |
 
+**Claim limits** (from the manifest; also in the gate report):
+- **M58:** Snapshot continuity only: a start whose provider answer is another valid, unrevoked authority B (input ii) runs, although it no longer matches the lineage's chain snapshot. The started execution stays bound to the lineage's authority A (LC-L6-start-execution-capability = A's leaf). It does not show the use of a revoked or expired authority, nor an authority substitution (that is M71, component evidence only).
+- **M61:** Lifecycle evidence only: the approval is recorded for another authority's answer; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation.
+- **M62:** Lifecycle evidence only: a permit is issued for another authority's answer; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation.
+- **M63:** Lifecycle evidence only: a permit is issued after the authority was revoked; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation.
+- **M65:** Availability evidence only: a start denied for a binding mismatch consumes the permit, so the allowed follow-up start is denied (permit_consumed) and its tool is not called. No unapproved action runs (the mismatched start's tool calls stay 0); this is not containment evidence.
+- **M68:** Lifecycle evidence only: the approval is recorded after the authority was revoked; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation.
+- **M69:** Lifecycle evidence only: a lineage is created for a revoked authority; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation.
+- **M70-create:** Lifecycle evidence only: a lineage is created for an expired chain; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation.
+- **Variants** (M58-i/iii, M61-i/iii, M62-i/iii): only the denial reason changes; not independent failure mechanisms.
+
 **Recorded gaps** (repeated in the gate report):
-- M55, M56 and M71 have component check-point evidence only.
+- M55 and M71 have component check-point evidence only.
+- M56's tenant comparison is structurally masked on the production path. It runs only after the snapshot comparison matched the provider's leaf to the lineage's leaf by content, and both compared tenants are read from that leaf. Its evidence is a component check point only.
 - M70 at approve and issue is masked; at this head the patched trees pass all tests.
+- M61, M62, M63, M68, M69 and M70-create are lifecycle evidence only. That a later fence still denies the start is inferred, not run.
 - The eval-gate mutants of plan §8.1 (M12–M14, M24, M25, M49–M52) belong to the later eval integration.
 
-`npm run mutants:lifecycle:regressions` checks the gate itself under the strict rule (RL1–RL17, [mutant-gate.md](mutant-gate.md#lifecycle-gate-regressions)). `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
+The gate's own limitations (A5–A9 of the review of `ef0c9a8`) are listed in [mutant-gate.md](mutant-gate.md#known-limitations).
+
+`npm run mutants:lifecycle:regressions` checks the gate itself under the strict rule (RL1–RL24, [mutant-gate.md](mutant-gate.md#lifecycle-gate-regressions)). `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
 
 ## 9. Compatibility
 

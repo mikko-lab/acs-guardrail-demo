@@ -1,25 +1,30 @@
 {
-  "version": 3,
+  "version": 4,
   "description": "lifecycle gate regression: the real M58 mutant (control for RL13); expected: detected, exit 0",
   "whole_run": "strict",
   "gate_rules": {
-    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists; every witness logs observations, exactly its labels' control values and exactly its accepted control errors",
-    "technical": "the patch applies; the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists; the test inventory (count and every test id) is identical to the control's; no suite execution error",
-    "detection": "jest exits 1; every named witness fails with WitnessAssertionError; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness keeps its values and errors; a witness that logs exactly its control values must catch exactly its control errors and the mutant is then not detected (exit 1)",
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists and every entry is bound to one test; every named witness passes, logs exactly its manifest labels (each once, with the manifest control value as the test's own expectation), exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies and takes effect (git apply runs isolated from any enclosing git work tree; every file the patch names changes; the reverse patch applies to the result); the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists and every entry is bound to one test; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with exactly one failure, the WitnessAssertionError its witness() call throws for exactly the logged checks that failed (no other error of the same test, for example an afterEach hook's, may accompany it); every named witness logs exactly its manifest labels, each once, with the manifest control value as the test's own expectation; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness passes and keeps its values and errors; a witness that logs exactly its control values must pass and catch exactly its control errors, and the mutant is then not detected (exit 1)",
     "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral; each pinned collateral test must show exactly its pinned status, its pinned witness-log observations (check values and caught errors, compared exactly) and, when it fails, its pinned assertion failure (jest failure messages with only colour codes and V8 stack-trace frame lines removed; error class, message and assertion content are kept in full); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
-    "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, or a caught error the manifest does not accept, is an unexpected failure (technical, exit 2), never evidence",
+    "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, a label the manifest does not name, a caught error the manifest does not accept, or a witness failure other than its exact WitnessAssertionError, is an unexpected failure (technical, exit 2), never evidence",
     "kinds": {
       "check_point": "its check labels change (decision, stage, check or reason)",
       "containment_effect": "its effect labels change (tool calls, tool arguments, the execution's bound authority)",
       "both": "check and effect labels change in the same run",
       "lifecycle_effect": "its lifecycle labels change (approval or permit state, lineage count); never containment",
       "check_and_lifecycle": "check and lifecycle labels change in the same run; never containment",
-      "component_check_point": "the component test's check labels change; never production-path evidence"
+      "component_check_point": "the component test's check labels change; never production-path evidence",
+      "availability_effect": "its availability labels change (an allowed action denied or not executed: a follow-up start denied, fewer tool calls); never containment",
+      "check_and_availability": "check and availability labels change in the same run; never containment"
     },
-    "claimed_kind": "the kind is the evidence claimed for the mutant (the plan's kind); a label of another part that also changes is recorded under observed_beyond_kind and is not counted",
+    "claimed_kind": "the kind is the evidence claimed for the mutant; every label of another part that also changes is reported under observed_beyond_kind (computed from the labels, with the manifest's note where given) and is not counted",
     "control_witness": "a witness with role control keeps every label value under the mutant; it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
     "crash": "any exception inside the gate itself is a technical failure (exit 2)",
-    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised"
+    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised",
+    "binding": "every witness-log entry names its test file and the test it was written in, and is bound to exactly one test of the inventory; an entry written outside any test (for example in a beforeAll), an entry whose file and test name match no test, and two tests of one file with the same name are technical failures (exit 2), in the control and in every mutant run",
+    "only": "--only names one mutant of the manifest; an unknown id is rejected before any run (exit 2), and a run of no mutant is never a success",
+    "variants": "a variant (variant_of) has its main entry's patch, so its jest run is identical to the main entry's, and it reads another witness of that run; it is not an independent failure mechanism; the report counts manifest entries, distinct patches, mechanisms, variants and witness tests separately"
   },
   "recorded_gaps": [],
   "mutants": [
