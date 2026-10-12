@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [v0.6.0] - 2026-10-12
+
+### Summary
+- **Approval–permit lifecycle (permit mode, G3/G4):** opt-in. It separates approval, permit issuance and start; the permit is single-use, every operation has its own final fence, and every execution is bound to the lineage's authority. Legacy mode stays the default.
+- **Request snapshot in both modes:** `process()` works on one runtime-owned, deep-frozen copy of the request taken at entry. This fixes a legacy-mode request-mutation TOCTOU, present since `a9deab6`.
+- **Lifecycle mutant gate:** 26 manifest entries (20 distinct patches and mechanisms, 6 variants), under a strict whole-run rule. The evidence is reported separately as containment, lifecycle, availability, check point and component. The shared gate driver was hardened (regressions RL1–RL24).
+- **Scope of the evidence:** runtime-own evidence only (tests and the mutant gates). It is not a pass of the `agent-control-evals` revocation contract. See `docs/releases/v0.6.0.md`.
+
 ### Added
 - **Approval–permit lifecycle (permit mode, G3/G4):** opt-in with the new optional constructor argument `{ lifecycle: "permit", permitTtlMs?, policyApprovalTtlMs? }`. Implements the approved plan `agent-control-evals` `docs/revocation/approval-permit-lifecycle-plan.md` @ `2e459ad` (D1–D20). See `docs/approval-permit-lifecycle.md`.
   - **Lineages.** In permit mode `process()` creates a lineage and starts nothing: Guardian ASK → `{ status: "pending", lineage_id }`, ALLOW → `{ status: "approved", lineage_id }` (approver `policy`), DENY → no lineage. The bindings (agent, session, tenant, tool, arguments digest, chain snapshot; request id, request digest, authority fingerprint) are copied and frozen before the first callback after verification. `process()` in permit mode works on one runtime-owned, deep-frozen snapshot of the request taken at entry: signature, replay, capability checks, the Guardian decision and the bindings read the same content, and neither the caller's object nor the Guardian can change it (regression L17).
@@ -21,7 +29,7 @@
     - **`claim_limits`** narrow M58 to snapshot continuity and mark the later-fence claims of the lifecycle-only entries as inferred.
     - **`gate_limitations`** record A5–A9.
     - The expected values are described as taken from a precheck run, so a detection is reproducibility evidence.
-  - **Gate regressions** RL1–RL17 (`npm run mutants:lifecycle:regressions`): detection, inventory change, unexpected value, unexpected caught error, an unrelated failing test, gate crash, timeout, signal, a change without behaviour, evidence kinds, a missing witness log, a named witness that logs nothing, a pinned collateral test that fails differently (a `SyntaxError` instead of its assertion, also with unchanged observations), an error message with a suffix outside the manifest, the real M58 and M57 as their controls, and (RL18–RL24): an `afterEach` failure after the witness assertion, a witness-log entry outside any test, same-named tests in different files and in one file, `TMPDIR` inside a git work tree, a patch whose context does not match, and an unknown `--only` id. RL10 also checks availability evidence, counts and variants.
+  - **Gate regressions** RL1–RL24 (`npm run mutants:lifecycle:regressions`): detection, inventory change, unexpected value, unexpected caught error, an unrelated failing test, gate crash, timeout, signal, a change without behaviour, evidence kinds, a missing witness log, a named witness that logs nothing, a pinned collateral test that fails differently (a `SyntaxError` instead of its assertion, also with unchanged observations), an error message with a suffix outside the manifest, the real M58 and M57 as their controls, and (RL18–RL24): an `afterEach` failure after the witness assertion, a witness-log entry outside any test, same-named tests in different files and in one file, `TMPDIR` inside a git work tree, a patch whose context does not match, and an unknown `--only` id. RL10 also checks availability evidence, counts and variants.
   - **Determinism:** `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
   - **CI:** a `lifecycle mutant gate (Node 22)` job runs all three.
 
