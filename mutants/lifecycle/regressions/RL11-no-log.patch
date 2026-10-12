@@ -11,15 +11,15 @@ index 718a8f3..0164cde 100644
      record.consumedSeq = this.#revocations.nextSequence();
      record.startRequestId = requestId;
 diff --git a/tests/witness.ts b/tests/witness.ts
-index 65ea27b..ebe6da9 100644
+index df88300..6346284 100644
 --- a/tests/witness.ts
 +++ b/tests/witness.ts
-@@ -29,7 +29,7 @@ const encode = (value: unknown): unknown =>
-     : value;
+@@ -39,7 +39,7 @@ beforeEach(() => { currentTest = expect.getState().currentTestName ?? null; });
+ afterEach(() => { currentTest = null; });
  
  function log(entry: Record<string, unknown>): void {
--  const file = process.env.WITNESS_LOG;
-+  const file = process.env.WITNESS_LOG_DISABLED_BY_RL11;
-   if (!file) return;
-   const test = expect.getState().currentTestName ?? "";
-   appendFileSync(file, JSON.stringify({ test, ...entry }) + "\n");
+-  const target = process.env.WITNESS_LOG;
++  const target = process.env.WITNESS_LOG_DISABLED_BY_RL11;
+   if (!target) return;
+   const testPath = expect.getState().testPath;
+   const file = testPath ? relative(realpathSync(process.cwd()), testPath) : null;

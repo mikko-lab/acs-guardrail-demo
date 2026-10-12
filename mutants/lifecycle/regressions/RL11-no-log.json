@@ -34,7 +34,7 @@
       "plan_row": "gate regression",
       "removes": "gate regression: the M53 patch plus a witness helper that writes no witness log; expected: technical failure, exit 2 (witness log missing)",
       "patch": "mutants/lifecycle/regressions/RL11-no-log.patch",
-      "patch_sha256": "b73671085c5a49f57d6553c789f9c3b825fdb51ef3755715acf83d45335ef148",
+      "patch_sha256": "95e838f76beb01167f664772784736009578e6d7ac0688d8b1e056f4e11771dd",
       "witness_input": "L4c: a second start re-entered from the first start's tool_execution_started audit sink, after both early checks saw issued",
       "kept_safeguards": "the early lineage-state check; revocation, chain validity and permit expiry in F(start); the gate's per-request permit; the replay guard (fresh request ids)",
       "witnesses": [
