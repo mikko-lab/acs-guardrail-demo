@@ -315,6 +315,7 @@ describe("OCSF mapping: metadata allowlist", () => {
       "timestamp_rejected", "correlation_failed", "authority_revoked", "authority_revocation_enforced",
       "execution_cancellation_requested", "execution_cancellation_acknowledged", "tool_commit_requested",
       "tool_commit_applied", "tool_commit_blocked", "execution_terminal",
+      "approval_granted", "permit_issued", "permit_expired", "lifecycle_operation_denied",
     ];
     expect(Object.keys(OCSF_METADATA_ALLOWLIST).sort()).toEqual([...types].sort());
     expect(Object.isFrozen(OCSF_METADATA_ALLOWLIST)).toBe(true);

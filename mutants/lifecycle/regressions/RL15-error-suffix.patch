@@ -1,0 +1,26 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..83e4346 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1233,7 +1233,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+ 
+     // The execution is bound to the lineage's authority (its chain snapshot), never to the provider's answer.
+     const authority: BoundAuthority = startExecutionAuthority(record.draft, verified);
+-    this.#denyIfLineageRevoked("start", requestId, authority, tool, "early", record.lineageId);
+ 
+     const outcome = await this.#startLineageExecution(record, request, authority);
+     // Nothing may run between the hand-over check and the return that fulfils the public promise.
+diff --git a/tests/approval-lifecycle.test.ts b/tests/approval-lifecycle.test.ts
+index 1e9daa7..bf0db0d 100644
+--- a/tests/approval-lifecycle.test.ts
++++ b/tests/approval-lifecycle.test.ts
+@@ -234,7 +234,8 @@ describe("L2 / L2b revocation of an issued, unused permit (every scope)", () =>
+     const id = await issued(f);
+     const r = req(f);
+     onAudit(f.ctx, "capability_verified", () => f.ctx.executor.revoke(targetFor(f, scope)), r.params.request_id);
+-    const o = await settle(f.ctx.executor.start({ lineage_id: id, request: r }));
++    // Gate regression RL15: the errors the L2b witnesses catch carry a suffix the manifest does not name.
++    const o = await settle(f.ctx.executor.start({ lineage_id: id, request: r }).catch((e: Error) => { e.message += " [suffix outside the manifest]"; throw e; }));
+     witness(
+       ["LC-L2b-start", verdict(o), "revoked:start/early"],
+       ["LC-L2b-permit", snap(f, id).permit.state, "issued"],

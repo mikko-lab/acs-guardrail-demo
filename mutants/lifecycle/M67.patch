@@ -1,0 +1,12 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..207383c 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1126,7 +1126,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+     const { record, grant } = this.#verifyDecision(input, "reject");
+     const b = record.bindings;
+     if (record.approvalState !== "pending") throw this.#lifecycleDenial("approval", "not_pending", record, b.request_id);
+-    record.approvalState = "rejected";
+     record.decidedAt = new Date(this.clock.nowMs()).toISOString();
+     const audit_recorded = this.#recordAfterTransition(b.request_id, "human_rejection", {
+       approver_type: "human", approver_id: grant.approver.id, session_id: b.session_id, request_id: b.request_id, lineage_id: record.lineageId,

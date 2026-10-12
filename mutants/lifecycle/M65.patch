@@ -1,0 +1,13 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..4425144 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1226,7 +1226,7 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+ 
+     // Binding comparisons of R′, field by field (request_digest is not compared at start).
+     const field = compareStartBindings(b, { session_id: sessionId, agent_id: agentId, tenant_id: verifiedTenant, tool, arguments_digest: argumentsDigest(params.payload.arguments) });
+-    if (field) throw this.#lifecycleDenial("start", "lineage_binding_mismatch", record, requestId, { field });
++    if (field) { record.permitState = "consumed"; throw this.#lifecycleDenial("start", "lineage_binding_mismatch", record, requestId, { field }); }
+ 
+     // Early lineage-state check (fail fast only; it changes nothing). Expiry is part of F(start) only.
+     this.#assertPermitUsable(record, requestId);

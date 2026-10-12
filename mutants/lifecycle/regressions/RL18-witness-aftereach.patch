@@ -1,0 +1,25 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..0164cde 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1303,7 +1303,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+   /** F(start) and the consumption: revocation, chain validity, permit expiry, then the state check-and-set. No callback. */
+   #finalStartFence(record: LineageRecord, requestId: string, authority: BoundAuthority): void {
+     this.#finalFence(record, "start", requestId, record.permitExpiresAtMs ?? Infinity, () => this.#expirePermit(record, requestId), authority);
+-    if (record.permitState !== "issued") throw this.#lifecycleDenial("start", record.permitState === "consumed" ? "permit_consumed" : "permit_not_issued", record, requestId);
+     record.permitState = "consumed";
+     record.consumedSeq = this.#revocations.nextSequence();
+     record.startRequestId = requestId;
+diff --git a/tests/approval-lifecycle.test.ts b/tests/approval-lifecycle.test.ts
+index 1e9daa7..3035b4f 100644
+--- a/tests/approval-lifecycle.test.ts
++++ b/tests/approval-lifecycle.test.ts
+@@ -253,6 +253,8 @@ describe("L2 / L2b revocation of an issued, unused permit (every scope)", () =>
+ });
+ 
+ describe("L4 single use", () => {
++  // Gate regression RL18: after the L4c witness's expected WitnessAssertionError, an afterEach hook fails too.
++  afterEach(() => { if (expect.getState().currentTestName?.includes("[LC-L4c]")) throw new TypeError("RL18 afterEach failure after the witness assertion"); });
+   it("[LC-L4a] sequential reuse: a second start on a consumed lineage is DENY permit_consumed", async () => {
+     const f = fixture("l4a");
+     const tool = toolDouble("update_record");

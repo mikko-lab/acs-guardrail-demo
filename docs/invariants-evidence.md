@@ -2,7 +2,7 @@
 
 This document maps architectural security invariants to automated evidence across the repository, including evaluation, runtime-authority, incident, correlation, and metrics test suites.
 
-**Current verified baseline:** 394 automated tests, 23 Jest suites, 0 snapshots, TypeScript typecheck clean.
+**Current verified baseline:** 746 automated tests, 32 Jest suites, 0 snapshots, TypeScript typecheck and build clean.
 
 ## A. Request Policy
 - **ALLOW proceeds to execution**: `tests/evals/request-policy.test.ts` (`EVAL-A1`)
@@ -121,6 +121,27 @@ Specification: [cooperative-containment.md](cooperative-containment.md). Evidenc
 - **A failed `execution_terminal` record call leaves the local terminal intact (`audit_recorded: false`, unconfirmed)**: `C25`
 - **The managed state writer is issued once; the view cannot write and returns copies**: `C26`
 - **Commit values never reach the audit log**: `C27`
+
+## G3. Approval–Permit Lifecycle (permit mode, G3/G4)
+Specification: [approval-permit-lifecycle.md](approval-permit-lifecycle.md). Evidence: `tests/approval-lifecycle.test.ts` (setup: `tests/lifecycle-setup.ts`) and `tests/approval-lifecycle-components.test.ts`. Lifecycle effects are read from lineage snapshots (states, `*_seq`) and receipts, tool calls from the tool doubles' own counters; audit events are check-point evidence only. Test ids are those of the lifecycle plan (§7.4); decisive assertions carry `LC-...` witness labels. Runtime-test mutants: `mutants/lifecycle/manifest.json` (`npm run mutants:lifecycle`, strict whole-run rule; [approval-permit-lifecycle.md](approval-permit-lifecycle.md#8-mutant-gate)). Lifecycle-state evidence (`lifecycle_effect`, `check_and_lifecycle`) and availability evidence (`availability_effect`, `check_and_availability`) are never counted as containment.
+- **process() in permit mode creates a lineage and starts nothing (ASK → pending, ALLOW → approved by policy, DENY → none)**: `T1`, `T2`, `T3`
+- **Valid lifecycle with one shared, increasing authority sequence**: `L3`, `D13`
+- **Revocation while pending, after issue and inside callbacks, for every scope (capability, ancestor, session, tenant); receipt lists the lineage by state**: `L1`, `L1-provider`, `L2`, `L2b` (early start check), `L7a` (F(issue)), `L7b` (F(start)), `L7c` (after the transition), approved-lineage receipt
+- **Approval never restores authority; no new lineage for a revoked authority**: `L8`, `L15` (creation fence after the `capability_verified` sink, the Guardian and the `guardian_decision` sink, every scope)
+- **Single use under sequential, concurrent and re-entrant starts (audit sink, provider, tool body)**: `L4a`, `L4b`, `L4c`, `L4d`
+- **Start bindings field by field; a mismatching start does not burn the permit**: `L5-tool`, `L5-arguments`, `L5-session`, `L5-agent`, `L5-tenant`, replay of the original request id
+- **Snapshot comparison at approve, issue and start (changed content, another authority, a dropped ancestor; a re-issued single grant)**: `L6-approve`, `L6-issue`, `L6-start` (i)–(iii)
+- **Expiry recorded by the operation that observes it; permit lifetime capped by the chain**: `L9-approval`, `L9-issue`, `L9-permit`, `D16`
+- **Reject is final**: `L10`
+- **A failed start after the effective point keeps the permit consumed; a failure before it is a denial; an unobservable settlement stays without terminal evidence**: `L11`, `L11-before` (B10), `L11-unobservable`
+- **Modes: permit-mode resolveApproval and legacy-mode lifecycle methods are `LifecycleModeError`; legacy results and receipts are unchanged**: `L12`, V2 grant rejected in permit mode
+- **ApprovalGrantV3 binds lineage, request digest, authority fingerprint, request id, tool, approver and decision; no cross-lineage replay; re-entrant approve**: grant verification cases, `B3`
+- **Audit claims and audit failures never replace or undo a transition**: `L13`, `L13-throw`
+- **Aliasing: a mutating Guardian, a mutating audit sink, frozen snapshots, a getter-based start input**: `L14`
+- **The request process() verifies, evaluates and binds is one runtime-owned frozen snapshot: rewriting the caller's request from the `capability_verified` sink or the provider, or the Guardian's own write attempt, never yields a policy-approved update lineage or an update call**: `L17` (control, `capability_verified`, provider, Guardian)
+- **Chain validity after the last callback of create, approve, issue and start**: `L16-create`, `L16-approve`, `L16-issue`, `L16-start`
+- **Existing containment applies to a lineage start (cancellation, delivery withheld, permit stays consumed)**: containment case
+- **Component check points (no production-path separation, plan §8.2 M55, M56, M71): the session, agent and tenant start comparisons; the execution authority comes from the lineage snapshot**: `LC-C-comparator-*`, `LC-C-execution-authority`; digest canonicalization, authority fingerprint, strict snapshot comparison, chain validity, `ApprovalGrantV3` verification
 
 ## H. Audit Evidence
 - **H1 DENY evidence**: `tests/evals/request-policy.test.ts` (`EVAL-A2`)

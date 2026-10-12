@@ -1,0 +1,13 @@
+diff --git a/src/approval-lifecycle.ts b/src/approval-lifecycle.ts
+index 68aedff..da07597 100644
+--- a/src/approval-lifecycle.ts
++++ b/src/approval-lifecycle.ts
+@@ -287,7 +287,7 @@ export function draftLineage(input: {
+  * authorized and is not used here.
+  */
+ export function startExecutionAuthority(lineage: LineageDraft, _providerChain: { leaf: CapabilityGrant; ancestors: readonly CapabilityGrant[] }): LineageAuthority {
+-  return lineage.authority;
++  return Object.freeze({ sessionId: lineage.authority.sessionId, capabilityId: _providerChain.leaf.capability_id, tenantId: tenantOf(_providerChain.leaf), ancestorIds: Object.freeze(_providerChain.ancestors.map(a => a.capability_id)) });
+ }
+ 
+ /** Mutable lifecycle state of one lineage. Only GuardedExecutor changes it, at an operation's effective point. */

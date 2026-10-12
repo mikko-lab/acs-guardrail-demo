@@ -164,7 +164,12 @@ export type AuditEventType =
   | "tool_commit_requested"
   | "tool_commit_applied"
   | "tool_commit_blocked"
-  | "execution_terminal";
+  | "execution_terminal"
+  // G3/G4 — approval-permit lifecycle (permit mode)
+  | "approval_granted"
+  | "permit_issued"
+  | "permit_expired"
+  | "lifecycle_operation_denied";
 
 export interface AuditEvent {
   timestamp: string;

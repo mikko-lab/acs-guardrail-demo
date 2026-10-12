@@ -1,0 +1,12 @@
+diff --git a/src/approval-lifecycle.ts b/src/approval-lifecycle.ts
+index 68aedff..e972e70 100644
+--- a/src/approval-lifecycle.ts
++++ b/src/approval-lifecycle.ts
+@@ -120,6 +120,7 @@ export interface StartBindings {
+  * the first field that differs, or null. request_digest is deliberately not compared at start (§5.1.2): equal fields
+  * imply an equal digest, and each field comparison stays the only check that separates its field.
+  */
++// Gate regression RL9: a comment changes no behaviour.
+ export function compareStartBindings(lineage: StartBindings, candidate: StartBindings): BindingField | null {
+   if (candidate.session_id !== lineage.session_id) return "session";
+   if (candidate.agent_id !== lineage.agent_id) return "agent";

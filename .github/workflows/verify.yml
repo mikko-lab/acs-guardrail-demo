@@ -70,3 +70,32 @@ jobs:
           name: ancestor-mutant-report
           path: out/mutants-ancestor/report.json
           if-no-files-found: warn
+
+  lifecycle-mutants:
+    name: lifecycle mutant gate (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Named mutants M53-M71 and the plan's variants, witnesses, exact values and pinned collateral are fixed in
+      # mutants/lifecycle/manifest.json (hash-checked). Strict whole-run rule: any unexpected failure is technical (exit 2).
+      - run: npm run mutants:lifecycle
+      # The gate's own regressions under the strict rule (RL1-RL24): detection, inventory, unexpected value and error,
+      # unrelated failure, crash, timeout, signal, no-op change, evidence kinds and counts, missing witness log and witness,
+      # collateral pins, exact errors, the witness's only failure, log binding, patch effect, unknown --only.
+      - run: npm run mutants:lifecycle:regressions
+      # The control's lifecycle witnesses three times: every run passes with an identical witness log.
+      - run: npm run mutants:lifecycle:determinism
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lifecycle-mutant-report
+          path: |
+            out/mutants-lifecycle/report.json
+            out/lifecycle-gate-regressions/
+          if-no-files-found: warn

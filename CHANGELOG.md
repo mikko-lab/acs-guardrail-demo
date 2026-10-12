@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### Added
+- **Approval–permit lifecycle (permit mode, G3/G4):** opt-in with the new optional constructor argument `{ lifecycle: "permit", permitTtlMs?, policyApprovalTtlMs? }`. Implements the approved plan `agent-control-evals` `docs/revocation/approval-permit-lifecycle-plan.md` @ `2e459ad` (D1–D20). See `docs/approval-permit-lifecycle.md`.
+  - **Lineages.** In permit mode `process()` creates a lineage and starts nothing: Guardian ASK → `{ status: "pending", lineage_id }`, ALLOW → `{ status: "approved", lineage_id }` (approver `policy`), DENY → no lineage. The bindings (agent, session, tenant, tool, arguments digest, chain snapshot; request id, request digest, authority fingerprint) are copied and frozen before the first callback after verification. `process()` in permit mode works on one runtime-owned, deep-frozen snapshot of the request taken at entry: signature, replay, capability checks, the Guardian decision and the bindings read the same content, and neither the caller's object nor the Guardian can change it (regression L17).
+  - **Operations.** `approve(ApprovalGrantV3)`, `reject(ApprovalGrantV3)`, `issuePermit({ lineage_id })` (synchronous) and `start({ lineage_id, request })` with a fresh signed request; reads `getLineage()`, `lineages()` (deep-frozen snapshot copies) and `authoritySequence()`.
+  - **Final fences.** Every operation, creation included, re-checks revocation of every bound scope and the chain's validity window after its last callback, then its own expiry and the state check-and-set, in one synchronous segment. Start consumes the single-use permit only inside the gate's final guard, immediately before the tool call (no reservation); of concurrent or re-entrant starts exactly one runs. A denied operation changes no state except an expiry it observed; a start that passed the effective point keeps the permit consumed.
+  - **Bindings.** Approve and reject compare the V3 grant (lineage, request id, request digest, authority fingerprint, tool, approver, decision). Start compares session, agent, tenant, tool and arguments digest field by field, and the provider's answer with the lineage's chain snapshot (leaf and every ancestor, by content fingerprint). The execution is always bound to the lineage's authority.
+  - **Revocation.** `RevocationStage` gains `issue`; `AuthorityRevokedError` gains `check` (`early` / `final`). In permit mode the receipt adds `pending_lineages`, `approved_lineages` and `unused_permits`. Lifecycle transitions and revocations share one monotonic sequence (`AuthorityRevocationRegistry.nextSequence()`).
+  - **`ApprovalGrantV3`** and `ApprovalGrantVerifier.verifyV3()` with the codes `LINEAGE_MISMATCH`, `REQUEST_DIGEST_MISMATCH`, `AUTHORITY_FINGERPRINT_MISMATCH`.
+  - **Errors.** `LifecycleDeniedError { stage, reason, lineage_id, detail }` and `LifecycleModeError` (permit-mode `resolveApproval()`, legacy-mode lifecycle methods).
+  - **Audit and OCSF.** New event types `approval_granted`, `permit_issued`, `permit_expired`, `lifecycle_operation_denied`; `lineage_id` (and `check`) on the existing events of the permit-mode paths; lifecycle counts on `authority_revoked`. The OCSF allowlists list exactly these keys.
+  - **Evidence.** `tests/approval-lifecycle.test.ts` (87 tests: L1–L17 with their variants, the transition table, grant verification, the unobservable-settlement contract) and `tests/approval-lifecycle-components.test.ts` (31 tests). `tests/approval-lifecycle.test.ts` L5-tool and L5-arguments now assert their mismatching and their correct start in one witness call, L6-start records the started execution's authority, and the absent-tenant comparator test is a witness.
+- **Lifecycle mutant gate:** `mutants/lifecycle/manifest.json` (hash-checked) with M53–M71 of the approved plan and its named variants (M58, M61 and M62 with inputs (i) and (iii); M70 for create and start), 26 entries. Every entry pins its patch against the unchanged `src/` of `20a32e6`, the removed check, the kept safeguards, the witness input, each witness label's exact control and mutant value, the accepted caught errors, the claimed evidence kind and the collateral observations outside the named witnesses. `npm run mutants:lifecycle` runs it under the new strict whole-run rule. Recorded gaps: M55, M56 and M71 (component check points only; M56 structurally masked on the production path), M70 at approve and issue (masked), and lifecycle-only entries whose later-fence denial is inferred, not run. See `docs/approval-permit-lifecycle.md` §8.
+  - **Manifest version 4** (review of `ef0c9a8`):
+    - **M65** is `check_and_availability`: availability evidence, not containment.
+    - **M59's** denied follow-up start is labelled availability.
+    - **Variants** (M58-i/iii, M61-i/iii, M62-i/iii) carry `variant_of` and are counted separately: 26 entries, 20 distinct patches, 20 mechanisms, 6 variants.
+    - **`claim_limits`** narrow M58 to snapshot continuity and mark the later-fence claims of the lifecycle-only entries as inferred.
+    - **`gate_limitations`** record A5–A9.
+    - The expected values are described as taken from a precheck run, so a detection is reproducibility evidence.
+  - **Gate regressions** RL1–RL17 (`npm run mutants:lifecycle:regressions`): detection, inventory change, unexpected value, unexpected caught error, an unrelated failing test, gate crash, timeout, signal, a change without behaviour, evidence kinds, a missing witness log, a named witness that logs nothing, a pinned collateral test that fails differently (a `SyntaxError` instead of its assertion, also with unchanged observations), an error message with a suffix outside the manifest, the real M58 and M57 as their controls, and (RL18–RL24): an `afterEach` failure after the witness assertion, a witness-log entry outside any test, same-named tests in different files and in one file, `TMPDIR` inside a git work tree, a patch whose context does not match, and an unknown `--only` id. RL10 also checks availability evidence, counts and variants.
+  - **Determinism:** `npm run mutants:lifecycle:determinism` runs the lifecycle witnesses three times and requires identical witness logs.
+  - **CI:** a `lifecycle mutant gate (Node 22)` job runs all three.
+
+### Changed
+- **Shared mutant gate** (`scripts/mutants/run-mutant-gate.mjs`):
+  - **Evidence kinds.** New kinds `lifecycle_effect` and `check_and_lifecycle`, reported as `lifecycle_evidence` and never as containment.
+  - **Strict whole run.** An opt-in rule (`"whole_run": "strict"`): every test that is not a named witness must pass with its control observations, except the mutant's pinned collateral. A pinned collateral test must show exactly its pinned status, witness-log observations and assertion failure. Caught errors are compared exactly, not by prefix. A missing witness log is a technical failure.
+  - **Witnesses that log nothing.** A named witness that logs no observation is reported as such under every manifest. It was already a technical failure before.
+  - **Witness failure.** A named witness must fail with exactly one failure: the `WitnessAssertionError` its `witness()` call throws for the logged checks that failed, which the gate rebuilds from the witness log. Another or additional failure of the same test (for example an `afterEach` error) is a technical failure, never a detection. A witness must log exactly its manifest labels, each once, with the manifest control value as its expectation. Applies under every manifest.
+  - **Witness-log binding.** `tests/witness.ts` writes each entry with its test file and test, and binds an entry to a test only between its own `beforeEach` and `afterEach` hooks. The gate binds every entry to exactly one test. Each of the following is a technical failure under every manifest:
+    - an entry written outside any test;
+    - an entry with an unknown file or test;
+    - two tests of one file with the same name.
+  - **Patch application.** `git apply` runs isolated from any enclosing git work tree. Every file the patch names must change, and the reverse patch must apply. A patch that does not take effect is a technical failure, never "not detected".
+  - **`--only`.** An unknown id is rejected before any run (exit 2), and a run of no mutant is never a success.
+  - **Reporting.**
+    - New kinds `availability_effect` and `check_and_availability`, reported as `availability_evidence` and never as containment.
+    - Per entry `changed_parts`, `beyond_kind_parts` and `claim_limits`.
+    - In the summary: `counts` (entries, distinct patches, mechanisms, variants, witness tests), `variants`, `observed_beyond_kind` (computed from the labels) and `gate_limitations`.
+  - **Direct jest launch.** jest now runs as the gate's direct child, without `npx` or a shell in between, so a timeout or signal reaches jest itself and is reported. An exit status above 128 is reported as the signal it encodes.
+  - **Existing manifests.** The tenant and ancestor manifests and R1–R4 are unchanged. They do not use the strict rule, so their failures of tests that are not witnesses remain diagnostics. The witness-failure, binding, patch and `--only` rules apply to them too.
+  - **Determinism.** `scripts/mutants/witness-determinism.mjs` groups entries by test file and test and fails a run with an unbound entry.
+- `GuardedExecutor` is generic in its lifecycle mode (`GuardedExecutor<M extends LifecycleMode = "legacy">`, inferred from the options). Legacy code keeps the unchanged `ProcessResult`.
+- `process()` step 0 (schema validation) and the result-request submission are factored into private helpers shared with `start()`; legacy behaviour is unchanged and every tenant and ancestor mutant patch applies unchanged.
+- `tests/ocsf-mapper.test.ts`: the allowlist inventory lists the four new event types.
+
 ## [v0.5.0] - 2026-10-10
 
 ### Summary

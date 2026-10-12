@@ -1,10 +1,11 @@
 import crypto from "crypto";
 import { canonicalize } from "json-canonicalize";
-import { ApprovalGrantV1, ApprovalGrantV2 } from "../src/approval-verifier";
+import { ApprovalGrantV1, ApprovalGrantV2, ApprovalGrantV3 } from "../src/approval-verifier";
 
 type UnsignedApprovalGrant =
   | Omit<ApprovalGrantV1, "signature">
-  | Omit<ApprovalGrantV2, "signature">;
+  | Omit<ApprovalGrantV2, "signature">
+  | Omit<ApprovalGrantV3, "signature">;
 
 type ApprovalSignature = ApprovalGrantV1["signature"];
 

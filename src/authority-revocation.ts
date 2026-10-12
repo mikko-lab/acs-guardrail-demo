@@ -192,4 +192,18 @@ export class AuthorityRevocationRegistry {
     this.sessionTenants.set(sessionId, tenantId);
     return true;
   }
+
+  /**
+   * Allocates the next value of the authority sequence that revoke() uses for effective_sequence. The approval-permit
+   * lifecycle (docs/approval-permit-lifecycle.md) takes its *_seq values from here, so revocations and lifecycle
+   * transitions are totally ordered by one counter.
+   */
+  nextSequence(): number {
+    return ++this.sequence;
+  }
+
+  /** The last allocated value of the authority sequence (0 before the first revocation or transition). */
+  currentSequence(): number {
+    return this.sequence;
+  }
 }

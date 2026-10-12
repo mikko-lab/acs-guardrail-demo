@@ -1,0 +1,25 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..0164cde 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1303,7 +1303,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+   /** F(start) and the consumption: revocation, chain validity, permit expiry, then the state check-and-set. No callback. */
+   #finalStartFence(record: LineageRecord, requestId: string, authority: BoundAuthority): void {
+     this.#finalFence(record, "start", requestId, record.permitExpiresAtMs ?? Infinity, () => this.#expirePermit(record, requestId), authority);
+-    if (record.permitState !== "issued") throw this.#lifecycleDenial("start", record.permitState === "consumed" ? "permit_consumed" : "permit_not_issued", record, requestId);
+     record.permitState = "consumed";
+     record.consumedSeq = this.#revocations.nextSequence();
+     record.startRequestId = requestId;
+diff --git a/tests/guardian.test.ts b/tests/guardian.test.ts
+index b1cd609..f0bff90 100644
+--- a/tests/guardian.test.ts
++++ b/tests/guardian.test.ts
+@@ -85,7 +85,7 @@ describe("Guardian deterministic decisions", () => {
+     const req = createRequest("read_record");
+     expect(req.params).toBeDefined();
+     expect(req.params.acs_version).toBe("0.1.0");
+-    expect(req.params.metadata.agent_id).toBe("test-agent");
++    expect(req.params.metadata.agent_id).toBe("another-agent");
+     expect(req.params.metadata.session_id).toBe("session-test");
+     // Fields must NOT be at the envelope root
+     expect((req as unknown as Record<string, unknown>)["acs_version"]).toBeUndefined();

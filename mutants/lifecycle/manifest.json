@@ -1,0 +1,2763 @@
+{
+  "version": 4,
+  "description": "Runtime-test mutant gate of the approval-permit lifecycle (permit mode, G3/G4). Mutants M53-M71 and the named variants of the approved plan agent-control-evals docs/revocation/approval-permit-lifecycle-plan.md @ 2e459adf5e334d83aff925b203e0b3e3fff48678, section 8.2, against the reviewed implementation at 20a32e639f3a1e954f3cd4359ffb0911d537b37b (src/ unchanged). Expected values were taken from a precheck run of every patch at that head and pinned before the final run: a detection shows that the final run reproduced the pinned precheck observations exactly (reproducibility evidence). Whether an observation shows the plan row's safety property is stated per entry (claim_limits, recorded_gaps) and rests in addition on independent review.",
+  "plan": "mikko-lab/agent-control-evals docs/revocation/approval-permit-lifecycle-plan.md @ 2e459adf5e334d83aff925b203e0b3e3fff48678 (section 8.2)",
+  "source_head": "20a32e639f3a1e954f3cd4359ffb0911d537b37b",
+  "whole_run": "strict",
+  "gate_rules": {
+    "control": "the unpatched tree typechecks, builds, and jest exits 0 (no signal, no timeout) with every test passing; the witness log exists and every entry is bound to one test; every named witness passes, logs exactly its manifest labels (each once, with the manifest control value as the test's own expectation), exactly its labels' control values and exactly its accepted control errors",
+    "technical": "the patch applies and takes effect (git apply runs isolated from any enclosing git work tree; every file the patch names changes; the reverse patch applies to the result); the patched tree typechecks and builds; jest exits 0 or 1 without signal or timeout and writes its JSON result; the witness log exists and every entry is bound to one test; the test inventory (count and every test id) is identical to the control's; no suite execution error",
+    "detection": "jest exits 1; every named witness fails with exactly one failure, the WitnessAssertionError its witness() call throws for exactly the logged checks that failed (no other error of the same test, for example an afterEach hook's, may accompany it); every named witness logs exactly its manifest labels, each once, with the manifest control value as the test's own expectation; every label logs exactly its manifest mutant value; the failed labels are exactly those whose mutant value differs from the control value; the caught errors are exactly the accepted mutant errors; every control-role witness passes and keeps its values and errors; a witness that logs exactly its control values must pass and catch exactly its control errors, and the mutant is then not detected (exit 1)",
+    "whole_run": "strict: every test that is not a named witness passes and logs exactly the witness-log entries it logs in the control run, except the mutant's pinned collateral; each pinned collateral test must show exactly its pinned status, its pinned witness-log observations (check values and caught errors, compared exactly) and, when it fails, its pinned assertion failure (jest failure messages with only colour codes and V8 stack-trace frame lines removed; error class, message and assertion content are kept in full); anything else is an unexpected failure (technical, exit 2); a witness's failure never redeems an otherwise unexpected run",
+    "unexpected": "a witness value that is neither the control nor the mutant value, a named witness that logs nothing, a label the manifest does not name, a caught error the manifest does not accept, or a witness failure other than its exact WitnessAssertionError, is an unexpected failure (technical, exit 2), never evidence",
+    "kinds": {
+      "check_point": "its check labels change (decision, stage, check or reason)",
+      "containment_effect": "its effect labels change (tool calls, tool arguments, the execution's bound authority)",
+      "both": "check and effect labels change in the same run",
+      "lifecycle_effect": "its lifecycle labels change (approval or permit state, lineage count); never containment",
+      "check_and_lifecycle": "check and lifecycle labels change in the same run; never containment",
+      "component_check_point": "the component test's check labels change; never production-path evidence",
+      "availability_effect": "its availability labels change (an allowed action denied or not executed: a follow-up start denied, fewer tool calls); never containment",
+      "check_and_availability": "check and availability labels change in the same run; never containment"
+    },
+    "claimed_kind": "the kind is the evidence claimed for the mutant; every label of another part that also changes is reported under observed_beyond_kind (computed from the labels, with the manifest's note where given) and is not counted",
+    "control_witness": "a witness with role control keeps every label value under the mutant; it must pass under the mutant with exactly those values and its accepted errors, otherwise the mutant breaks more than its named safeguard (technical, exit 2)",
+    "crash": "any exception inside the gate itself is a technical failure (exit 2)",
+    "errors": "strict: every caught error is compared with its accepted text exactly (\"Name: message\"); no prefix and no free suffix is accepted; no field is normalised",
+    "binding": "every witness-log entry names its test file and the test it was written in, and is bound to exactly one test of the inventory; an entry written outside any test (for example in a beforeAll), an entry whose file and test name match no test, and two tests of one file with the same name are technical failures (exit 2), in the control and in every mutant run",
+    "only": "--only names one mutant of the manifest; an unknown id is rejected before any run (exit 2), and a run of no mutant is never a success",
+    "variants": "a variant (variant_of) has its main entry's patch, so its jest run is identical to the main entry's, and it reads another witness of that run; it is not an independent failure mechanism; the report counts manifest entries, distinct patches, mechanisms, variants and witness tests separately"
+  },
+  "recorded_gaps": [
+    "M55: the session and agent comparisons of R' have no production-path witness; component_check_point only (the snapshot comparison and grant verification reject first).",
+    "M56: the tenant comparison of R' is structurally masked on the production path: it runs only after the snapshot comparison matched the provider's leaf to the lineage's leaf by content, and the compared tenants are both read from that leaf, so they are equal by construction. The request's tenant claim check (tenant_mismatch) compares another input. component_check_point only.",
+    "M71: the execution's binding to the lineage's authority has no production-path witness while the snapshot comparison is kept; component_check_point only. M58 combined with M71 is not a mutant of this gate (it would remove a kept safeguard).",
+    "M70 (approve) and M70 (issue): the chain-validity part of F(approve) and F(issue) is masked by the verification of the provider's answer that directly precedes F; precheck at this head: the patched trees typecheck and all 746 tests pass (jest exit 0). Recorded, not witnessed; not counted as evidence.",
+    "Labels beyond the claimed kind change in several entries (reported under observed_beyond_kind, never counted): M67 also runs the tool (LC-L10-calls 0 -> 1; its kind check_and_lifecycle is kept, conservatively); M70 (start) records the permit as expired; M59 shows an availability effect; several both entries also change the lifecycle state.",
+    "Plan section 8.1 mutants (M12-M14, M24, M25, M49-M52) are eval-gate mutants and belong to the later eval integration; they are not part of this manifest.",
+    "M65 is availability evidence (check_and_availability): the allowed follow-up start is denied. It is not containment evidence; an unapproved action does not run.",
+    "Variants M58-i/iii, M61-i/iii and M62-i/iii have the patch of their main entry (an identical jest run); they show changed denial reasons and are not independent failure mechanisms (report: counts, variants).",
+    "M61, M62, M63, M68, M69 and M70 (create) are lifecycle evidence only; that a later fence still denies the start is inferred from the stage-specific patches, not shown by a run."
+  ],
+  "mutants": [
+    {
+      "id": "M53",
+      "kind": "both",
+      "plan_row": "M53",
+      "removes": "the state re-read at the start effective point: F(start) no longer re-checks the permit state and consumes on the state the early check saw (check-then-act split)",
+      "patch": "mutants/lifecycle/M53.patch",
+      "patch_sha256": "1db0ab7591e055a0cd439058557ea4a75b6fde76069623e23dc7150677674cb7",
+      "witness_input": "L4c: a second start re-entered from the first start's tool_execution_started audit sink, after both early checks saw issued",
+      "kept_safeguards": "the early lineage-state check; revocation, chain validity and permit expiry in F(start); the gate's per-request permit; the replay guard (fresh request ids)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L4 single use",
+          "test": "[LC-L4c] re-entrant start from the first start's tool_execution_started sink: inner ALLOW, outer permit_consumed",
+          "labels": [
+            {
+              "label": "LC-L4c-inner",
+              "part": "check",
+              "control": "ok",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L4c-outer",
+              "part": "check",
+              "control": "permit_consumed",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L4c-tool-calls",
+              "part": "effect",
+              "control": 1,
+              "mutant": 2
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: permit_consumed [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": []
+    },
+    {
+      "id": "M54",
+      "kind": "both",
+      "plan_row": "M54",
+      "removes": "the revocation part of F(start): the shared final fence skips its revocation check for stage start only",
+      "patch": "mutants/lifecycle/M54.patch",
+      "patch_sha256": "84b27a6ea645a329472b2282dcb9797abde229cf636bbfaa673d464acec18d33",
+      "witness_input": "L7b: the leaf capability is revoked inside the tool_execution_started audit sink, the last callback before the tool call",
+      "kept_safeguards": "the request-stage and early start revocation checks (they ran before the revocation); the snapshot comparison; the permit state",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L7 revocation inside the last callback before an effective point",
+          "test": "[LC-L7b] revoke inside the tool_execution_started sink: DENY revoked (start, final); permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L7b-start",
+              "part": "check",
+              "control": "revoked:start/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L7b-permit",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L7b-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (capability_revoked, capability:l7b-L)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": []
+    },
+    {
+      "id": "M55",
+      "kind": "component_check_point",
+      "plan_row": "M55",
+      "removes": "the session_id and agent_id comparisons of the fresh start request (compareStartBindings)",
+      "patch": "mutants/lifecycle/M55.patch",
+      "patch_sha256": "a9045abcf6a48687f04e39e4479bddc2643586eba964c7637a393d77c7b9649c",
+      "witness_input": "component: a candidate binding with another session, and one with another agent",
+      "kept_safeguards": "on every production path the snapshot comparison (another session's or agent's request resolves to another capability_id) and grant verification (A's grant for R' is SESSION_MISMATCH / AGENT_MISMATCH) reject first; L5-session and L5-agent keep their values (control witnesses)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle-components.test.ts",
+          "describe": "binding comparator (start, §5.1)",
+          "test": "[LC-C-session] a differing { session_id: 's2' } field is reported as that field",
+          "labels": [
+            {
+              "label": "LC-C-comparator-session",
+              "part": "check",
+              "control": "session",
+              "mutant": null
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle-components.test.ts",
+          "describe": "binding comparator (start, §5.1)",
+          "test": "[LC-C-agent] a differing { agent_id: 'g2' } field is reported as that field",
+          "labels": [
+            {
+              "label": "LC-C-comparator-agent",
+              "part": "check",
+              "control": "agent",
+              "mutant": null
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L5 binding comparisons of the fresh start request R′",
+          "test": "[LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch",
+          "role": "control",
+          "labels": [
+            {
+              "label": "LC-L5-session",
+              "part": "check",
+              "control": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ],
+              "mutant": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ]
+            },
+            {
+              "label": "LC-L5-session-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: chain_snapshot_mismatch [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: chain_snapshot_mismatch [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            ]
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L5 binding comparisons of the fresh start request R′",
+          "test": "[LC-L5-agent] R′ for another agent: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_agent_mismatch",
+          "role": "control",
+          "labels": [
+            {
+              "label": "LC-L5-agent",
+              "part": "check",
+              "control": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ],
+              "mutant": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ]
+            },
+            {
+              "label": "LC-L5-agent-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: chain_snapshot_mismatch [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: chain_snapshot_mismatch [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": []
+    },
+    {
+      "id": "M56",
+      "kind": "component_check_point",
+      "plan_row": "M56",
+      "removes": "the tenant comparison of the fresh start request (compareStartBindings)",
+      "patch": "mutants/lifecycle/M56.patch",
+      "patch_sha256": "3c0be322ce98df0338a7cd046dfc1db64e7615d250adb7e97d5460e8eb82994e",
+      "witness_input": "component: a candidate binding with another tenant, and one without a tenant",
+      "kept_safeguards": "on every production path the snapshot comparison: the tenant comparison runs only after the provider's leaf matched the lineage's leaf by content, and both tenants are read from that leaf, so on the production path it cannot fail and the request's tenant claim check (tenant_mismatch); L5-tenant keeps its value (control witness)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle-components.test.ts",
+          "describe": "binding comparator (start, §5.1)",
+          "test": "[LC-C-tenant] a differing { tenant_id: 't2' } field is reported as that field",
+          "labels": [
+            {
+              "label": "LC-C-comparator-tenant",
+              "part": "check",
+              "control": "tenant",
+              "mutant": null
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle-components.test.ts",
+          "describe": "binding comparator (start, §5.1)",
+          "test": "[LC-C-tenant-absent] an absent tenant on one side is a difference (tenancy and non-tenancy authorities never compare equal)",
+          "labels": [
+            {
+              "label": "LC-C-comparator-tenant-absent",
+              "part": "check",
+              "control": "tenant",
+              "mutant": null
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L5 binding comparisons of the fresh start request R′",
+          "test": "[LC-L5-tenant] R′ claims tenant t2 over A's chain: tenant_mismatch (the claim check)",
+          "role": "control",
+          "labels": [
+            {
+              "label": "LC-L5-tenant",
+              "part": "check",
+              "control": "tenant_mismatch",
+              "mutant": "tenant_mismatch"
+            },
+            {
+              "label": "LC-L5-tenant-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: tenant_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: tenant_mismatch [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": []
+    },
+    {
+      "id": "M57",
+      "kind": "check_point",
+      "plan_row": "M57",
+      "removes": "the early start revocation check of the lineage authority (start order step 10)",
+      "patch": "mutants/lifecycle/M57.patch",
+      "patch_sha256": "0ecc57235d3ffcbd69a45ca03e3f8393b950025922a525329119cf6b1f222c59",
+      "witness_input": "L2b, every scope: the authority is revoked inside the capability_verified audit sink of start, after the request-stage checks",
+      "kept_safeguards": "the request-stage checks (they ran before the revocation); F(start), which still denies at stage start (check final); the tool is not called",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L2 / L2b revocation of an issued, unused permit (every scope)",
+          "test": "[LC-L2b] capability: revoke inside the capability_verified sink of start: DENY at the early start check; permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L2b-start",
+              "part": "check",
+              "control": "revoked:start/early",
+              "mutant": "revoked:start/final"
+            },
+            {
+              "label": "LC-L2b-permit",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L2b-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (capability_revoked, capability:l2b-capability-L)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (capability_revoked, capability:l2b-capability-L)"
+            ]
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L2 / L2b revocation of an issued, unused permit (every scope)",
+          "test": "[LC-L2b] ancestor: revoke inside the capability_verified sink of start: DENY at the early start check; permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L2b-start",
+              "part": "check",
+              "control": "revoked:start/early",
+              "mutant": "revoked:start/final"
+            },
+            {
+              "label": "LC-L2b-permit",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L2b-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (ancestor_revoked, capability:l2b-ancestor-I)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (ancestor_revoked, capability:l2b-ancestor-I)"
+            ]
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L2 / L2b revocation of an issued, unused permit (every scope)",
+          "test": "[LC-L2b] session: revoke inside the capability_verified sink of start: DENY at the early start check; permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L2b-start",
+              "part": "check",
+              "control": "revoked:start/early",
+              "mutant": "revoked:start/final"
+            },
+            {
+              "label": "LC-L2b-permit",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L2b-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (session_revoked, session:c8c5e0f2-1d93-a7b7-b5f5-50eaa97a3453)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (session_revoked, session:c8c5e0f2-1d93-a7b7-b5f5-50eaa97a3453)"
+            ]
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L2 / L2b revocation of an issued, unused permit (every scope)",
+          "test": "[LC-L2b] tenant: revoke inside the capability_verified sink of start: DENY at the early start check; permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L2b-start",
+              "part": "check",
+              "control": "revoked:start/early",
+              "mutant": "revoked:start/final"
+            },
+            {
+              "label": "LC-L2b-permit",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L2b-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (start/early): authority revoked (tenant_revoked, tenant:t1)"
+            ],
+            "mutant": [
+              "AuthorityRevokedError: Execution blocked (start/final): authority revoked (tenant_revoked, tenant:t1)"
+            ]
+          }
+        }
+      ],
+      "collateral": []
+    },
+    {
+      "id": "M58",
+      "kind": "both",
+      "plan_row": "M58 (ii)",
+      "removes": "the snapshot comparison at start, the only authority comparison at start",
+      "patch": "mutants/lifecycle/M58.patch",
+      "patch_sha256": "636a565ee4f3c80d4993289e3f9bd97138f8620778541f5c0e6054bb4c2a708c",
+      "witness_input": "L6-start (ii): the provider answers R''s context with a valid chain of authority B (fresh capability ids, same agent, session, tenant and tool scope, B not revoked)",
+      "kept_safeguards": "chain verification; the first-seen binding; revocation; the session, agent, tenant, tool and argument comparisons; the permit state. The started execution is bound to the lineage's authority A (LC-L6-start-execution-capability), never to B",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-start] (ii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L6-start",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L6-start-state",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L6-start-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L6-start-execution-capability",
+              "part": "effect",
+              "control": {
+                "$undefined": true
+              },
+              "mutant": "l6s-ii-L"
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:session [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session",
+              "actual": [
+                "lineage_binding_mismatch:session",
+                "capability_session_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-session] expected [\"chain_snapshot_mismatch\",\"capability_session_mismatch\"] received [\"lineage_binding_mismatch:session\",\"capability_session_mismatch\"]"
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-agent] R′ for another agent: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_agent_mismatch",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:agent [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent",
+              "actual": [
+                "lineage_binding_mismatch:agent",
+                "capability_agent_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-agent] expected [\"chain_snapshot_mismatch\",\"capability_agent_mismatch\"] received [\"lineage_binding_mismatch:agent\",\"capability_agent_mismatch\"]"
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (i) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (iii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
+        }
+      ],
+      "claim_limits": "Snapshot continuity only: a start whose provider answer is another valid, unrevoked authority B (input ii) runs, although it no longer matches the lineage's chain snapshot. The started execution stays bound to the lineage's authority A (LC-L6-start-execution-capability = A's leaf). It does not show the use of a revoked or expired authority, nor an authority substitution (that is M71, component evidence only)."
+    },
+    {
+      "id": "M58-i",
+      "kind": "check_point",
+      "plan_row": "M58 (i)",
+      "removes": "the snapshot comparison at start (variant i)",
+      "patch": "mutants/lifecycle/M58.patch",
+      "patch_sha256": "636a565ee4f3c80d4993289e3f9bd97138f8620778541f5c0e6054bb4c2a708c",
+      "witness_input": "L6-start (i): the provider answers with the same capability ids and re-signed, changed content",
+      "kept_safeguards": "the first-seen binding rejects it (capability_id_conflict): only the reason changes; no tool call",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-start] (i) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L6-start",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "capability_id_conflict"
+            },
+            {
+              "label": "LC-L6-start-state",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L6-start-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            },
+            {
+              "label": "LC-L6-start-execution-capability",
+              "part": "effect",
+              "control": {
+                "$undefined": true
+              },
+              "mutant": {
+                "$undefined": true
+              }
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: capability_id_conflict [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:session [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session",
+              "actual": [
+                "lineage_binding_mismatch:session",
+                "capability_session_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-session] expected [\"chain_snapshot_mismatch\",\"capability_session_mismatch\"] received [\"lineage_binding_mismatch:session\",\"capability_session_mismatch\"]"
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-agent] R′ for another agent: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_agent_mismatch",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:agent [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent",
+              "actual": [
+                "lineage_binding_mismatch:agent",
+                "capability_agent_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-agent] expected [\"chain_snapshot_mismatch\",\"capability_agent_mismatch\"] received [\"lineage_binding_mismatch:agent\",\"capability_agent_mismatch\"]"
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (ii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "consumed",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 1,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": "l6s-ii-L",
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-start-state] expected \"issued\" received \"consumed\"; WITNESS[LC-L6-start-calls] expected 0 received 1; WITNESS[LC-L6-start-execution-capability] expected {\"$undefined\":true} received \"l6s-ii-L\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (iii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
+        }
+      ],
+      "variant_of": "M58",
+      "claim_limits": "Variant of M58: the same patch as M58 (an identical jest run), read through the witness of input i, which M58 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
+    },
+    {
+      "id": "M58-iii",
+      "kind": "check_point",
+      "plan_row": "M58 (iii)",
+      "removes": "the snapshot comparison at start (variant iii)",
+      "patch": "mutants/lifecycle/M58.patch",
+      "patch_sha256": "636a565ee4f3c80d4993289e3f9bd97138f8620778541f5c0e6054bb4c2a708c",
+      "witness_input": "L6-start (iii): the provider answers with a chain whose ancestor was dropped",
+      "kept_safeguards": "chain verification rejects it (capability_chain_link_mismatch): only the reason changes; no tool call",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-start] (iii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L6-start",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "capability_chain_link_mismatch"
+            },
+            {
+              "label": "LC-L6-start-state",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L6-start-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            },
+            {
+              "label": "LC-L6-start-execution-capability",
+              "part": "effect",
+              "control": {
+                "$undefined": true
+              },
+              "mutant": {
+                "$undefined": true
+              }
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: capability_chain_link_mismatch [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-session] R′ in another session: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_session_mismatch",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:session [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_session_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session",
+              "actual": [
+                "lineage_binding_mismatch:session",
+                "capability_session_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_session_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-session-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-session] expected [\"chain_snapshot_mismatch\",\"capability_session_mismatch\"] received [\"lineage_binding_mismatch:session\",\"capability_session_mismatch\"]"
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L5 binding comparisons of the fresh start request R′ :: [LC-L5-agent] R′ for another agent: (a) its own grant -> chain_snapshot_mismatch, (b) A's grant -> capability_agent_mismatch",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: lineage_binding_mismatch:agent [lineage-1]"
+            },
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_agent_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent",
+              "actual": [
+                "lineage_binding_mismatch:agent",
+                "capability_agent_mismatch"
+              ],
+              "expected": [
+                "chain_snapshot_mismatch",
+                "capability_agent_mismatch"
+              ]
+            },
+            {
+              "kind": "check",
+              "label": "LC-L5-agent-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L5-agent] expected [\"chain_snapshot_mismatch\",\"capability_agent_mismatch\"] received [\"lineage_binding_mismatch:agent\",\"capability_agent_mismatch\"]"
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (i) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle start denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "issued",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 0,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": {
+                "$undefined": true
+              },
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-start] (ii) DENY chain_snapshot_mismatch at start; permit issued; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-start",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-state",
+              "actual": "consumed",
+              "expected": "issued"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-calls",
+              "actual": 1,
+              "expected": 0
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-start-execution-capability",
+              "actual": "l6s-ii-L",
+              "expected": {
+                "$undefined": true
+              }
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-start] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-start-state] expected \"issued\" received \"consumed\"; WITNESS[LC-L6-start-calls] expected 0 received 1; WITNESS[LC-L6-start-execution-capability] expected {\"$undefined\":true} received \"l6s-ii-L\""
+        }
+      ],
+      "variant_of": "M58",
+      "claim_limits": "Variant of M58: the same patch as M58 (an identical jest run), read through the witness of input iii, which M58 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
+    },
+    {
+      "id": "M59",
+      "kind": "both",
+      "plan_row": "M59",
+      "removes": "the tool comparison of the fresh start request",
+      "patch": "mutants/lifecycle/M59.patch",
+      "patch_sha256": "41a5a52e8dfa38ef9e96b8297cf82f533e647beb440886f95536004e22397202",
+      "witness_input": "L5-tool: R' names read_record instead of update_record, with the same arguments and chain (A's leaf allows both); then a correct start",
+      "kept_safeguards": "the snapshot comparison (the chain is A's); the capability tool scope; request_digest is not compared at start; the Guardian is not re-run (D10); the gate permit is minted from R'",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L5 binding comparisons of the fresh start request R′",
+          "test": "[LC-L5-tool] R′ names another tool the chain allows: lineage_binding_mismatch:tool; the correct start follows",
+          "labels": [
+            {
+              "label": "LC-L5-tool",
+              "part": "check",
+              "control": "lineage_binding_mismatch:tool",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L5-tool-state",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L5-tool-T2-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L5-tool-follow",
+              "part": "check",
+              "control": "ok",
+              "mutant": "permit_consumed"
+            },
+            {
+              "label": "LC-L5-tool-T1-calls",
+              "part": "availability",
+              "control": 1,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: lineage_binding_mismatch:tool [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: permit_consumed [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle-components.test.ts :: binding comparator (start, §5.1) :: [LC-C-tool] a differing { tool: 'read_record' } field is reported as that field",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-C-comparator-tool",
+              "actual": null,
+              "expected": "tool"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-C-comparator-tool] expected \"tool\" received null"
+        }
+      ],
+      "observed_beyond_kind": "the mismatched start consumes the permit, so the allowed follow-up start with T1 is denied (LC-L5-tool-T1-calls 1 -> 0, availability). The claimed kind (both) rests on T2's unapproved call (LC-L5-tool-T2-calls 0 -> 1); the availability effect is recorded, not counted."
+    },
+    {
+      "id": "M60",
+      "kind": "both",
+      "plan_row": "M60",
+      "removes": "the arguments-digest comparison of the fresh start request",
+      "patch": "mutants/lifecycle/M60.patch",
+      "patch_sha256": "62238f6762f5e4324abb3f9a64efbf6c65a9a82aea298b773e3897766cf1c114",
+      "witness_input": "L5-arguments: R' names update_record with { n: 2 } instead of { n: 1 }; then a correct start",
+      "kept_safeguards": "as M59, same tool",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L5 binding comparisons of the fresh start request R′",
+          "test": "[LC-L5-arguments] R′ with { n: 2 } instead of { n: 1 }: lineage_binding_mismatch:arguments; the correct start follows",
+          "labels": [
+            {
+              "label": "LC-L5-arguments",
+              "part": "check",
+              "control": "lineage_binding_mismatch:arguments",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L5-arguments-state",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L5-arguments-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L5-arguments-follow",
+              "part": "check",
+              "control": "ok",
+              "mutant": "permit_consumed"
+            },
+            {
+              "label": "LC-L5-arguments-args",
+              "part": "effect",
+              "control": [
+                {
+                  "n": 1
+                }
+              ],
+              "mutant": [
+                {
+                  "n": 2
+                }
+              ]
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: lineage_binding_mismatch:arguments [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: permit_consumed [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle-components.test.ts :: binding comparator (start, §5.1) :: [LC-C-arguments] a differing {\n  arguments_digest: 'c2fe9b703cbc6faaa7ff11c3cfca3e443be3300ae3eaa22ffbe50d77bd1730d7'\n} field is reported as that field",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-C-comparator-arguments",
+              "actual": null,
+              "expected": "arguments"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-C-comparator-arguments] expected \"arguments\" received null"
+        }
+      ]
+    },
+    {
+      "id": "M61",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M61 (ii)",
+      "removes": "the snapshot comparison at approve",
+      "patch": "mutants/lifecycle/M61.patch",
+      "patch_sha256": "0cd59fc75ad41cd4c3de3eb0f0cb78710cb113a491ac1b9a14ba548eb952c02b",
+      "witness_input": "L6-approve (ii): the provider answers the original context with a valid chain of authority B",
+      "kept_safeguards": "the early revocation check; snapshot-chain validity; verification and first-seen binding of the provider answer; F(approve); the V3 grant fields (authority_fingerprint compares the grant with the lineage); the issue and start snapshot comparisons later",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-approve] (ii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "labels": [
+            {
+              "label": "LC-L6-approve",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L6-approve-state",
+              "part": "lifecycle",
+              "control": "pending",
+              "mutant": "approved"
+            },
+            {
+              "label": "LC-L6-approve-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle approval denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (i) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (iii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
+        }
+      ],
+      "claim_limits": "Lifecycle evidence only: the approval is recorded for another authority's answer; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
+    },
+    {
+      "id": "M61-i",
+      "kind": "check_point",
+      "plan_row": "M61 (i)",
+      "removes": "the snapshot comparison at approve (variant i)",
+      "patch": "mutants/lifecycle/M61.patch",
+      "patch_sha256": "0cd59fc75ad41cd4c3de3eb0f0cb78710cb113a491ac1b9a14ba548eb952c02b",
+      "witness_input": "L6-approve (i): same capability ids, changed content",
+      "kept_safeguards": "the first-seen binding (capability_id_conflict); the approval stays pending",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-approve] (i) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "labels": [
+            {
+              "label": "LC-L6-approve",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "capability_id_conflict"
+            },
+            {
+              "label": "LC-L6-approve-state",
+              "part": "lifecycle",
+              "control": "pending",
+              "mutant": "pending"
+            },
+            {
+              "label": "LC-L6-approve-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle approval denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle approval denied: capability_id_conflict [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (ii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "approved",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-approve-state] expected \"pending\" received \"approved\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (iii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
+        }
+      ],
+      "variant_of": "M61",
+      "claim_limits": "Variant of M61: the same patch as M61 (an identical jest run), read through the witness of input i, which M61 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
+    },
+    {
+      "id": "M61-iii",
+      "kind": "check_point",
+      "plan_row": "M61 (iii)",
+      "removes": "the snapshot comparison at approve (variant iii)",
+      "patch": "mutants/lifecycle/M61.patch",
+      "patch_sha256": "0cd59fc75ad41cd4c3de3eb0f0cb78710cb113a491ac1b9a14ba548eb952c02b",
+      "witness_input": "L6-approve (iii): a dropped ancestor",
+      "kept_safeguards": "chain verification (capability_chain_link_mismatch); the approval stays pending",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-approve] (iii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "labels": [
+            {
+              "label": "LC-L6-approve",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "capability_chain_link_mismatch"
+            },
+            {
+              "label": "LC-L6-approve-state",
+              "part": "lifecycle",
+              "control": "pending",
+              "mutant": "pending"
+            },
+            {
+              "label": "LC-L6-approve-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle approval denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle approval denied: capability_chain_link_mismatch [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (i) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle approval denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "pending",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-approve] (ii) DENY chain_snapshot_mismatch at approve; pending; no tool call",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-approve",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-state",
+              "actual": "approved",
+              "expected": "pending"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-approve-calls",
+              "actual": 0,
+              "expected": 0
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-approve] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-approve-state] expected \"pending\" received \"approved\""
+        }
+      ],
+      "variant_of": "M61",
+      "claim_limits": "Variant of M61: the same patch as M61 (an identical jest run), read through the witness of input iii, which M61 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
+    },
+    {
+      "id": "M62",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M62 (ii)",
+      "removes": "the snapshot comparison at issue",
+      "patch": "mutants/lifecycle/M62.patch",
+      "patch_sha256": "84789cbd7b7a9df8b811a7ec045d5896dd8ebaa9e0c221dcf511c4dc35726215",
+      "witness_input": "L6-issue (ii): the provider answers the original context with a valid chain of authority B",
+      "kept_safeguards": "as M61, at issue; the start snapshot comparison (M58's) still denies later (inferred, not run)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-issue] (ii) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "labels": [
+            {
+              "label": "LC-L6-issue",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L6-issue-state",
+              "part": "lifecycle",
+              "control": "approved",
+              "mutant": "issued"
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle issue denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (i) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (iii) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: a single grant without ancestors is compared too: a re-issued grant for the same context is another authority",
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
+        }
+      ],
+      "claim_limits": "Lifecycle evidence only: a permit is issued for another authority's answer; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
+    },
+    {
+      "id": "M62-i",
+      "kind": "check_point",
+      "plan_row": "M62 (i)",
+      "removes": "the snapshot comparison at issue (variant i)",
+      "patch": "mutants/lifecycle/M62.patch",
+      "patch_sha256": "84789cbd7b7a9df8b811a7ec045d5896dd8ebaa9e0c221dcf511c4dc35726215",
+      "witness_input": "L6-issue (i): same capability ids, changed content",
+      "kept_safeguards": "the first-seen binding (capability_id_conflict); permit none",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-issue] (i) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "labels": [
+            {
+              "label": "LC-L6-issue",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "capability_id_conflict"
+            },
+            {
+              "label": "LC-L6-issue-state",
+              "part": "lifecycle",
+              "control": "approved",
+              "mutant": "approved"
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle issue denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle issue denied: capability_id_conflict [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (ii) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "issued",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-issue-state] expected \"approved\" received \"issued\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (iii) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_chain_link_mismatch [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_chain_link_mismatch",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_chain_link_mismatch\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: a single grant without ancestors is compared too: a re-issued grant for the same context is another authority",
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
+        }
+      ],
+      "variant_of": "M62",
+      "claim_limits": "Variant of M62: the same patch as M62 (an identical jest run), read through the witness of input i, which M62 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
+    },
+    {
+      "id": "M62-iii",
+      "kind": "check_point",
+      "plan_row": "M62 (iii)",
+      "removes": "the snapshot comparison at issue (variant iii)",
+      "patch": "mutants/lifecycle/M62.patch",
+      "patch_sha256": "84789cbd7b7a9df8b811a7ec045d5896dd8ebaa9e0c221dcf511c4dc35726215",
+      "witness_input": "L6-issue (iii): a dropped ancestor",
+      "kept_safeguards": "chain verification (capability_chain_link_mismatch); permit none",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L6 the provider's chain changes (snapshot comparison at approve, issue and start)",
+          "test": "[LC-L6-issue] (iii) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "labels": [
+            {
+              "label": "LC-L6-issue",
+              "part": "check",
+              "control": "chain_snapshot_mismatch",
+              "mutant": "capability_chain_link_mismatch"
+            },
+            {
+              "label": "LC-L6-issue-state",
+              "part": "lifecycle",
+              "control": "approved",
+              "mutant": "approved"
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle issue denied: chain_snapshot_mismatch [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle issue denied: capability_chain_link_mismatch [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (i) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "error",
+              "name": "LifecycleDeniedError",
+              "message": "Lifecycle issue denied: capability_id_conflict [lineage-1]"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "capability_id_conflict",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "approved",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"capability_id_conflict\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: [LC-L6-issue] (ii) DENY chain_snapshot_mismatch at issue; approved, permit none",
+          "status": "failed",
+          "observations": [
+            {
+              "kind": "check",
+              "label": "LC-L6-issue",
+              "actual": "ok",
+              "expected": "chain_snapshot_mismatch"
+            },
+            {
+              "kind": "check",
+              "label": "LC-L6-issue-state",
+              "actual": "issued",
+              "expected": "approved"
+            }
+          ],
+          "assertion": "WitnessAssertionError: WITNESS[LC-L6-issue] expected \"chain_snapshot_mismatch\" received \"ok\"; WITNESS[LC-L6-issue-state] expected \"approved\" received \"issued\""
+        },
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L6 the provider's chain changes (snapshot comparison at approve, issue and start) :: a single grant without ancestors is compared too: a re-issued grant for the same context is another authority",
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"chain_snapshot_mismatch\"\nReceived: \"ok\""
+        }
+      ],
+      "variant_of": "M62",
+      "claim_limits": "Variant of M62: the same patch as M62 (an identical jest run), read through the witness of input iii, which M62 pins as collateral. Only the denial reason changes; not an independent failure mechanism."
+    },
+    {
+      "id": "M63",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M63",
+      "removes": "the revocation part of F(issue): the shared final fence skips its revocation check for stage issue only",
+      "patch": "mutants/lifecycle/M63.patch",
+      "patch_sha256": "a388ba9ef729128488b1db556413f584655f20665ef56f95b8da0890148c51c8",
+      "witness_input": "L7a: the leaf capability is revoked inside the provider callback of issuePermit",
+      "kept_safeguards": "the early issue revocation check (it ran before the revocation); chain validity; the snapshot comparison; the start fences later (inferred, not run)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L7 revocation inside the last callback before an effective point",
+          "test": "[LC-L7a] revoke inside the provider callback of issuePermit: DENY revoked (issue, final); permit none",
+          "labels": [
+            {
+              "label": "LC-L7a-issue",
+              "part": "check",
+              "control": "revoked:issue/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L7a-permit",
+              "part": "lifecycle",
+              "control": "none",
+              "mutant": "issued"
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (issue/final): authority revoked (capability_revoked, capability:l7a-L)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: a permit is issued after the authority was revoked; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
+    },
+    {
+      "id": "M64",
+      "kind": "both",
+      "plan_row": "M64",
+      "removes": "consumption is final: a start whose tool throws after the effective point resets the permit to issued",
+      "patch": "mutants/lifecycle/M64.patch",
+      "patch_sha256": "e8bd5591daa57d8ac7a94e4623508adaaad66fad3b4145a31814cce4ed4c01f6",
+      "witness_input": "L11: the tool throws after the start effective point; then a second start",
+      "kept_safeguards": "the permit state check at the early check and at F(start)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L11 a failed start after the effective point",
+          "test": "[LC-L11] the tool throws: permit consumed; execution terminal failed; a second start DENY permit_consumed",
+          "labels": [
+            {
+              "label": "LC-L11-first",
+              "part": "check",
+              "control": "failure",
+              "mutant": "failure"
+            },
+            {
+              "label": "LC-L11-permit",
+              "part": "lifecycle",
+              "control": "consumed",
+              "mutant": "issued"
+            },
+            {
+              "label": "LC-L11-terminal",
+              "part": "effect",
+              "control": "failed",
+              "mutant": "failed"
+            },
+            {
+              "label": "LC-L11-second",
+              "part": "check",
+              "control": "permit_consumed",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L11-tool-calls",
+              "part": "effect",
+              "control": 1,
+              "mutant": 2
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: permit_consumed [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L11-unobservable: the existing terminal-evidence contract holds for a lineage start :: a tool whose returned Promise cannot be observed: the start fails without a terminal; the permit stays consumed",
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toMatchObject(expected)\n\n- Expected  - 1\n+ Received  + 1\n\n  Object {\n    \"execution_id\": \"exec-1\",\n-   \"state\": \"consumed\",\n+   \"state\": \"issued\",\n  }"
+        }
+      ]
+    },
+    {
+      "id": "M65",
+      "kind": "check_and_availability",
+      "plan_row": "M65",
+      "removes": "over-fencing control: a start denied by a binding mismatch consumes the permit",
+      "patch": "mutants/lifecycle/M65.patch",
+      "patch_sha256": "d35b88b1b8d1b5bff5f0bc16f3e48d0c8cb647e07b60c17b94abf0af1d793c6f",
+      "witness_input": "L5-arguments and L5-tool: a mismatching start, then a correct start",
+      "kept_safeguards": "none removed: the mutant adds a wrong consumption",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L5 binding comparisons of the fresh start request R′",
+          "test": "[LC-L5-tool] R′ names another tool the chain allows: lineage_binding_mismatch:tool; the correct start follows",
+          "labels": [
+            {
+              "label": "LC-L5-tool",
+              "part": "check",
+              "control": "lineage_binding_mismatch:tool",
+              "mutant": "lineage_binding_mismatch:tool"
+            },
+            {
+              "label": "LC-L5-tool-state",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L5-tool-T2-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            },
+            {
+              "label": "LC-L5-tool-follow",
+              "part": "check",
+              "control": "ok",
+              "mutant": "permit_consumed"
+            },
+            {
+              "label": "LC-L5-tool-T1-calls",
+              "part": "availability",
+              "control": 1,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: lineage_binding_mismatch:tool [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: lineage_binding_mismatch:tool [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: permit_consumed [lineage-1]"
+            ]
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L5 binding comparisons of the fresh start request R′",
+          "test": "[LC-L5-arguments] R′ with { n: 2 } instead of { n: 1 }: lineage_binding_mismatch:arguments; the correct start follows",
+          "labels": [
+            {
+              "label": "LC-L5-arguments",
+              "part": "check",
+              "control": "lineage_binding_mismatch:arguments",
+              "mutant": "lineage_binding_mismatch:arguments"
+            },
+            {
+              "label": "LC-L5-arguments-state",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L5-arguments-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            },
+            {
+              "label": "LC-L5-arguments-follow",
+              "part": "check",
+              "control": "ok",
+              "mutant": "permit_consumed"
+            },
+            {
+              "label": "LC-L5-arguments-args",
+              "part": "availability",
+              "control": [
+                {
+                  "n": 1
+                }
+              ],
+              "mutant": []
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: lineage_binding_mismatch:arguments [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: lineage_binding_mismatch:arguments [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: permit_consumed [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": [],
+      "claim_limits": "Availability evidence only: a start denied for a binding mismatch consumes the permit, so the allowed follow-up start is denied (permit_consumed) and its tool is not called. No unapproved action runs (the mismatched start's tool calls stay 0); this is not containment evidence."
+    },
+    {
+      "id": "M66",
+      "kind": "both",
+      "plan_row": "M66",
+      "removes": "the permit-expiry part of F(start): the shared final fence skips the operation's own expiry for stage start only",
+      "patch": "mutants/lifecycle/M66.patch",
+      "patch_sha256": "322ac02abfb42e69dbaafc4a31f970f26c3bbcb9e7e6197ca09339e4622a3532",
+      "witness_input": "L9-permit: the clock is past permit_expires_at (10 s TTL) but inside every chain window",
+      "kept_safeguards": "chain validity (the permit TTL ends before every chain window ends); revocation; the permit state",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L9 expiry",
+          "test": "[LC-L9-permit] start after permit_expires_at (inside every chain window): DENY permit_expired; recorded; no tool call",
+          "labels": [
+            {
+              "label": "LC-L9-permit",
+              "part": "check",
+              "control": "permit_expired",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L9-permit-state",
+              "part": "lifecycle",
+              "control": "permit_expired",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L9-permit-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: permit_expired [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: permit_expired [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": []
+    },
+    {
+      "id": "M67",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M67",
+      "removes": "the reject transition: a reject leaves the lineage pending",
+      "patch": "mutants/lifecycle/M67.patch",
+      "patch_sha256": "5a53ca077d0756aaa9dedad5d9d7fa309861723f037f13eee14cc0bc94432a4f",
+      "witness_input": "L10: reject, then a valid approve grant, issue and start",
+      "kept_safeguards": "approve's state check (pending still passes); grant verification",
+      "observed_beyond_kind": "L10 continues with issue and start, so the tool is also called (LC-L10-calls 0 -> 1). The plan's kind (check and lifecycle) is the claimed evidence; the tool call is recorded, not counted as containment.",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L10 reject",
+          "test": "[LC-L10] reject, then approve, issue, start: not_pending, not_approved, permit_not_issued",
+          "labels": [
+            {
+              "label": "LC-L10",
+              "part": "check",
+              "control": [
+                "not_pending",
+                "not_approved",
+                "permit_not_issued"
+              ],
+              "mutant": [
+                "ok",
+                "ok",
+                "ok"
+              ]
+            },
+            {
+              "label": "LC-L10-state",
+              "part": "lifecycle",
+              "control": "rejected",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L10-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle approval denied: not_pending [lineage-1]",
+              "LifecycleDeniedError: Lifecycle issue denied: not_approved [lineage-1]",
+              "LifecycleDeniedError: Lifecycle start denied: permit_not_issued [lineage-1]"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [
+        {
+          "test": "tests/approval-lifecycle.test.ts :: L10 reject :: a reject of a revoked lineage is allowed (a reject only removes authority)",
+          "status": "failed",
+          "observations": [],
+          "assertion": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"rejected\"\nReceived: \"pending\""
+        }
+      ]
+    },
+    {
+      "id": "M68",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M68",
+      "removes": "the revocation part of F(approve): the shared final fence skips its revocation check for stage approval only",
+      "patch": "mutants/lifecycle/M68.patch",
+      "patch_sha256": "fc0358cac42743f61838506c6e13ba262245d24cec6337df147f38ff5748ec6d",
+      "witness_input": "L1-provider: the leaf capability is revoked inside the provider callback of approve",
+      "kept_safeguards": "the early approval revocation check (it ran before the revocation); the issue and start fences later (inferred, not run)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L1 revocation while pending (every scope)",
+          "test": "[LC-L1-provider] revoke inside the provider callback of approve: F(approve) denies; approval stays pending",
+          "labels": [
+            {
+              "label": "LC-L1p-approve",
+              "part": "check",
+              "control": "revoked:approval/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L1p-state",
+              "part": "lifecycle",
+              "control": "pending",
+              "mutant": "approved"
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (approval/final): authority revoked (capability_revoked, capability:l1p-L)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: the approval is recorded after the authority was revoked; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
+    },
+    {
+      "id": "M69",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M69",
+      "removes": "the revocation part of the creation fence F(create)",
+      "patch": "mutants/lifecycle/M69.patch",
+      "patch_sha256": "170c3225213c7978f3d6e8ea63a50fe493c5891d336187397f484a3f8d5673c7",
+      "witness_input": "L15: the authority is revoked inside the capability_verified audit sink, Guardian.evaluate or the guardian_decision audit sink, for every scope",
+      "kept_safeguards": "the request-stage checks of process() (they ran before the revocation); chain validity of F(create); the approve, issue and start fences later (inferred, not run)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside capability_verified, capability scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-capability_verified-capability-L)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside capability_verified, ancestor scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-capability_verified-ancestor-I)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside capability_verified, session scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:00355548-fd0a-d8eb-8ca1-e07d54bb1fd2)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside capability_verified, tenant scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (tenant_revoked, tenant:t1)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian, capability scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-guardian-capability-L)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian, ancestor scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-guardian-ancestor-I)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian, session scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:985748be-0bce-5e49-5b92-c8adba23da62)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian, tenant scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (tenant_revoked, tenant:t1)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian_decision, capability scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (capability_revoked, capability:l15-guardian_decision-capability-L)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian_decision, ancestor scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (ancestor_revoked, capability:l15-guardian_decision-ancestor-I)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian_decision, session scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (session_revoked, session:5e1da4fd-80eb-a375-ce9a-53c15ec73ddd)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L15 the creation fence after the last callbacks of process()",
+          "test": "[LC-L15] revoke inside guardian_decision, tenant scope: process DENY revoked (request, final); no lineage; no approval_requested",
+          "labels": [
+            {
+              "label": "LC-L15-process",
+              "part": "check",
+              "control": "revoked:request/final",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L15-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L15-tool-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "AuthorityRevokedError: Execution blocked (request/final): authority revoked (tenant_revoked, tenant:t1)",
+              "LifecycleDeniedError: Lifecycle issue denied: unknown_lineage (lineage-1)"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: a lineage is created for a revoked authority; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
+    },
+    {
+      "id": "M70-create",
+      "kind": "check_and_lifecycle",
+      "plan_row": "M70 (create)",
+      "removes": "the chain-validity part of the creation fence F(create)",
+      "patch": "mutants/lifecycle/M70-create.patch",
+      "patch_sha256": "33d38d3df1e27e03a2529ddb0eaebe2866942b1024b84818fb256e4a8c7eb47d",
+      "witness_input": "L16-create: the leaf's validity ends inside the guardian_decision sink, after the last verification",
+      "kept_safeguards": "the chain verification of process() (it ran before the clock advance); no verification follows the later callbacks; the approve, issue and start fences later (inferred, not run)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L16 chain validity after the last callback",
+          "test": "[LC-L16-create] the leaf expires inside the guardian_decision sink: DENY capability_expired at F(create); no lineage",
+          "labels": [
+            {
+              "label": "LC-L16-create",
+              "part": "check",
+              "control": "capability_expired",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L16-create-lineages",
+              "part": "lifecycle",
+              "control": 0,
+              "mutant": 1
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle create denied: capability_expired"
+            ],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": [],
+      "claim_limits": "Lifecycle evidence only: a lineage is created for an expired chain; no tool runs. That a later fence still denies the start is inferred from the stage-specific patch, not shown by a run: the witness stops at this operation."
+    },
+    {
+      "id": "M70-start",
+      "kind": "check_point",
+      "plan_row": "M70 (start)",
+      "removes": "the chain-validity part of F(start): the shared final fence skips chain validity for stage start only",
+      "patch": "mutants/lifecycle/M70-start.patch",
+      "patch_sha256": "bd1255b411c91234c847b9b589497f83961c42520b2de3ceb7b8a9eab7941dc2",
+      "witness_input": "L16-start: the leaf's validity ends inside the tool_execution_started sink, after R''s verification; the permit expiry is capped at the leaf's end (D16)",
+      "kept_safeguards": "the permit-expiry part of F(start), which still denies (permit_expired); no tool call",
+      "observed_beyond_kind": "the permit-expiry denial records the permit as expired (LC-L16-start-permit issued -> expired). The plan's kind (check_point) is the claimed evidence; the recorded expiry is not counted as lifecycle evidence.",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L16 chain validity after the last callback",
+          "test": "[LC-L16-start] the leaf expires inside the tool_execution_started sink: DENY capability_expired at F(start); permit issued; no tool call",
+          "labels": [
+            {
+              "label": "LC-L16-start",
+              "part": "check",
+              "control": "capability_expired",
+              "mutant": "permit_expired"
+            },
+            {
+              "label": "LC-L16-start-permit",
+              "part": "lifecycle",
+              "control": "issued",
+              "mutant": "expired"
+            },
+            {
+              "label": "LC-L16-start-calls",
+              "part": "effect",
+              "control": 0,
+              "mutant": 0
+            }
+          ],
+          "errors": {
+            "control": [
+              "LifecycleDeniedError: Lifecycle start denied: capability_expired [lineage-1]"
+            ],
+            "mutant": [
+              "LifecycleDeniedError: Lifecycle start denied: permit_expired [lineage-1]"
+            ]
+          }
+        }
+      ],
+      "collateral": []
+    },
+    {
+      "id": "M71",
+      "kind": "component_check_point",
+      "plan_row": "M71",
+      "removes": "the binding of a start's execution to the lineage's authority: the execution authority is built from the provider's verified chain for R' (authority substitution)",
+      "patch": "mutants/lifecycle/M71.patch",
+      "patch_sha256": "311c2481cc129a8c200a7e11fb0e6f54088eecb83bf5acdc3b323f5f5128832a",
+      "witness_input": "component: startExecutionAuthority with the lineage snapshot A and a provider chain B",
+      "kept_safeguards": "the snapshot comparison at start: it denies any R' whose provider answer differs from the snapshot, and an equal answer builds the identical authority; L3 keeps its values (control witness)",
+      "witnesses": [
+        {
+          "file": "tests/approval-lifecycle-components.test.ts",
+          "describe": "execution binding source (M71)",
+          "test": "[LC-C-execution-authority] the execution authority of a start is the lineage's snapshot A, even for a provider answer B",
+          "labels": [
+            {
+              "label": "LC-C-execution-authority",
+              "part": "check",
+              "control": [
+                "A-L",
+                [
+                  "A-I"
+                ],
+                "t1",
+                "s1"
+              ],
+              "mutant": [
+                "B-L",
+                [
+                  "B-I"
+                ],
+                "t9",
+                "s1"
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        },
+        {
+          "file": "tests/approval-lifecycle.test.ts",
+          "describe": "L3 valid lifecycle and the shared authority sequence",
+          "test": "[LC-L3] approve, issue, start: receipts in order with increasing *_seq; one tool call; permit consumed by the started execution",
+          "role": "control",
+          "labels": [
+            {
+              "label": "LC-L3-decision",
+              "part": "check",
+              "control": "ok",
+              "mutant": "ok"
+            },
+            {
+              "label": "LC-L3-tool-calls",
+              "part": "effect",
+              "control": 1,
+              "mutant": 1
+            },
+            {
+              "label": "LC-L3-state",
+              "part": "lifecycle",
+              "control": "consumed",
+              "mutant": "consumed"
+            },
+            {
+              "label": "LC-L3-seq",
+              "part": "lifecycle",
+              "control": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "mutant": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          ],
+          "errors": {
+            "control": [],
+            "mutant": []
+          }
+        }
+      ],
+      "collateral": []
+    }
+  ],
+  "gate_limitations": [
+    "A5: a collateral pin binds the assertion text, not the assertion's position: a collateral test that fails at another expect with the same normalised message is accepted. The current collateral messages are unambiguous.",
+    "A6: the strict whole-run rule sees caught errors only where a test logs them (settle, attempt, outcome); a non-witness test with a loose assertion (for example rejects.toThrow() without a matcher) passes with any unexpected error, so 'the rest of the suite stayed unaffected' is as strong as those assertions.",
+    "A7: the witness log encodes values losslessly only for plain JSON values; Error, Map and Date objects and non-enumerable fields encode as {}, NaN and Infinity as null, -0 as 0. A loss can give not detected or a technical failure, never a detection; the current labels are plain values.",
+    "A8: kind and part are the manifest's claims: the gate checks that the claimed parts change, not that a check_point witness is a production-path test, nor the direction of an effect beyond the part (availability is a separate part since version 4); patches are not restricted to src/ (all lifecycle patches touch src/ only).",
+    "A9: the .sha256 file proves the manifest's integrity, not its registration before the run; the expected values come from a precheck run (see description), so a detection is reproducibility evidence. source_head and plan are not checked by the gate."
+  ]
+}

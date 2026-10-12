@@ -1,0 +1,12 @@
+diff --git a/src/guarded-executor.ts b/src/guarded-executor.ts
+index 718a8f3..83e4346 100644
+--- a/src/guarded-executor.ts
++++ b/src/guarded-executor.ts
+@@ -1233,7 +1233,6 @@ export class GuardedExecutor<M extends LifecycleMode = "legacy"> {
+ 
+     // The execution is bound to the lineage's authority (its chain snapshot), never to the provider's answer.
+     const authority: BoundAuthority = startExecutionAuthority(record.draft, verified);
+-    this.#denyIfLineageRevoked("start", requestId, authority, tool, "early", record.lineageId);
+ 
+     const outcome = await this.#startLineageExecution(record, request, authority);
+     // Nothing may run between the hand-over check and the return that fulfils the public promise.

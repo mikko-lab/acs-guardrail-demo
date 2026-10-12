@@ -1,4 +1,5 @@
-import { appendFileSync } from "fs";
+import { appendFileSync, realpathSync } from "fs";
+import { relative } from "path";
 import { isDeepStrictEqual } from "util";
 
 /**
@@ -12,6 +13,11 @@ import { isDeepStrictEqual } from "util";
  * it as one JSON line, whether the check passed or failed. The gate compares the observed values with the exact
  * control and mutant values in the manifest, and treats a caught error that the manifest does not accept as an
  * unexpected failure, never as check-point evidence. Undefined is logged as {"$undefined":true}.
+ *
+ * Every entry names the test file (relative to the working directory) and the test it was written in. An entry is bound
+ * to a test only between this helper's own beforeEach and afterEach hooks; outside them (a beforeAll, an afterAll, a
+ * hook of another file) its test is null, and the gate treats it as a technical failure, never as an observation of the
+ * previous test.
  */
 export class WitnessAssertionError extends Error {
   constructor(readonly failed: string[], detail: string) {
@@ -28,11 +34,16 @@ const encode = (value: unknown): unknown =>
     : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, encode(v)]))
     : value;
 
+let currentTest: string | null = null;
+beforeEach(() => { currentTest = expect.getState().currentTestName ?? null; });
+afterEach(() => { currentTest = null; });
+
 function log(entry: Record<string, unknown>): void {
-  const file = process.env.WITNESS_LOG;
-  if (!file) return;
-  const test = expect.getState().currentTestName ?? "";
-  appendFileSync(file, JSON.stringify({ test, ...entry }) + "\n");
+  const target = process.env.WITNESS_LOG;
+  if (!target) return;
+  const testPath = expect.getState().testPath;
+  const file = testPath ? relative(realpathSync(process.cwd()), testPath) : null;
+  appendFileSync(target, JSON.stringify({ file, test: currentTest, ...entry }) + "\n");
 }
 
 /** Records an error a witness test caught (for example through an outcome() helper). */

@@ -1,0 +1,18 @@
+diff --git a/tests/zz-rl20-same-name.test.ts b/tests/zz-rl20-same-name.test.ts
+new file mode 100644
+index 0000000..5a2d1ff
+--- /dev/null
++++ b/tests/zz-rl20-same-name.test.ts
+@@ -0,0 +1,12 @@
++/**
++ * Gate regression RL20 fixture (mutants/lifecycle/regressions/RL20-same-name-files.json): a test in another file with
++ * the same describe and title as the L4c witness of tests/approval-lifecycle.test.ts. It logs the L4c labels with their
++ * control values in every run. The gate must bind its witness-log entries to this file, never to the L4c witness.
++ */
++import { witness } from "./witness";
++
++describe("L4 single use", () => {
++  it("[LC-L4c] re-entrant start from the first start's tool_execution_started sink: inner ALLOW, outer permit_consumed", () => {
++    witness(["LC-L4c-inner", "ok", "ok"], ["LC-L4c-outer", "permit_consumed", "permit_consumed"], ["LC-L4c-tool-calls", 1, 1]);
++  });
++});

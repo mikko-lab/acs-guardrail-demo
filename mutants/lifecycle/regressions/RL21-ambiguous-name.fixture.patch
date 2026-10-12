@@ -1,0 +1,19 @@
+diff --git a/tests/approval-lifecycle.test.ts b/tests/approval-lifecycle.test.ts
+index 1e9daa7..2bed2a0 100644
+--- a/tests/approval-lifecycle.test.ts
++++ b/tests/approval-lifecycle.test.ts
+@@ -252,6 +252,14 @@ describe("L2 / L2b revocation of an issued, unused permit (every scope)", () =>
+   });
+ });
+ 
++// Gate regression RL21 fixture: a second test with the same describe and title as [LC-L3] in the same file, so a
++// witness-log entry of either test cannot be bound to one test.
++describe("L3 valid lifecycle and the shared authority sequence", () => {
++  it("[LC-L3] approve, issue, start: receipts in order with increasing *_seq; one tool call; permit consumed by the started execution", () => {
++    witness(["RL21-duplicate", 1, 1]);
++  });
++});
++
+ describe("L4 single use", () => {
+   it("[LC-L4a] sequential reuse: a second start on a consumed lineage is DENY permit_consumed", async () => {
+     const f = fixture("l4a");

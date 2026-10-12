@@ -9,7 +9,10 @@ export type ApprovalErrorCode =
   | "WRONG_APPROVER_IDENTITY"
   | "TOOL_BINDING_MISMATCH"
   | "SESSION_MISMATCH"
-  | "REQUEST_MISMATCH";
+  | "REQUEST_MISMATCH"
+  | "LINEAGE_MISMATCH"
+  | "REQUEST_DIGEST_MISMATCH"
+  | "AUTHORITY_FINGERPRINT_MISMATCH";
 
 export class ApprovalVerificationError extends Error {
   constructor(public readonly code: ApprovalErrorCode, message: string) {
@@ -53,7 +56,35 @@ export interface ApprovalGrantV2 {
   };
 }
 
-export type AnyApprovalGrant = ApprovalGrantV1 | ApprovalGrantV2;
+/**
+ * Version 3 (permit mode, docs/approval-permit-lifecycle.md): ApprovalGrantV2 plus the lineage it decides and the
+ * request and authority snapshot the human saw. Every field is covered by the signature, so a V3 grant names one
+ * lineage, one request and one authority chain and cannot be replayed on another.
+ */
+export interface ApprovalGrantV3 {
+  version: 3;
+  decision: "approve" | "reject";
+  lineage_id: string;
+  session_id: string;
+  request_id: string;
+  tool: string;
+  /** SHA-256 (hex) of the canonical { agent_id, session_id, tool, arguments } of the original request. */
+  request_digest: string;
+  /** SHA-256 (hex) over the content fingerprints of the leaf grant and its ancestors, in order. */
+  authority_fingerprint: string;
+  approver: {
+    type: "human";
+    id: string;
+  };
+  issued_at: string;
+  signature: {
+    algorithm: "Ed25519";
+    key_id: string;
+    value: string;
+  };
+}
+
+export type AnyApprovalGrant = ApprovalGrantV1 | ApprovalGrantV2 | ApprovalGrantV3;
 
 const ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const BASE64_REGEX = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -65,6 +96,14 @@ export interface ApprovalContext {
   expectedApproverType: "human";
   expectedApproverId: string;
 }
+
+export interface ApprovalContextV3 extends ApprovalContext {
+  expectedLineageId: string;
+  expectedRequestDigest: string;
+  expectedAuthorityFingerprint: string;
+}
+
+const DIGEST_REGEX = /^[0-9a-f]{64}$/;
 
 export class ApprovalGrantVerifier {
   constructor(
@@ -112,6 +151,34 @@ export class ApprovalGrantVerifier {
     return v2;
   }
 
+  // Verifies V3 (permit mode): the V2 bindings plus lineage, request digest and authority fingerprint.
+  verifyV3(input: unknown, ctx: ApprovalContextV3): ApprovalGrantV3 {
+    this.assertVersion(input, 3);
+    const v3 = this.verifySchemaAndSignature(input) as ApprovalGrantV3;
+    if (v3.lineage_id !== ctx.expectedLineageId) {
+      throw new ApprovalVerificationError("LINEAGE_MISMATCH", "Invariant Violation: lineage_id does not match");
+    }
+    if (v3.session_id !== ctx.expectedSessionId) {
+      throw new ApprovalVerificationError("SESSION_MISMATCH", "Invariant Violation: session_id does not match");
+    }
+    if (v3.request_id !== ctx.expectedRequestId) {
+      throw new ApprovalVerificationError("REQUEST_MISMATCH", "Invariant Violation: request_id does not match");
+    }
+    if (v3.tool !== ctx.expectedTool) {
+      throw new ApprovalVerificationError("TOOL_BINDING_MISMATCH", "Invariant Violation: tool does not match expected tool");
+    }
+    if (v3.request_digest !== ctx.expectedRequestDigest) {
+      throw new ApprovalVerificationError("REQUEST_DIGEST_MISMATCH", "Invariant Violation: request_digest does not match");
+    }
+    if (v3.authority_fingerprint !== ctx.expectedAuthorityFingerprint) {
+      throw new ApprovalVerificationError("AUTHORITY_FINGERPRINT_MISMATCH", "Invariant Violation: authority_fingerprint does not match");
+    }
+    if (v3.approver.type !== ctx.expectedApproverType || v3.approver.id !== ctx.expectedApproverId) {
+      throw new ApprovalVerificationError("WRONG_APPROVER_IDENTITY", "Invariant Violation: approver does not match expected approver");
+    }
+    return v3;
+  }
+
   private assertVersion(input: unknown, expectedVersion: number) {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
       throw new ApprovalVerificationError("MALFORMED_GRANT", "Validation Error: input must be a JSON object");
@@ -142,6 +209,19 @@ export class ApprovalGrantVerifier {
     if (grant.version === 2) {
       if (typeof grant.tool !== "string" || grant.tool.length === 0) {
         throw new ApprovalVerificationError("MALFORMED_GRANT", "Validation Error: V2 requires a non-empty tool string");
+      }
+    }
+    if (grant.version === 3) {
+      if (typeof grant.tool !== "string" || grant.tool.length === 0) {
+        throw new ApprovalVerificationError("MALFORMED_GRANT", "Validation Error: V3 requires a non-empty tool string");
+      }
+      if (typeof grant.lineage_id !== "string" || grant.lineage_id.length === 0) {
+        throw new ApprovalVerificationError("MALFORMED_GRANT", "Validation Error: V3 requires a non-empty lineage_id string");
+      }
+      for (const key of ["request_digest", "authority_fingerprint"]) {
+        if (typeof grant[key] !== "string" || !DIGEST_REGEX.test(grant[key] as string)) {
+          throw new ApprovalVerificationError("MALFORMED_GRANT", `Validation Error: V3 requires ${key} as a lowercase hex SHA-256 digest`);
+        }
       }
     }
 

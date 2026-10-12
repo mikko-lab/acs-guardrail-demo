@@ -1,0 +1,12 @@
+diff --git a/src/approval-lifecycle.ts b/src/approval-lifecycle.ts
+index 68aedff..e04d726 100644
+--- a/src/approval-lifecycle.ts
++++ b/src/approval-lifecycle.ts
+@@ -125,7 +125,6 @@ export function compareStartBindings(lineage: StartBindings, candidate: StartBin
+   if (candidate.agent_id !== lineage.agent_id) return "agent";
+   if (candidate.tenant_id !== lineage.tenant_id) return "tenant";
+   if (candidate.tool !== lineage.tool) return "tool";
+-  if (candidate.arguments_digest !== lineage.arguments_digest) return "arguments";
+   return null;
+ }
+ 
